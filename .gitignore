@@ -1,0 +1,19 @@
+# experiment
+experiments/*
+*.pkl
+*.pt
+
+# vscode
+*.json
+
+# python
+*.pyc
+__pycache__
+
+# log file
+*.err
+*.out
+*.log
+
+# data file
+*.csv
