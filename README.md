@@ -1,2 +1,2 @@
-# Molecular-Optimization-bits
-Utilize Transformer for molecular optimization, with property changes represented as bits.
+# Molecular-Optimization: Conditional Variational Transformer
+Utilize CVAE based Transformer.
