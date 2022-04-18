@@ -92,10 +92,10 @@ class Decoder(nn.Module):
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
         x = self.embed(trg)
         e_outputs = self.fc_z(e_outputs)
-        if self.use_cond2dec == True: # train
+        if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
-        if self.use_cond2lat == True: # inference
+        if self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
         x = self.pe(x)
@@ -104,12 +104,12 @@ class Decoder(nn.Module):
             x, q_k_dec1_tmp, q_k_dec2_tmp = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
             q_k_dec1_tmp = q_k_dec1_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
             q_k_dec2_tmp = q_k_dec2_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            if i == 0:
-                q_k_dec1 = q_k_dec1_tmp
-                q_k_dec2 = q_k_dec2_tmp
-            else:
+            if i != 0:
                 q_k_dec1 = np.concatenate((q_k_dec1, q_k_dec1_tmp), axis=1)
                 q_k_dec2 = np.concatenate((q_k_dec2, q_k_dec2_tmp), axis=1)
+            else:
+                q_k_dec1 = q_k_dec1_tmp
+                q_k_dec2 = q_k_dec2_tmp
         return self.norm(x), q_k_dec1, q_k_dec2
     
 
@@ -145,12 +145,6 @@ class Transformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src, trg, conds):
-        # src_pad_mask = (src != 0).unsqueeze(-2)
-        # trg_pad_mask = (trg != 0).unsqueeze(-2)
-        # trg_seq_mask = subsequent_mask(trg.size(-1)).type_as(trg_mask)
-        # trg_mask = trg_pad_mask & trg_seq_mask
-        # trg_mask = trg_mask[:, :-1, :-1] # skip end
-
         src_mask, trg_mask = create_masks(src, trg, conds, self.use_cond2dec)
 
         z, mu, log_var, q_k_enc = self.encode(src, conds, src_mask)

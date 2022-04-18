@@ -11,14 +11,16 @@ import utils.log as ul
 import utils.file as uf
 import utils.torch_util as ut
 import models.dataset as md
-import preprocess.vocabulary as mv
+import Process.vocabulary as mv
 
 from models.VAETransformer import decode, transformer, mask
 from models.VAETransformer.noam_opt import NoamOpt as moptim
-from models.VAETransformer.label_smoothing import LabelSmoothing
-from models.VAETransformer.simpleloss_compute import SimpleLossCompute
-from models.VAETransformer.loss import Loss
+from models.VAETransformer.loss import LossCompute, Criterion, KLAnnealer
 
+import Process.data_preparation as pdp
+import Process.batch as pb
+
+import moses
 
 class TransformerTrainer(object):
 
@@ -32,33 +34,47 @@ class TransformerTrainer(object):
         self.LOG = ul.get_logger(name="train_model", log_path=os.path.join(self.save_path, 'train_model.log'))
         self.LOG.info(opt)
 
-    def initialize_dataloader(self, vocab, data_type):
-        data = pd.read_csv(os.path.join(self.opt.data_path, data_type + '.csv'), sep=",")
-        dataset = md.Dataset(data=data, vocabulary=vocab, 
-                             tokenizer=mv.SMILESTokenizer(), prediction_mode=False)
-        dataloader = torch.utils.data.DataLoader(dataset, self.opt.batch_size, 
-                                                 shuffle=True, collate_fn=md.Dataset.collate_fn)
-        return dataloader
+
+    def get_data_iterator(self, data_type):
+        num_tests = 16
+        SRC, TRG = pdp.create_fields(self.opt.lang_format, self.opt.weights_path, data_type)
+        if self.opt.dataset == 'moses':
+            self.opt.source = moses.get_dataset(data_type)[:num_tests]
+            self.opt.target = self.opt.source
+            self.opt.conds = pd.read_csv(self.opt.prop_path)
+            data_iter = pdp.create_dataset(self.opt, SRC, TRG, tr_te="train")
+        elif self.opt.dataset == 'guacamol':
+            data_iter = None
+        return (pb.rebatch(self.opt.src_pad, b) for b in data_iter), SRC, TRG
 
 
-    def get_model(self, vocab, device):
+    # def initialize_dataloader(self, vocab, data_type):
+    #     data = pd.read_csv(os.path.join(self.opt.data_path, data_type + '.csv'), sep=",")
+    #     dataset = md.Dataset(data=data, vocabulary=vocab, 
+    #                          tokenizer=mv.SMILESTokenizer(), prediction_mode=False)
+    #     dataloader = torch.utils.data.DataLoader(dataset, self.opt.batch_size, 
+    #                                              shuffle=True, collate_fn=md.Dataset.collate_fn)
+    #     return dataloader
+
+
+    def get_model(self, src_len_tokens, trg_len_tokens):
         # build a model from scratch or load a model from a given epoch
 
         if self.opt.starting_epoch == 1:
-            model = transformer.build_transformer(len(vocab.tokens()), len(vocab.tokens()), 
+            model = transformer.build_transformer(src_len_tokens, trg_len_tokens,
                                                   self.opt.N, self.opt.d_model, self.opt.d_ff, 
                                                   self.opt.H, self.opt.latent_dim, self.opt.dropout, 
                                                   self.opt.nconds, use_cond2dec=True, use_cond2lat=False)
         else:
             file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
             model = transformer.load_from_file(file_path)
-        model.to(device)
+        model.to(self.opt.device)
         return model
 
 
     def get_optimization(self, model):
         if self.opt.starting_epoch == 1:
-            optim = moptim(self.opt.d_model, self.opt.factor, self.opt.warmup_steps, 
+            optim = moptim(self.opt.d_model, self.opt.factor, self.opt.warmup_steps,
                            torch.optim.Adam(model.parameters(), lr=0, betas=(self.opt.adam_beta1, self.opt.adam_beta2), eps=self.opt.adam_eps))            
         else:
             checkpoint = torch.load(os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt'), map_location='cuda:0')
@@ -69,25 +85,37 @@ class TransformerTrainer(object):
         return optim
     
 
-    def train_epoch(self, dataloader, model, loss_compute, device, vocab):
+    def train_epoch(self, train_iter, model, loss_compute, device, vocab):
         tokenizer = mv.SMILESTokenizer()
         """
         The following variables records the total values from the dataset
         """
-        total_loss = 0 # total loss
+        total_loss = 0     # total loss
         total_rec_loss = 0 # total reconstruction loss
-        total_KL_div = 0 # total KL divergence
-        total_tokens = 0 # total non-padded tokens
-        n_correct = 0 # total number of correct predicted smiles
-        total_n_trg = 0 # total number of target smiles
-        n_rounds = 0 # the number of batches
+        total_kl_div = 0   # total KL divergence
+        total_tokens = 0   # total non-padded tokens
+        n_correct = 0      # total number of correct predicted smiles
+        total_n = 0        # total number of target smiles
 
-        for i, batch in enumerate(ul.progress_bar(dataloader, total=len(dataloader))):
+        # parameter of kl divergence
+        klannealer = KLAnnealer(self.opt.kl_beta_init, self.opt.kl_beta, self.opt.kl_cycle)
+
+        rec_loss_list = []
+        kl_div_list = []
+        beta_list = []
+
+        for i, batch in enumerate(ul.progress_bar(train_iter, total=len(train_iter))):
+            
+            
+            
             src, trg, conds, _ = batch
 
             trg_y = trg[:, 1:] # the expected output
-            trg = trg[:, :-1] # the input of the model
+            trg = trg[:, :-1]  # the input of the model
             ntokens = float((trg_y != self.pad_idx).data.sum())
+
+            total_tokens += ntokens
+            total_n += trg.size(0)
 
             # CPU to GPU
             src = src.to(device)
@@ -99,13 +127,13 @@ class TransformerTrainer(object):
             _, out, mu, log_var, _, _, _, _ = model.forward(src, trg, conds)
 
             # compute training loss and do back-propagation
-            # rec_loss has not normalized by the number of tokens here
-            # KL_div is the average value of a batch
-            rec_loss, KL_div = loss_compute(out, trg_y, ntokens, mu, log_var) 
+            # sum of reconstruction loss and KL divergence of a batch
+            beta = klannealer(i)
+            rec_loss, kl_div = loss_compute(out, trg_y, total_n, mu, log_var, beta)
 
-            total_loss += float(rec_loss + KL_div)
+            total_loss += float(rec_loss + kl_div)
             total_rec_loss += float(rec_loss)
-            total_KL_div += float(KL_div)
+            total_kl_div += float(kl_div)
 
             # compute accuracy of predicted smiles
             smiles = decode.decode(model, src, conds, self.max_len_trg, 
@@ -118,32 +146,38 @@ class TransformerTrainer(object):
                 seq = tokenizer.untokenize(vocab.decode(seq.cpu().numpy()))
                 if seq == target:
                     n_correct += 1            
-    
-            n_rounds += 1
-            total_tokens += ntokens
-            total_n_trg += trg.size(0)
-            
-        return (n_correct*1.0 / total_n_trg, # the overall accuracy
+                
+            rec_loss_list.append(float(rec_loss))
+            kl_div_list.append(float(kl_div))
+            beta_list.append(float(beta))
+
+        print(rec_loss_list)
+        print(kl_div_list)
+        print(beta_list)
+
+        return (n_correct*1.0 / total_n,       # the overall accuracy
                 total_rec_loss / total_tokens, # the average reconstruction loss per token
-                total_KL_div / n_rounds) # the average KL divergence per prediction (smiles)
+                total_kl_div / total_n)        # the average KL divergence per prediction (smiles)
 
 
     def validation_stat(self, dataloader, model, loss_compute, device, vocab):
         tokenizer = mv.SMILESTokenizer()
 
-        total_loss = 0 # total loss
+        total_loss = 0     # total loss
         total_rec_loss = 0 # total reconstruction loss
-        total_KL_div = 0 # total KL divergence
-        total_tokens = 0 # total non-padded tokens
-        n_correct = 0 # total number of correct predicted smiles
-        total_n_trg = 0 # total number of target smiles
-        n_rounds = 0 # the number of batches
+        total_kl_div = 0   # total KL divergence
+        total_tokens = 0   # total non-padded tokens
+        n_correct = 0      # total number of correct predicted smiles
+        total_n = 0        # total number of smiles
+        
+        # parameter of kl divergence
+        klannealer = KLAnnealer(self.opt.kl_beta_init, self.opt.kl_beta, self.opt.kl_cycle)
 
-        for _, batch in enumerate(ul.progress_bar(dataloader, total=len(dataloader))):
+        for i, batch in enumerate(ul.progress_bar(dataloader, total=len(dataloader))):
             src, trg, conds, _ = batch
 
             trg_y = trg[:, 1:] # the expected output
-            trg = trg[:, :-1] # the input of the model
+            trg = trg[:, :-1]  # the input of the model
             ntokens = float((trg_y != self.pad_idx).data.sum()) # num tokens not padding
 
             # CPU to GPU
@@ -152,14 +186,24 @@ class TransformerTrainer(object):
             trg = trg.to(device)
             conds = conds.to(device)
 
+            rec_loss_list = []
+            kl_div_list = []
+            beta_list = []
+
             with torch.no_grad():
                 # dim of out: (batch_size, max_trg_seq_length-1, d_model)
                 _, out, mu, log_var, _, _, _, _ = model.forward(src, trg, conds)
-                rec_loss, KL_div = loss_compute(out, trg_y, ntokens, mu, log_var) 
+                
+                total_tokens += ntokens
+                total_n += trg.size()[0]
 
-                total_loss += float(rec_loss + KL_div)
+                # sum of reconstruction loss and KL divergence of a batch
+                beta = klannealer(i)
+                rec_loss, kl_div = loss_compute(out, trg_y, total_n, mu, log_var, beta)
+
+                total_loss += float(rec_loss + kl_div)
                 total_rec_loss += float(rec_loss)
-                total_KL_div += float(KL_div)
+                total_kl_div += float(kl_div)
 
                 # Decode
                 smiles = decode.decode(model, src, conds, self.max_len_trg, 
@@ -174,21 +218,17 @@ class TransformerTrainer(object):
                     if seq == target:
                         n_correct += 1
 
-            n_rounds += 1
-            total_tokens += ntokens
-            total_n_trg += trg.size()[0]
+            rec_loss_list.append(float(rec_loss))
+            kl_div_list.append(float(kl_div))
+            beta_list.append(float(beta))
 
-        return (n_correct / total_n_trg, # the overall accuracy
+        print(rec_loss_list)
+        print(kl_div_list)
+        print(beta_list)
+
+        return (n_correct / total_n,           # the overall accuracy
                 total_rec_loss / total_tokens, # the average reconstruction loss per token
-                total_KL_div / n_rounds) # the average KL divergence per prediction (smiles)
-
-
-
-    
-    # def to_tensorboard(self, train_loss, validation_loss, accuracy, epoch):
-    #     self.summary_writer.add_scalars("loss", {"train": train_loss, "validation": validation_loss}, epoch)
-    #     self.summary_writer.add_scalar("accuracy/validation", accuracy, epoch)
-    #     self.summary_writer.close()
+                total_kl_div / total_n)        # the average KL divergence per prediction (smiles)
 
 
     def _get_model_parameters(self, vocab_size):
@@ -201,7 +241,10 @@ class TransformerTrainer(object):
             'dropout': self.opt.dropout,
             'nconds': self.opt.nconds,
             'vocab_size': vocab_size,
+            'use_cond2dec': self.opt.use_cond2dec,
+            'use_cond2lat': self.opt.use_cond2lat
         }
+
 
     def save(self, model, optim, vocab_size, model_name):
         # save optimizer and hyperparameters
@@ -214,23 +257,19 @@ class TransformerTrainer(object):
         }
         torch.save(save_dict, file_name)
 
+
     def train(self):
-        device = ut.allocate_gpu()
+        self.opt.device = ut.allocate_gpu()
 
-        # Load vocabulary        
-        with open(os.path.join(self.opt.data_path, 'vocab.pkl'), "rb") as input_file:
-            vocab = pkl.load(input_file)
-        vocab_size = len(vocab.tokens())
+        train_iter, SRC, TRG = self.get_data_iterator('train')
+        valid_iter, _, _ = self.get_data_iterator('test') # i i i i i
 
-        # training/validation data loader
-        dataloader_train = self.initialize_dataloader(vocab, 'train')
-        dataloader_validation = self.initialize_dataloader(vocab, 'validation')
-
-        model = self.get_model(vocab, device)
+        model = self.get_model(len(SRC.vocab), len(TRG.vocab))
         optim = self.get_optimization(model)
-        criterion = Loss(size=len(vocab), padding_idx=self.pad_idx, smoothing=self.opt.label_smoothing)
+        criterion = Criterion(size=len(TRG.vocab), padding_idx=self.pad_idx, 
+                              smoothing=self.opt.label_smoothing)
 
-        loss_acc_writer = ul.get_logger(name="loss_accuracy", 
+        loss_acc_writer = ul.get_logger(name="loss_accuracy",
                                         log_path=os.path.join(self.save_path, 'loss_accuracy.log'))
         
         # early stop parameter
@@ -246,25 +285,25 @@ class TransformerTrainer(object):
         epoch_best = self.opt.starting_epoch
         n_epochs = self.opt.starting_epoch + self.opt.num_epoch
 
-        while epoch < n_epochs:
+        while epoch <= n_epochs:
             self.LOG.info("Starting EPOCH #%d", epoch)
             self.LOG.info("Training start")
             model.train()
 
-            acc_train, rec_loss_train, KL_div_train = self.train_epoch(dataloader_train, model,
-                                                      SimpleLossCompute(criterion, optim), device, vocab)
+            acc_train, rec_loss_train, KL_div_train = self.train_epoch(train_iter, model,
+                                                      LossCompute(criterion, optim), device, vocab)
             self.LOG.info("Training end")
             self.LOG.info("Validation start")
             
             model.eval()
 
-            acc_val, rec_loss_val, KL_div_val = self.validation_stat(dataloader_validation, model, 
-                                                SimpleLossCompute(criterion, None), device, vocab)
+            acc_val, rec_loss_val, KL_div_val = self.validation_stat(valid_iter, model, 
+                                                LossCompute(criterion, None), device, vocab)
 
             self.LOG.info("Validation end")
             self.LOG.info("Train:Acc/rec_loss/kl_div {:.6},{:.6},{:.6}  Validation:Acc/rec_loss/kl_div {:.6},{:.6},{:.6}".
                           format(acc_train, rec_loss_train, KL_div_train, acc_val, rec_loss_val, KL_div_val))
-                
+
             loss_acc_writer.info("Train:Acc/rec_loss/kl_div {:.6},{:.6},{:.6}  Validation:Acc/rec_loss/kl_div {:.6},{:.6},{:.6}".
                             format(acc_train, rec_loss_train, KL_div_train, acc_val, rec_loss_val, KL_div_val))
 

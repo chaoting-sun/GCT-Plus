@@ -4,10 +4,10 @@ import argparse
 import time
 import torch
 from Models import get_model
-from Process import *
+from processor import *
 import torch.nn.functional as F
 from Optim import CosineWithRestarts
-from Batch import create_masks
+from Process.batch import create_masks
 import pdb
 import dill as pickle
 import argparse

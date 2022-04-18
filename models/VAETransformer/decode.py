@@ -17,7 +17,7 @@ def decode(model, src, conds, max_len, type, use_cond2dec=False):
     z, _, _, _ = model.encode(src, conds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
-    break_condition = torch.zeros(src.shape[0], dtype=torch.bool)                          
+    break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
     
     # create a batch of starting tokens (1)
     ys = torch.ones(src.shape[0], 1, requires_grad=True).type_as(src.data)
