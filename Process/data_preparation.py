@@ -1,31 +1,53 @@
 import os
-import numpy as np
-import pandas as pd
-import dill as pickle
 import argparse
 from typing import Dict, Tuple, List
 
+import numpy as np
+import pandas as pd
+import dill as pickle
+import torch
 from torchtext.legacy import data
+
+
 from sklearn.model_selection import train_test_split
 
-from .tokenizer import moltokenize
-
 import utils.file as uf
+from .tokenizer import moltokenize
 import configuration.config_default as cfgd
-# import Process.property_change_encoder as pce
 import Process.batch as bt
 
-
-import torch
 
 SEED = 42
 SPLIT_RATIO = 0.8
 
+import moses
+from utils import compute_property as cp
 
-"""
-get data from different dataset (moses, GuacaMol, ...)
-return np.array each (sequence, conditions)
-"""
+def get_dataset(dataset_name: str, 
+                data_type='train')->np.array:
+    if dataset_name == 'moses':
+        dataset = moses.get_dataset(data_type)
+    elif dataset_name == 'guacamol':
+        pass
+    return dataset
+
+
+def get_property(dataset: List,
+                 lang_format='SMILES',
+                 propertylist=['logP', 'QED', 'tPSA', 'SA', 'SC', 'NP']
+                 )->pd.DataFrame:
+    """ Obtain a DataFrame of properties from a list of dataset. """
+
+    if lang_format is 'SMILES':
+        dataset = list(map(cp.MolFromSmiles, dataset))
+
+    data_dict = {}
+
+    for prop in propertylist:
+        data_dict[prop] = list(map(getattr(cp, prop), dataset))
+    
+    return pd.DataFrame.from_dict(data_dict)
+
 
 def read_data_from_path(data_path: Dict[str, str]
                         )-> Dict[str, np.array]:
@@ -51,10 +73,9 @@ def read_data_from_path(data_path: Dict[str, str]
     return dataset
 
 
-def create_seq_fields(data_type="train",
-                      lang_format="SMILES",
-                      weights_path=None
-                      )-> Tuple[data.field.Field, data.field.Field]:
+def create_fields(lang_format="SMILES",
+                  weights_path=None
+                  )-> Tuple[data.field.Field, data.field.Field]:
     """
     Create fields for source and target.
 
@@ -69,7 +90,7 @@ def create_seq_fields(data_type="train",
     if lang_format not in lang_supported:
         print('invalid src language: {0} supported languages: {1}'.format(lang_format, lang_supported))
 
-    print("loading molecule tokenizers...")
+    print(" - loading molecule tokenizers...")
 
     t_src = moltokenize()
     t_trg = moltokenize()
@@ -77,7 +98,7 @@ def create_seq_fields(data_type="train",
     SRC = data.Field(tokenize=t_src.tokenizer, batch_first=True)
     TRG = data.Field(tokenize=t_trg.tokenizer, batch_first=True, init_token='<sos>', eos_token='<eos>')
 
-    if data_type == 'train' and weights_path is not None:
+    if weights_path is not None:
         try:
             print("loading presaved fields...")
             SRC = pickle.load(open(f'{weights_path}/SRC.pkl', 'rb'))
@@ -85,166 +106,139 @@ def create_seq_fields(data_type="train",
         except:
             print("error opening SRC.pkl and TRG.pkl field files, please ensure they are in " + weights_path + "/")
             quit()
-
-#     return (SRC, TRG)
-
-
-# class PreprocessWrapper(object):
-#     def __init__(self, 
-#                  opt: argparse.Namespace, 
-#                  source: List[str], 
-#                  target: List[str], 
-#                  SRC: data.field.Field, 
-#                  TRG: data.field.Field):
-
-#         self.opt = opt
-#         self.SRC = SRC
-#         self.TRG = TRG
-#         self.source = source
-#         self.target = target
-        
-#         self.field_type = ["src", "trg"]
-
-#     def extend_fields(self):
-#         if self.opt.cond_dim > 0:
-#             self.fields.extend(self.opt.cond_list)
     
-#     def create_dataset(self):
-#         pass
-
-    # def create_dataloader(self):
-    #     pass
+    return (SRC, TRG)
 
 
-def mask_invalid_len_data(df, cond_dim, max_strlen):
-    if cond_dim
+def _extend_fields(data_fields, cond_list):
+    if len(cond_list) > 0:
+        for c in cond_list:
+            c_field = data.Field(use_vocab=False, sequential=False, 
+                                 batch_first=True, dtype=torch.float)
+            data_fields.append((c, c_field))
+    return data_fields
+
+
+def _get_iterator(dataset, batch_size, device, data_type):
+    if data_type == 'train':
+        return data.Iterator(dataset, batch_size=batch_size, 
+                             sort_key=lambda x: (len(x.src),len(x.trg)), 
+                             device=device, train=True, repeat=False, shuffle=True)
+    elif data_type in ('test', 'attn_test'):
+        return data.Iterator(dataset, batch_size=batch_size, 
+                             sort_key=lambda x: (len(x.src),len(x.trg)), 
+                             device=device, train=False, repeat=False, shuffle=True)
+
+
+def _mask_invalid_len_data(df, nconds, lang_format, max_strlen):
+    if lang_format == 'SMILES':
+        mask = (df['src'].str.len() + nconds < max_strlen) \
+             & (df['trg'].str.len() + nconds < max_strlen)
+    elif lang_format == 'SELFIES':
+        mask = (df['src'].str.count('][') + nconds < max_strlen) \
+             & (df['trg'].str.count('][') + nconds < max_strlen)
+    df = df.loc[mask]
+    return df
+
+
+
+import joblib
+from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn_pandas import DataFrameMapper
+
+
+def _transform_conditions(df_conds, scaler_path, new_scaler=False):
+    """
+    The following website provides a scaling methods on a DataFrame with several columns of features
+    ref: https://stackoverflow.com/questions/35723472/how-to-use-sklearn-fit-transform-with-pandas-and-return-dataframe-instead-of-num
+    """
+    if not new_scaler:
+        try:
+            print(" - load map_scaler in", scaler_path)
+            map_scaler = joblib.load(os.path.join(scaler_path, 'map_scaler.pkl'))
+        except:
+            exit("error:", os.path.join(scaler_path, 'map_scaler.pkl'), " file not found")
+    else:
+        print(" - create map scaler")
+        scaler = RobustScaler(quantile_range = (0.1,0.9))
+        # scaler = StandardScaler()
+        map_scaler = DataFrameMapper([(df_conds.columns, scaler)])
+        map_scaler.fit(df_conds.copy(), len(df_conds.columns))
+
+    scaled_features = map_scaler.transform(df_conds.copy())
+    df_scaled_features = pd.DataFrame(scaled_features, 
+                                      index=df_conds.index, columns=df_conds.columns)
+    
+    print(f"\n - cond original\n{df_conds.describe()}:\n")
+    print(f"\n - cond transformed\n{df_scaled_features.describe()}:\n")
+
+    if new_scaler:
+        print(" - dump map scaler in", scaler_path)
+        joblib.dump(map_scaler, open(os.path.join(scaler_path, 'map_scaler.pkl'), 'wb'))
+    return df_scaled_features
 
 
 def create_dataset(opt: argparse.Namespace,
-                   SRC: data.field.Field, 
-                   TRG: data.field.Field, 
                    tr_te: str,
-                   lang_format="SMILES"
+                   source: List[str],
+                   target: List[str],
+                   SRC: data.field.Field,
+                   TRG: data.field.Field,
+                   conds: pd.DataFrame,
                    )-> bt.MyIterator:
 
-    print("-------------------->", type(opt))
-
-    raw_data = {'src': [line for line in opt.source], 'trg': [line for line in opt.target]}
+    raw_data = {'src': [line for line in source], 'trg': [line for line in target]}
     df = pd.DataFrame(raw_data, columns=["src", "trg"])
-    if opt.cond_dim > 0:
-        df = pd.concat([df, opt.conds], axis=1)
 
-    # masking data longer than max_strlen
-
-    if lang_format == 'SMILES':
-        mask = (df['src'].str.len() + opt.cond_dim < opt.max_strlen) \
-             & (df['trg'].str.len() + opt.cond_dim < opt.max_strlen)
-    elif lang_format == 'SELFIES':
-        mask = (df['src'].str.count('][') + opt.cond_dim < opt.max_strlen) \
-             & (df['trg'].str.count('][') + opt.cond_dim < opt.max_strlen)
-    df = df.loc[mask]
-
-    data_path = os.path.join(opt.data_folder, './DB_temp.csv')
-
-    if tr_te == "train":
-        print("     - # of training samples:", len(df.index))
-        df.to_csv(data_path, index=False)
-    elif tr_te == "test":
-        print("     - # of test samples:", len(df.index))
-        df.to_csv(data_path, index=False)
-    elif tr_te == "attn_test":
-        print("     - # of attn_test samples:", len(df.index))
-        df = pd.concat([df]*80, ignore_index=True)
-        df.to_csv(data_path, index=False)
+    if opt.nconds > 0:
+        if tr_te == 'train' and not opt.load_scalar:
+            conds = _transform_conditions(conds, opt.data_path, new_scaler=True)
+        else:
+            conds = _transform_conditions(conds, opt.data_path, new_scaler=False)
+        df = pd.concat([df, conds], axis=1)
+    df = _mask_invalid_len_data(df, opt.nconds, opt.lang_format, opt.max_strlen)
 
     data_fields = [('src', SRC), ('trg', TRG)]
-    if opt.cond_dim > 0:
-        for c in opt.cond_list:
-            c_field = data.Field(use_vocab=False, sequential=False, batch_first=True, dtype=torch.float)
-            data_fields.append((c, c_field))
+    data_fields = _extend_fields(data_fields, opt.cond_list)
+    data_path = os.path.join(opt.data_path, 'DB_temp.csv')
+    df.to_csv(data_path, index=False)
+
+    dataset = data.TabularDataset(data_path, format='csv', fields=data_fields, skip_header=True)
+
+    # if opt.verbose:
+    #     print(f' - tokenized {tr_te} sample 0:', vars(dataset[0]))
 
     if tr_te == "train":
-        toklenList = [] 
-        dataset = data.TabularDataset(data_path, format='csv', fields=data_fields, skip_header=True)
-
+        toklenList = []
         for i in range(len(dataset)):
             toklenList.append(len(vars(dataset[i])['src']))
         df_toklenList = pd.DataFrame(toklenList, columns=["toklen"])
-        df_toklenList.to_csv(os.path.join(opt.data_folder, "toklen_list.csv"), index=False)
-        if opt.verbose == True:
-            print(" - tokenized training sample 0:", vars(dataset[0]))
-    elif tr_te == "test":
-        dataset = data.TabularDataset(data_path, format='csv', fields=data_fields, skip_header=True)
-        if opt.verbose == True:
-            print(" - tokenized testing sample 0:", vars(dataset[0]))
-    elif tr_te == "attn_test":
-        dataset = data.TabularDataset(data_path, format='csv', fields=data_fields, skip_header=True)
-        if opt.verbose == True:
-            print(" - tokenized attention testing sample 0:", vars(dataset[0]))
+        df_toklenList.to_csv(os.path.join(opt.data_path, "toklen_list.csv"), index=False)
+    
+    data_iter = _get_iterator(dataset, opt.batch_size, opt.device, data_type=tr_te)
+
+    # print(" - dict-key:", dataset[0].__dict__.keys())
+    # print(" - source:", dataset[0].src)
 
     if tr_te == "train":
-        if opt.load_weights is False:
+        if opt.load_field is False:
             print(" - building vocab from train data...")
             SRC.build_vocab(dataset)
-
-            if True:
-                print("The first sample in the dataset:")
-                print(" - dict-key:", dataset[0].__dict__.keys())
-                print(" - source:", dataset[0].src)
-
-            if opt.verbose == True:
-                print(' - vocab size of SRC: {}\n -> {}'.format(len(SRC.vocab), SRC.vocab.stoi))
             TRG.build_vocab(dataset)
-            if opt.verbose == True:
-                print(' - vocab size of TRG: {}\n -> {}'.format(len(TRG.vocab), TRG.vocab.stoi))
-            if opt.checkpoint > 0:
-                try:
-                    os.mkdir("weights")
-                except:
-                    print("weights folder already exists, run program with -load_weights weights to load them")
-                    quit()
-                pickle.dump(SRC, open('weights/SRC.pkl', 'wb'))
-                pickle.dump(TRG, open('weights/TRG.pkl', 'wb'))
+
+            field_folder = os.path.join(opt.data_path, opt.field_path)
+            os.makedirs(field_folder, exist_ok=True)
+            pickle.dump(SRC, open(os.path.join(field_folder, 'SRC.pkl'), 'wb'))
+            pickle.dump(TRG, open(os.path.join(field_folder, 'TRG.pkl'), 'wb'))
 
         opt.src_pad = SRC.vocab.stoi['<pad>']
         opt.trg_pad = TRG.vocab.stoi['<pad>']
         assert opt.src_pad == opt.trg_pad
-
-        data_iter = data.Iterator(dataset, batch_size=opt.batch_size, sort_key=lambda x: (len(x.src),len(x.trg)), 
-                                  device=opt.device, train=True, repeat=False, shuffle=True)
 
         opt.train_len = sum(1 for _ in data_iter)
 
     elif tr_te == "test":
         opt.test_len = sum(1 for _ in data_iter)
 
-    elif tr_te == "attn_test":
-        opt.src_pad = SRC.vocab.stoi['<pad>']
-        opt.trg_pad = TRG.vocab.stoi['<pad>']
-        opt.test_len = 1
-
     return data_iter
 
-
-# def split_data(input_transformations_path, LOG=None):
-#     """
-#     Split data into training, validation and test set, write to files
-#     :param input_transformations_path:L
-#     :return: dataframe
-#     """
-#     data = pd.read_csv(input_transformations_path, sep=",")
-#     if LOG:
-#         LOG.info("Read %s file" % input_transformations_path)
-
-#     train, test = train_test_split(
-#         data, test_size=0.1, random_state=SEED)
-#     train, validation = train_test_split(train, test_size=0.1, random_state=SEED)
-#     if LOG:
-#         LOG.info("Train, Validation, Test: %d, %d, %d" % (len(train), len(validation), len(test)))
-
-#     parent = uf.get_parent_dir(input_transformations_path)
-#     train.to_csv(os.path.join(parent, "train.csv"), index=False)
-#     validation.to_csv(os.path.join(parent, "validation.csv"), index=False)
-#     test.to_csv(os.path.join(parent, "test.csv"), index=False)
-
-#     return train, validation, test

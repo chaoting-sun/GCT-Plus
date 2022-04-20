@@ -18,17 +18,21 @@ def subsequent_mask(size):
 
 class Batch:
     "Object for holding a batch of data with mask during training."
-    def __init__(self, src, trg=None, pad=0):
+    def __init__(self, src, trg=None, conds=None, pad=0):
+        
         self.src = src
         # self.src_mask = (src != pad).unsqueeze(-2)
 
         if trg is not None:
-            self.trg = trg[:, :-1]
-            self.trg_y = trg[:, 1:]
+            self.trg = trg[:, :-1]  # the input of the model
+            self.trg_y = trg[:, 1:] # the expected output
 
             # self.trg_mask = self.make_std_mask(self.trg, pad)
             # self.ntokens = (self.trg_y != pad).data.sum()
     
+        if conds is not None:
+            self.conds = conds
+
     # @staticmethod
     # def make_std_mask(tgt, pad):
     #     "Create a mask to hide padding and future words."
@@ -85,9 +89,17 @@ def batch_size_fn(new, count, sofar):
     return max(src_elements, tgt_elements)
 
 
-def rebatch(pad_idx, batch):
+def rebatch(pad_idx, batch, cond_list):
     "Fix order in torchtext to match ours"
-    src, trg = batch.src.transpose(0, 1), batch.trg.transpose(0, 1)
-    print("rebatch function:")
-    print(batch.src.size(), batch.trg.size(), batch.logP, batch.QED, batch.tPSA)
-    return Batch(batch.src, batch.trg, pad_idx)
+    
+    if len(cond_list) > 0:
+        all_conds = []
+        for c in cond_list:
+            cond = getattr(batch, c)
+            cond = cond.view(-1, 1)
+            all_conds.append(cond)
+        cond_tensors = torch.cat(all_conds, dim=1)
+    else:
+        cond_tensors = None
+
+    return Batch(batch.src, batch.trg, cond_tensors, pad_idx)

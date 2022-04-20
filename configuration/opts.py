@@ -1,27 +1,46 @@
 """ Implementation of all available options """
 from __future__ import print_function
+import argparse
 
+model = 'TransVAE'
+mode = 'train'
 
-def general_opts(parser):
-    """ MAIN SETUP """
-    group = parser.add_argument_group('General_options')
-    group.add_argument('-cond_dim', type=int, default=3, help="Number of conditions")
-    group.add_argument('-cond_list', nargs='+', default=['logP', 'QED', 'tPSA'], help="Conditions")
-    group.add_argument('-odata_path', type=str, default='./data/moses', help='Path of the original data')
-    group.add_argument('-pdata_path', type=str, default='.', help='Path of the preprocessed data')
-    group.add_argument('-load_weights', action='store_true', help="load the weights of fields")
-    group.add_argument('-verbose', type=bool, default=True, help="If the results will be printed")
-    group.add_argument('-max_strlen', type=int, default=80, help="The expected max. string length")
+"""
+The following website is an useful reference for "parent parser".
+The "add_help=False" argument is necessary.
+ref: https://stackoverflow.com/questions/7498595/python-argparse-add-argument-to-multiple-subparsers/7498853#7498853
+"""
 
-    """ TRAINING SECTION """    
-    subparsers = parser.add_subparsers()
-    train_parser = subparsers.add_parser('training')
+def general_opts():
+    """ GENERAL SETUP """
+    general_parser = argparse.ArgumentParser(description="General setup")
+
+    general_parser.add_argument('-nconds', type=int, default=3, help="Number of conditions")
+    general_parser.add_argument('-cond_list', nargs='+', default=['logP', 'QED', 'tPSA'], help="Conditions")
+    general_parser.add_argument('-variational', action='store_true', help="if using variational")
+    general_parser.add_argument('-max_strlen', type=int, default=80, help="The expected max. string length")
+    general_parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
+    general_parser.add_argument('-dataset', type=str, default='moses', help='Path of the original data')
+    general_parser.add_argument('-data_path', type=str, default='./data/moses', help='Path of the preprocessed data')
+    
+    general_parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
+    general_parser.add_argument('-field_path', type=str, default="weights", help="weights of fields")
+    general_parser.add_argument('-load_scalar', action='store_true', help="load the weights of fields")
+    
+    general_parser.add_argument('-verbose', action='store_true', help="If the results will be printed")
+    
+    subparsers = general_parser.add_subparsers(help='Choose to train or test')
+
+    """ TRAIN/TEST """
+    parent_parser = argparse.ArgumentParser(add_help=False)
+
+    train_parser = subparsers.add_parser('training', parents=[parent_parser])
     train_opts(train_parser)
 
-    """ TESTING SECTION """
-    subparsers = parser.add_subparsers()
-    testing_parser = subparsers.add_parser('testing')
-    testing_opts(testing_parser)
+    test_parser = subparsers.add_parser('testing', parents=[parent_parser])
+    test_opts(test_parser)
+
+    return general_parser
 
 
 def train_opts(parser):
@@ -29,25 +48,23 @@ def train_opts(parser):
     # Common training options
     group = parser.add_argument_group('Training_options')
     group.add_argument('--batch_size', type=int, default=16, help='Batch size for training')
-    group.add_argument('--num-epoch', type=int, default=60, help='Number of training steps')
-    group.add_argument('--starting-epoch', type=int, default=1, help="Starting epoch for training")
+    group.add_argument('--num_epoch', type=int, default=60, help='Number of training steps')
+    group.add_argument('--starting_epoch', type=int, default=1, help="Starting epoch for training")
+    group.add_argument('--train_verbose', action='store_true', help="If the results will be printed")
 
     """ INPUT/OUTPUT """
     # Input output settings
     group = parser.add_argument_group('Input-Output')
-    group.add_argument('--data-path', required=True, help="Input data path")
-    group.add_argument('--save-directory', default='train', help="Result save directory")
+    group.add_argument('--save_directory', default='train', help="Result save directory")
     
     """ MODEL OPTIONS """ 
-    subparsers = parser.add_subparsers()
-    transformer_parser = subparsers.add_parser('transvae')
-    train_opts_transvae(transformer_parser)
+    group = parser.add_argument_group('TransVAE')
+    train_opts_transvae(group)
 
 
-def train_opts_transvae(parser):
+def train_opts_transvae(group):
     """ ARCHITECTURE OPTIONS """
     # Model architecture
-    group = parser.add_argument_group('Model')
     group.add_argument('-N', type=int, default=6, help="number of encoder/decoder")
     group.add_argument('-H', type=int, default=8, help="heads of attention")
     group.add_argument('-d_model', type=int, default=256, help="embedding dimension")
@@ -64,7 +81,6 @@ def train_opts_transvae(parser):
     group.add_argument('-kl_cycle', type=int, default=10)
     
     """ OPTIMIZATION OPTIONS """ 
-    group = parser.add_argument_group('Optimization')
     group.add_argument('--factor', type=float, default=1.0, help="see https://arxiv.org/pdf/1706.03762.pdf")
     group.add_argument('-warmup_steps', type=int, default=4000, help="Number of warmup steps for custom decay.")
     group.add_argument('-adam_beta1', type=float, default=0.9, help="The beta1 parameter for Adam optimizer")
@@ -72,7 +88,7 @@ def train_opts_transvae(parser):
     group.add_argument('-adam_eps', type=float, default=1e-9, help="The eps parameter for Adam optimizer")
 
 
-def testing_opts(parser):
+def test_opts(parser):
     """ INPUT/OUTPUT """
     group = parser.add_argument_group('Input-Output')
     group.add_argument('--data_path', required=True, help="Input data path")

@@ -56,9 +56,7 @@ def main():
 
     if opt.verbose:
         print("Create fields of source and target SMILES.")
-    SRC, TRG = pdp.create_seq_fields(opt.lang_format, None)
-
-    print(type(SRC))
+    SRC, TRG = pdp.create_fields(opt.lang_format, None)
 
     if opt.verbose:
         print("Get the dataset and its properties.")
@@ -78,11 +76,9 @@ def main():
 
     for i, batch in enumerate(train_iter):
         print("source:")
-        print(batch.src)
+        print(batch.src.size())
         print("target:")
-        print(batch.trg)
-        print("trg_y:")
-        print(batch.trg_y)
+        print(batch.trg.size())
         break
 
 
