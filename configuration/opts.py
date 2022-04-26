@@ -15,8 +15,11 @@ def general_opts():
     """ GENERAL SETUP """
     general_parser = argparse.ArgumentParser(description="General setup")
 
+    # general_parser.add_argument('-nconds', type=int, default=1, help="Number of conditions")
+    # general_parser.add_argument('-cond_list', nargs='+', default=['logP'], help="Conditions")
     general_parser.add_argument('-nconds', type=int, default=3, help="Number of conditions")
     general_parser.add_argument('-cond_list', nargs='+', default=['logP', 'QED', 'tPSA'], help="Conditions")
+    general_parser.add_argument('-n_jobs', type=int, default=1, help="number of CPU cores")
     general_parser.add_argument('-variational', action='store_true', help="if using variational")
     general_parser.add_argument('-max_strlen', type=int, default=80, help="The expected max. string length")
     general_parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
@@ -47,8 +50,8 @@ def train_opts(parser):
     """ TRAINING CHOICES """
     # Common training options
     group = parser.add_argument_group('Training_options')
-    group.add_argument('--batch_size', type=int, default=16, help='Batch size for training')
-    group.add_argument('--num_epoch', type=int, default=60, help='Number of training steps')
+    group.add_argument('--batch_size', type=int, default=256, help='Batch size for training')
+    group.add_argument('--num_epoch', type=int, default=30, help='Number of training steps')
     group.add_argument('--starting_epoch', type=int, default=1, help="Starting epoch for training")
     group.add_argument('--train_verbose', action='store_true', help="If the results will be printed")
 

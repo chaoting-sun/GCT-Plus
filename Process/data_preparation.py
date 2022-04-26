@@ -5,6 +5,7 @@ from typing import Dict, Tuple, List
 import numpy as np
 import pandas as pd
 import dill as pickle
+from multiprocessing import Pool
 import torch
 from torchtext.legacy import data
 
@@ -15,7 +16,6 @@ import utils.file as uf
 from .tokenizer import moltokenize
 import configuration.config_default as cfgd
 import Process.batch as bt
-
 
 SEED = 42
 SPLIT_RATIO = 0.8
@@ -34,17 +34,21 @@ def get_dataset(dataset_name: str,
 
 def get_property(dataset: List,
                  lang_format='SMILES',
-                 propertylist=['logP', 'QED', 'tPSA', 'SA', 'SC', 'NP']
+                 propertylist=['logP', 'QED', 'tPSA', 'SA', 'SC', 'NP'],
+                 n_jobs=1
                  )->pd.DataFrame:
     """ Obtain a DataFrame of properties from a list of dataset. """
 
+    pool = Pool(n_jobs)
+    
+
     if lang_format is 'SMILES':
-        dataset = list(map(cp.MolFromSmiles, dataset))
+        dataset = list(pool.map(cp.MolFromSmiles, dataset))
 
     data_dict = {}
 
     for prop in propertylist:
-        data_dict[prop] = list(map(getattr(cp, prop), dataset))
+        data_dict[prop] = list(pool.map(getattr(cp, prop), dataset))
     
     return pd.DataFrame.from_dict(data_dict)
 

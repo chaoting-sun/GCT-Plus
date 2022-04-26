@@ -30,9 +30,10 @@ class Generator(nn.Module):
 
 class Encoder(nn.Module):
     "Pass N encoder layers, followed by a layernorm"
-    def __init__(self, vocab_size, d_model, N, h, dff, latent_dim, nconds, dropout):
+    def __init__(self, vocab_size, d_model, N, h, dff, latent_dim, nconds, dropout, variational=True):
         super(Encoder, self).__init__()
         self.N = N
+        self.variational = variational
         # input embedding layers
         self.embed_sentence = Embeddings(d_model, vocab_size)
         self.embed_cond2enc = nn.Linear(nconds, d_model*nconds) # nn.Linear() supports TensorFloat32
@@ -65,9 +66,12 @@ class Encoder(nn.Module):
         return self.sampling(mu, log_var), mu, log_var, q_k_enc
 
     def sampling(self, mu, log_var):
-        std = torch.exp(0.5*log_var)
-        eps = torch.randn_like(std)
-        return eps.mul(std).add(mu)
+        if self.variational:
+            std = torch.exp(0.5*log_var)
+            eps = torch.randn_like(std)
+            return eps.mul(std).add(mu)
+        else:
+            return mu
 
 
 class Decoder(nn.Module):
@@ -114,8 +118,8 @@ class Decoder(nn.Module):
     
 
 class Transformer(nn.Module):
-    def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, 
-                 latent_dim=64, dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False):
+    def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
+                 dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
         super(Transformer, self).__init__()
         # settings
         self.nconds = nconds
@@ -128,9 +132,10 @@ class Transformer(nn.Module):
         # self.tgt_embed = nn.Sequential(Embeddings(d_model, trg_vocab), PositionalEncoding(d_model, dropout))
         
         # encoder/decoder
-        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim, nconds, dropout)
-        self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim, nconds, dropout, 
-                               use_cond2dec, use_cond2lat)
+        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim, 
+                               nconds, dropout, variational)
+        self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
+                               nconds, dropout, use_cond2dec, use_cond2lat)
         # other layers
         if self.use_cond2dec == True:
             self.prop_fc = nn.Linear(trg_vocab, 1)
@@ -164,8 +169,6 @@ class Transformer(nn.Module):
     def decode(self, trg, z, conds, src_mask, trg_mask):
         return self.decoder(trg, z, conds, src_mask, trg_mask)
 
-    # def sample(self):
-
 
 def build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H, 
                       latent_dim, dropout, nconds, use_cond2dec, use_cond2lat):
@@ -177,10 +180,9 @@ def load_from_file(file_path):
     # Load model
     checkpoint = torch.load(file_path, map_location='cuda:0')
     # checkpoint = torch.load(file_path) # change
-    para_dict = checkpoint['model_parameters']
-    model = Transformer(para_dict['vocab_size'], para_dict['vocab_size'], 
-                        para_dict['N'], para_dict['d_model'], para_dict['d_ff'], para_dict['H'], 
-                        para_dict['latent_dim'], para_dict['dropout'], 
-                        para_dict['nconds'], para_dict['use_cond2dec'], para_dict['use_cond2lat'])
+    params = checkpoint['model_parameters']
+    model = Transformer(params['vocab_size'], params['vocab_size'], params['N'], params['d_model'],
+                        params['d_ff'], params['H'], params['latent_dim'], params['dropout'], params['nconds'], 
+                        params['use_cond2dec'], params['use_cond2lat'], params['variational'])
     model.load_state_dict(checkpoint['model_state_dict'])
     return model

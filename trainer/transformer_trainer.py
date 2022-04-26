@@ -10,7 +10,7 @@ import configuration.config_default as cfgd
 
 import utils.log as ul
 import utils.file as uf
-import utils.torch_util as ut
+import utils.gpu as ug
 import models.dataset as md
 import Process.vocabulary as mv
 
@@ -21,7 +21,10 @@ from models.VAETransformer.loss import LossCompute, Criterion, KLAnnealer
 import Process.data_preparation as pdp
 import Process.batch as pb
 from itertools import tee
+import torch.nn as nn
 
+import time
+from datetime import timedelta
 
 DEBUG = False
 
@@ -37,14 +40,27 @@ class TransformerTrainer(object):
         self.LOG = ul.get_logger(name="train_model", log_path=os.path.join(self.save_path, 'train_model.log'))
         self.LOG.info(opt)
 
-    
+
+    def compute_num_parameters(self, model):
+        # https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
+        pytorch_total_params = sum(p.numel() for p in model.parameters())
+        print("Pytorch total parameters:", pytorch_total_params)
+        pytorch_total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print("Pytorch total trainable parameters:", pytorch_total_trainable_params)
+
+
     def get_dataIterator(self, data_type, SRC=None, TRG=None):
         if self.opt.dataset == 'moses' and data_type == 'validation':
             data_type = 'test'
 
         dataset = pdp.get_dataset(self.opt.dataset, data_type)
-        
-        dataset = dataset[:1000]
+
+        if data_type == 'train':
+            dataset = dataset[:80]
+        else:
+            dataset = dataset[:80]
+
+        print(" - amount:", len(dataset))
 
         if self.opt.nconds > 0:
             df_conds = pdp.get_property(dataset, self.opt.lang_format, self.opt.cond_list)
@@ -134,9 +150,6 @@ class TransformerTrainer(object):
             total_rec_loss += float(rec_loss)
             total_kl_div += float(kl_div)
 
-            if self.opt.train_verbose:
-                print('The model decodes to SMILES.')
-
             smiles = decode.decode(model, src, conds, self.max_len_trg, 
                                    type='greedy', use_cond2dec=True)
 
@@ -225,6 +238,7 @@ class TransformerTrainer(object):
             'nconds': self.opt.nconds,
             'use_cond2dec': self.opt.use_cond2dec,
             'use_cond2lat': self.opt.use_cond2lat,
+            'variational': self.opt.variational,
             'src_vocab_size': src_vocab_size,
             'trg_vocab_size': trg_vocab_size
         }
@@ -246,21 +260,43 @@ class TransformerTrainer(object):
         if DEBUG:
             torch.set_printoptions(threshold=10_000)
 
-        self.opt.device = ut.allocate_gpu()
+        # self.opt.distributed = int(os.environ['WORLD_SIZE'])
+
+        # print("@ distributed ? ", self.opt.distributed)
+        # if self.opt.distributed > 1:
+        #     ug.initialize_process_group(local_rank=os.eviron['LOCAL_RANK'])
+        # print(f"local rank {self.opt.local_rank} exits.")
+
+        self.opt.device = ug.allocate_gpu()
 
         if self.opt.train_verbose:
             print("\n - get training iterator...")
 
+        start = time.time()
+
         train_iterator, SRC, TRG = self.get_dataIterator('train', None, None)
+
+        elipsed_time = time.time() - start
+
+        print(" - preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
 
         if self.opt.train_verbose:
             print("\n - get validation iterator...")
 
+        start = time.time()
+
         valid_iterator, _, _ = self.get_dataIterator('validation', SRC, TRG)
+
+        elipsed_time = time.time() - start
+
+        print(" - preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
+
+        model = self.get_model(len(SRC.vocab), len(TRG.vocab))
+
+        self.compute_num_parameters(model)
 
         exit(0)
 
-        model = self.get_model(len(SRC.vocab), len(TRG.vocab))
         optim = self.get_optimization(model)
         criterion = Criterion(size=len(TRG.vocab), padding_idx=self.pad_idx,
                               smoothing=self.opt.label_smoothing)

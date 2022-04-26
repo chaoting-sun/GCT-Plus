@@ -7,7 +7,7 @@ import pandas as pd
 
 import utils.log as ul
 import models.dataset as md
-import utils.torch_util as ut
+import utils.gpu as ut
 import configuration.opts as opts
 import Process.vocabulary as mv
 import configuration.config_default as cfgd
