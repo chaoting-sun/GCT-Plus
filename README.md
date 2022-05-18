@@ -1,2 +1,2 @@
 # Molecular-Optimization: Conditional Variational Transformer
-Utilize CVAE based Transformer.
+This is a conditional variational autoencoder based Transformer.
