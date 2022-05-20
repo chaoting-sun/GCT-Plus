@@ -70,11 +70,11 @@ def train_opts_transvae(group):
     # Model architecture
     group.add_argument('-N', type=int, default=6, help="number of encoder/decoder")
     group.add_argument('-H', type=int, default=8, help="heads of attention")
-    group.add_argument('-d_model', type=int, default=256, help="embedding dimension")
+    group.add_argument('-d_model', type=int, default=512, help="embedding dimension")
     group.add_argument('-d_ff', type=int, default=2048, help="dimension in feed forward network")
     group.add_argument('-latent_dim', type=int, default=128)
-    group.add_argument('-use_cond2dec', type=bool, default=True)
-    group.add_argument('-use_cond2lat', type=bool, default=False)
+    group.add_argument('-use_cond2dec', type=bool, default=False)
+    group.add_argument('-use_cond2lat', type=bool, default=True)
     # Regularization
     group.add_argument('--dropout', type=float, default=0.1, help="Dropout probability")
     group.add_argument('--label_smoothing', type=float, default=0.0, help="see: https://arxiv.org/abs/1512.00567")

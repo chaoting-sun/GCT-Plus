@@ -39,7 +39,7 @@ class Encoder(nn.Module):
         self.embed_cond2enc = nn.Linear(nconds, d_model*nconds) # nn.Linear() supports TensorFloat32
         # other layers
         self.norm = Norm(d_model)
-        self.pe = PositionalEncoding(d_model, dropout)
+        self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.layers = get_clones(EncoderLayer(h, d_model, dff, dropout), N)
         # sampling mean and var
         self.fc_mu = nn.Linear(d_model, latent_dim)
@@ -88,20 +88,23 @@ class Decoder(nn.Module):
             self.embed_cond2dec = nn.Linear(nconds, d_model*nconds) #concat to trg_input
         if self.use_cond2lat == True:
             self.embed_cond2lat = nn.Linear(nconds, d_model*nconds) #concat to trg_input
-        self.pe = PositionalEncoding(d_model, dropout)
+        self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.fc_z = nn.Linear(latent_dim, d_model)
         self.layers = get_clones(DecoderLayer(h, d_model, dff, dropout, use_cond2dec, use_cond2lat), N)
         self.norm = Norm(d_model)
 
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
         x = self.embed(trg)
+
         e_outputs = self.fc_z(e_outputs)
+
         if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
         if self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
+
         x = self.pe(x)
 
         for i in range(self.N):
@@ -126,11 +129,6 @@ class Transformer(nn.Module):
         self.use_cond2dec = use_cond2dec
         self.use_cond2lat = use_cond2lat
         
-        # source/target embedding
-        # self.cond_embed = nn.Linear(nconds, d_model*nconds)
-        # self.src_embed = nn.Sequential(Embeddings(d_model, src_vocab), PositionalEncoding(d_model, dropout))
-        # self.tgt_embed = nn.Sequential(Embeddings(d_model, trg_vocab), PositionalEncoding(d_model, dropout))
-        
         # encoder/decoder
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim, 
                                nconds, dropout, variational)
@@ -140,7 +138,9 @@ class Transformer(nn.Module):
         if self.use_cond2dec == True:
             self.prop_fc = nn.Linear(trg_vocab, 1)
         # generator
-        self.generator = Generator(d_model, trg_vocab)
+        # self.generator = Generator(d_model, trg_vocab)
+        self.out = nn.Linear(d_model, trg_vocab)
+
         # initialize parameters
         self._reset_parameters()
     
@@ -154,7 +154,10 @@ class Transformer(nn.Module):
 
         z, mu, log_var, q_k_enc = self.encode(src, conds, src_mask)
         d_output, q_k_dec1, q_k_dec2 = self.decode(trg, z, conds, src_mask, trg_mask)
-        output = self.generator(d_output)
+        
+        # output = self.generator(d_output)
+        output = self.out(d_output)
+
         if self.use_cond2dec == True:
             output_prop = self.prop_fc(output[:, :self.nconds, :])
             output_mol = output[:, self.nconds:, :]

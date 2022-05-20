@@ -7,13 +7,13 @@ import pandas as pd
 import dill as pickle
 from multiprocessing import Pool
 import torch
-from torchtext.legacy import data
-
+# from torchtext.legacy import data
+from torchtext import data
 
 from sklearn.model_selection import train_test_split
 
 import utils.file as uf
-from .tokenizer import moltokenize
+from Tokenize import moltokenize
 import configuration.config_default as cfgd
 import Process.batch as bt
 
@@ -42,7 +42,7 @@ def get_property(dataset: List,
     pool = Pool(n_jobs)
     
 
-    if lang_format is 'SMILES':
+    if lang_format == 'SMILES':
         dataset = list(pool.map(cp.MolFromSmiles, dataset))
 
     data_dict = {}
@@ -92,9 +92,9 @@ def create_fields(lang_format="SMILES",
     lang_supported = ['SMILES', 'SELFIES']
 
     if lang_format not in lang_supported:
-        print('invalid src language: {0} supported languages: {1}'.format(lang_format, lang_supported))
+        print('- invalid src language: {0} supported languages: {1}'.format(lang_format, lang_supported))
 
-    print(" - loading molecule tokenizers...")
+    print("- loading molecule tokenizers...")
 
     t_src = moltokenize()
     t_trg = moltokenize()
@@ -104,11 +104,11 @@ def create_fields(lang_format="SMILES",
 
     if weights_path is not None:
         try:
-            print("loading presaved fields...")
+            print("- loading presaved fields...")
             SRC = pickle.load(open(f'{weights_path}/SRC.pkl', 'rb'))
             TRG = pickle.load(open(f'{weights_path}/TRG.pkl', 'rb'))
         except:
-            print("error opening SRC.pkl and TRG.pkl field files, please ensure they are in " + weights_path + "/")
+            print("- error opening SRC.pkl and TRG.pkl field files, please ensure they are in " + weights_path + "/")
             quit()
     
     return (SRC, TRG)
