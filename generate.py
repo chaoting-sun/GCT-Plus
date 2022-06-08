@@ -11,7 +11,7 @@ import utils.gpu as ut
 import configuration.opts as opts
 import Process.vocabulary as mv
 import configuration.config_default as cfgd
-from models.VAETransformer import decode, transformer
+from models.cvae_Transformer import decode, transformer
 
 import torch
 

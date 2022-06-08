@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 
-from models.VAETransformer.subsequent_mask import subsequent_mask
+from models.cvae_Transformer.subsequent_mask import subsequent_mask
 
 # torch function:
 # torch.max(input, dim): return (max, max_indices)

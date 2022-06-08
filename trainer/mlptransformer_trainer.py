@@ -18,6 +18,8 @@ from models.cvae_Transformer import decode, transformer, mask
 from models.cvae_Transformer.noam_opt import NoamOpt as moptim
 from models.cvae_Transformer.loss import LossCompute, Criterion, KLAnnealer
 
+from models.mlpcvae_Transformer import mlptransformer
+
 import Process.data_preparation as pdp
 import Process.batch as pb
 from itertools import tee
@@ -27,6 +29,64 @@ import time
 from datetime import timedelta
 
 DEBUG = False
+
+
+def get_dataIterator(opt, data_type, SRC=None, TRG=None):
+    if opt.dataset == 'moses' and data_type == 'validation':
+        data_type = 'test'
+
+    dataset = pdp.get_dataset(opt.dataset, data_type)
+
+    if data_type == 'train':
+        dataset = dataset[:80]
+    else:
+        dataset = dataset[:80]
+
+    print(" - amount:", len(dataset))
+
+    if opt.nconds > 0:
+        df_conds = pdp.get_property(dataset, opt.lang_format, opt.cond_list)
+    else:
+        df_conds = None
+
+    if data_type == 'train':
+        if opt.load_field:
+            SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
+        else:
+            SRC, TRG = pdp.create_fields(opt.lang_format, None)
+    elif data_type == 'validation':
+            SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
+
+    data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, SRC, TRG, df_conds)
+
+    return data_iter, SRC, TRG
+
+
+def get_dataset_iterator(opt):
+    if opt.train_verbose:
+        print("\n - get training iterator...")
+    start = time.time()
+    train_iterator, SRC, TRG = get_dataIterator(opt, 'train', None, None)
+    elipsed_time = time.time() - start
+    print(" - preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
+
+    if opt.train_verbose:
+        print("\n - get validation iterator...")
+    start = time.time()
+    valid_iterator, _, _ = get_dataIterator('validation', SRC, TRG)
+    elipsed_time = time.time() - start
+    print(" - preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
+
+    return train_iterator, valid_iterator, SRC, TRG
+
+
+def show_num_model_parameters(model):
+    # https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
+    pytorch_total_params = sum(p.numel() for p in model.parameters())
+    print("Pytorch total parameters:", pytorch_total_params)
+    pytorch_total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print("Pytorch total trainable parameters:", pytorch_total_trainable_params)
+
 
 class TransformerTrainer(object):
 
@@ -41,61 +101,37 @@ class TransformerTrainer(object):
         self.LOG.info(opt)
 
 
-    def compute_num_parameters(self, model):
-        # https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
-        pytorch_total_params = sum(p.numel() for p in model.parameters())
-        print("Pytorch total parameters:", pytorch_total_params)
-        pytorch_total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print("Pytorch total trainable parameters:", pytorch_total_trainable_params)
-
-
-    def get_dataIterator(self, data_type, SRC=None, TRG=None):
-        if self.opt.dataset == 'moses' and data_type == 'validation':
-            data_type = 'test'
-
-        dataset = pdp.get_dataset(self.opt.dataset, data_type)
-
-        if data_type == 'train':
-            dataset = dataset[:80]
-        else:
-            dataset = dataset[:80]
-
-        print(" - amount:", len(dataset))
-
-        if self.opt.nconds > 0:
-            df_conds = pdp.get_property(dataset, self.opt.lang_format, self.opt.cond_list)
-        else:
-            df_conds = None
-
-        if data_type == 'train':
-            if self.opt.load_field:
-                SRC, TRG = pdp.create_fields(self.opt.lang_format, self.opt.field_path)
-            else:
-                SRC, TRG = pdp.create_fields(self.opt.lang_format, None)
-        elif data_type == 'validation':
-                SRC, TRG = pdp.create_fields(self.opt.lang_format, self.opt.field_path)
-
-        data_iter = pdp.create_dataset(self.opt, data_type, dataset, dataset, SRC, TRG, df_conds)
-
-        return data_iter, SRC, TRG
-
-
     def get_dataloader(self, data_iter):
         """ return a data generator """
         return (pb.rebatch(self.opt.src_pad, b, self.opt.cond_list) for b in data_iter)
 
 
-    def get_model(self, src_len_tokens, trg_len_tokens):
+    def get_model(self, src_len_tokens, trg_len_tokens, train_stage=2):
         # build a model from scratch or load a model from a given epoch
-
-        if self.opt.starting_epoch == 1:
-            model = transformer.build_transformer(src_len_tokens, trg_len_tokens,
-                                                  self.opt.N, self.opt.d_model, self.opt.d_ff, 
-                                                  self.opt.H, self.opt.latent_dim, self.opt.dropout, 
-                                                  self.opt.nconds, use_cond2dec=True, use_cond2lat=False)
-        else:
+        
+        if train_stage == 1:
+            if self.opt.starting_epoch == 1:
+                model = transformer.build_transformer(src_len_tokens, trg_len_tokens,
+                                                      self.opt.N, self.opt.d_model, self.opt.d_ff, 
+                                                      self.opt.H, self.opt.latent_dim, self.opt.dropout, 
+                                                      self.opt.nconds, self.opt.use_cond2dec, self.opt.use_cond2lat)
+            else:
+                file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
+                model = transformer.load_from_file(file_path)        
+        
+        elif train_stage == 2:
             file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
-            model = transformer.load_from_file(file_path)
+            model = transformer.load_from_file(file_path)        
+            
+            if self.opt.starting_epoch == 1:
+                model = transformer.build_transformer(model, src_len_tokens, trg_len_tokens,
+                                                      self.opt.N, self.opt.d_model, self.opt.d_ff, 
+                                                      self.opt.H, self.opt.latent_dim, self.opt.dropout, 
+                                                      self.opt.nconds, self.opt.use_cond2dec, self.opt.use_cond2lat)
+            else:
+                file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.mlp_starting_epoch-1}.pt')
+                model = mlptransformer.load_from_file(model, file_path)
+                
         model.to(self.opt.device)
         return model
 
@@ -268,32 +304,10 @@ class TransformerTrainer(object):
         # print(f"local rank {self.opt.local_rank} exits.")
 
         self.opt.device = ug.allocate_gpu()
-
-        if self.opt.train_verbose:
-            print("\n - get training iterator...")
-
-        start = time.time()
-
-        train_iterator, SRC, TRG = self.get_dataIterator('train', None, None)
-
-        elipsed_time = time.time() - start
-
-        print(" - preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
-
-        if self.opt.train_verbose:
-            print("\n - get validation iterator...")
-
-        start = time.time()
-
-        valid_iterator, _, _ = self.get_dataIterator('validation', SRC, TRG)
-
-        elipsed_time = time.time() - start
-
-        print(" - preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
-
+        train_iterator, valid_iterator, SRC, TRG = get_dataset_iterator(self.opt)
         model = self.get_model(len(SRC.vocab), len(TRG.vocab))
 
-        self.compute_num_parameters(model)
+        show_num_model_parameters(model)
 
         exit(0)
 

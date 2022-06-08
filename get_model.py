@@ -7,7 +7,7 @@ import torch
 import joblib
 import dill as pickle
 
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors, QED
 
 # from torchtext.legacy import data
@@ -55,9 +55,10 @@ def tokenlen_gen_from_data_distribution(data, nBins, size):
     return tokenlen_list
 
 
-def gen_mol(cond, model, opt, SRC, TRG, toklen, z):
-    model.eval()
-    robustScaler = joblib.load('molGCT/scaler.pkl')
+def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
+    # model.eval()
+    if scaler is None:
+        scaler = joblib.load('molGCT/scaler.pkl')
     #robustScaler = pickle.load(open(f'{opt.load_weights}/scaler.pkl', "rb"))
     if opt.conds == 'm':
         cond = cond.reshape(1, -1)
@@ -68,7 +69,7 @@ def gen_mol(cond, model, opt, SRC, TRG, toklen, z):
     else:
         cond = np.array(cond.split(',')[:-1]).reshape(1, -1)
 
-    cond = robustScaler.transform(cond)
+    cond = scaler.transform(cond)
     cond = Variable(torch.Tensor(cond))
 
     sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z)
@@ -229,7 +230,6 @@ def get_model(opt, SRC, TRG):
                                           opt.nconds, use_cond2dec=False, use_cond2lat=True)
     model.load_state_dict(torch.load(opt.molgct_model))
     model = model.to(opt.device)
-    model.eval()
     return model
 
 
@@ -248,21 +248,24 @@ def get_mol_prop(mol):
 
 
 
-def sample_molecule(opt, toklen_data, model, SRC, TRG):
+def sample_molecule(opt, toklen_data, model, SRC, TRG, scaler):
     toklen = int(tokenlen_gen_from_data_distribution(data=toklen_data, nBins=int(toklen_data.max() - toklen_data.min()), size=1)) + 3 # +3 due to cond2enc
     z = torch.Tensor(np.random.normal(size=(1, toklen, opt.latent_dim)))
 
     molecule = []
     for cond in opt.conds:
-        molecule.append(gen_mol(cond + ',', model, opt, SRC, TRG, toklen, z))
+        molecule.append(gen_mol(cond + ',', model, opt, SRC, TRG, toklen, z, scaler))
     toklen_gen = molecule[0].count(" ") + 1
     molecule = ''.join(molecule).replace(" ", "")
     return molecule, toklen_gen, toklen
 
 
+
+
 def inference():
     # fix_random_seed()
 
+    """ Options """
     parser = opts.general_opts()
     opt = parser.parse_args()
 
@@ -270,99 +273,97 @@ def inference():
     opt.k = 4
     opt.molgct_model = 'molGCT/molgct.pt'
     opt.toklen_list = 'data/moses/toklen_list.csv'
+    
+    os.makedirs('molGCT/inference', exist_ok=True)
 
+    total_num_each = 100 # 100
+    num_samples_each = 5
+    tol_failure_num = 500 # 300 # tolerated failure number
+
+    logp_lb = 0.03
+    logp_ub = 4.97
+    tpsa_lb = 17.92
+    tpsa_ub = 112.83
+    qed_lb = 0.58
+    qed_ub = 0.95
+
+    logp_values = np.linspace(logp_lb, logp_ub, num=num_samples_each)
+    tpsa_values = np.linspace(tpsa_lb, tpsa_ub, num=num_samples_each)
+    qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
+
+    robustScaler = joblib.load('molGCT/scaler.pkl')
+
+    """ Tools """
     SRC, TRG = dp.create_fields(weights_path='molGCT')
     model = get_model(opt, SRC, TRG)
     toklen_data = pd.read_csv(opt.toklen_list)
 
-    total_samples = 20
-    num_samples_each = 10
+    model.eval()
+    RDLogger.DisableLog('rdApp.*') # disable error from RDlLo
+    
+    for logp in logp_values:
+        for tpsa in tpsa_values:
+            for qed in qed_values:
+                prediction_file = "molGCT/inference/{:.2f}_{:.2f}_{:.2f}.txt".format(logp, tpsa, qed)
+                with open(prediction_file, 'w', buffering=5) as sample_file:
+                    sample_file.write("logp_t\ttpsa_t\tqed_t\tlogp_p\ttpsa_p\tqed_p\tsmiles\n")
+                    print("\n[TARGET]>>> logp: {}\ttpsa: {}\tqed: {}".format(logp, tpsa, qed))
+                    opt.conds = ['{}, {}, {}'.format(logp, tpsa, qed)]
 
-    logP_t_list = np.linspace(0.03, 4.97, num=num_samples_each)
-    tPSA_t_list = np.linspace(17.92, 112.83, num=num_samples_each)
-    QED_t_list = np.linspace(0.58, 0.95, num=num_samples_each)
+                    sample_num = 0
+                    valid_num = 0
+                    valid_logp = np.zeros(total_num_each)
+                    valid_tpsa = np.zeros(total_num_each)
+                    valid_qed = np.zeros(total_num_each)
+                    valid_smi = []
 
-    max_num_failure = 100
-
-    with open(f'test/err_each{num_samples_each}_samp{total_samples}.txt', 'w', buffering=1) as my_file:
-        my_file.write("logp\ttpsa\tqed\tlogperr\ttpsaerr\tqederr\tnum_success\tsuccess_rate\n")
-        for l in logP_t_list:
-            for t in tPSA_t_list:
-                for q in QED_t_list:
-
-                    print(f'----- {l} {t} {q} -----')
-                    opt.conds = ['{}, {}, {}'.format(l, t, q)] 
-
-                    logp_list, tpsa_list, qed_list = np.zeros(total_samples), \
-                                                    np.zeros(total_samples), \
-                                                    np.zeros(total_samples)
-                    num_samples = 0
-                    num_successes = 0
-
-                    while num_successes < total_samples:
-                        smiles, toklen_gen, toklen = sample_molecule(opt, toklen_data, model, SRC, TRG)
-
+                    while valid_num < total_num_each:
+                        sample_num += 1
+                        smiles, _, _ = sample_molecule(opt, toklen_data, model, SRC, TRG, robustScaler)
                         molecule = Chem.MolFromSmiles(smiles)
+
                         if molecule is not None:
-                            logP_v, tPSA_v, QED_v = get_mol_prop(molecule)
+                            smiles = Chem.MolToSmiles(molecule)
 
-                            logp_list[num_successes] = logP_v - l
-                            tpsa_list[num_successes] = tPSA_v - t
-                            qed_list[num_successes] = QED_v - q
+                            logp_p, tpsa_p, qed_p = get_mol_prop(molecule)
+                            valid_logp[valid_num] = logp_p
+                            valid_tpsa[valid_num] = tpsa_p
+                            valid_qed[valid_num] = qed_p
+                            valid_smi.append(smiles)
+                            valid_num += 1
 
-                            num_successes += 1
-                        num_samples += 1
+                            line = "{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{}".format(
+                                   logp, tpsa, qed, logp_p, tpsa_p, qed_p, smiles)
+                            print(f'[sample{sample_num}]>>> '+line)
+                            sample_file.write(line+'\n')
+                        else:
+                            print(f'[sample{sample_num}]>>> sample failed')
 
-                        if num_samples == max_num_failure:
+                        if sample_num == tol_failure_num:
                             break
 
-                    logp_err = logp_list[:num_successes].mean()
-                    tpsa_err = tpsa_list[:num_successes].mean()
-                    qed_err = qed_list[:num_successes].mean()
+                    mean_file = "molGCT/inference/mean_{:.2f}_{:.2f}_{:.2f}.txt".format(logp, tpsa, qed)
+                    with open(mean_file, 'w') as mean_file:
+                        logp_m = np.average(valid_logp[:valid_num])
+                        tpsa_m = np.average(valid_tpsa[:valid_num])
+                        qed_m = np.average(valid_qed[:valid_num])
+                        
+                        valid_smi = np.array(valid_smi)
+                        unique_smi = np.unique(valid_smi)
 
-                    if num_samples == max_num_failure:
-                        success_rate = 0
-                    else:
-                        success_rate = num_successes / num_samples * 1.0 * 100
+                        if sample_num < tol_failure_num:
+                            success_rate = valid_num / sample_num * 100.0
+                        else:
+                            success_rate = 0
 
-                    my_file.write("{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.2f}\t{:.2f}\n"
-                                  .format(l, t, q, logp_err, tpsa_err, qed_err, num_successes, success_rate))
-    return
-
-
-    logP_t = get_rand_number(0.03, 4.97)
-    tPSA_t = get_rand_number(17.92, 112.83)
-    QED_t = get_rand_number(0.58, 0.95)
-
-    logp_list, tpsa_list, qed_list, molecule_list = [], [], [], []
-
-    total_samples = 10
-    num_samples = 0
-    num_successes = 0
-
-    while num_samples < total_samples:
-        opt.conds = ['{}, {}, {}'.format(logP_t, tPSA_t, QED_t)] 
-        smiles, toklen_gen, toklen = sample_molecule(opt, toklen_data, model, SRC, TRG)
-
-        molecule = Chem.MolFromSmiles(smiles)
-        if molecule is not None:
-            logP_v, tPSA_v, QED_v = get_mol_prop(molecule)
-
-            logp_list.append(logP_v)
-            tpsa_list.append(tPSA_v)
-            qed_list.append(QED_v)
-            molecule_list.append(smiles)
-
-            num_samples += 1
-            num_successes += 1
-
-    print('Successful rate: {:.0}%'.format(num_successes / num_samples * 1.0 * 100))
-    print('Target -  logp: {:.2}, tPSA: {:.2}, QED: {:.2}'.format(logP_t, tPSA_t, QED_t))
-    print('----------------------------------------------------------------------')
-    for i in range(total_samples):
-        print('Predict - logp: {:.2}, tPSA: {:.2}, QED: {:.2}\tsmiles: {}'
-              .format(logp_list[i], tpsa_list[i], qed_list[i],  molecule_list[i]))
-
+                        header = "logp_t\ttpsa_t\tqed_t\tlogp_p\ttpsa_p\tqed_p\tvalid\tunique\tr_success"
+                        line = "{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:.3f}\t{:d}\t{:d}\t{:.2f}".format(
+                            logp, tpsa, qed, logp_m, tpsa_m, qed_m, len(valid_smi), len(unique_smi), success_rate)
+                        
+                        print(header)
+                        print(line)
+                        mean_file.write(header+'\n')
+                        mean_file.write(line+'\n')
 
 
 if __name__ == "__main__":

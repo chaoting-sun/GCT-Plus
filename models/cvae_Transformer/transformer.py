@@ -130,7 +130,7 @@ class Transformer(nn.Module):
         self.use_cond2lat = use_cond2lat
         
         # encoder/decoder
-        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim, 
+        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)

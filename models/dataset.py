@@ -10,7 +10,7 @@ import torch.utils.data as tud
 from torch.autograd import Variable
 
 import configuration.config_default as cfgd
-from models.VAETransformer.mask import subsequent_mask
+from models.cvae_Transformer.mask import subsequent_mask
 
 
 class Dataset(tud.Dataset):
