@@ -10,6 +10,7 @@ from .mask import create_masks
 
 import copy
 import numpy as np
+from collections import OrderedDict
 
 
 def get_clones(layer, N):
@@ -40,7 +41,7 @@ class MLP(nn.Module):
     def build_mlp(self, stacks):
         layers = []        
         for i in range(len(stacks) - 1):
-            layers.extend([nn.Linear(stacks[i], stacks[i + 1]), nn.PeLU()])
+            layers.extend([nn.Linear(stacks[i], stacks[i + 1]), nn.PReLU()])
         return nn.ModuleList(layers)
 
     def forward(self, x, conds):
@@ -128,7 +129,7 @@ class Decoder(nn.Module):
         self.embed = Embeddings(d_model, vocab_size)
         if self.use_cond2dec == True:
             self.embed_cond2dec = nn.Linear(nconds, d_model*nconds) #concat to trg_input
-        if self.use_cond2lat == True:
+        elif self.use_cond2lat == True:
             self.embed_cond2lat = nn.Linear(nconds, d_model*nconds) #concat to trg_input
         self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.fc_z = nn.Linear(latent_dim, d_model)
@@ -143,7 +144,7 @@ class Decoder(nn.Module):
         if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
-        if self.use_cond2lat == True:
+        elif self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
 
@@ -165,7 +166,7 @@ class Decoder(nn.Module):
 class MLP_Transformer(nn.Module):
     def __init__(self, transformer, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(Transformer, self).__init__()
+        super(MLP_Transformer, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -175,31 +176,53 @@ class MLP_Transformer(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler1 = SAMPLER(d_model, latent_dim)
-        self.mlp = MLP(src_vocab, latent_dim)
+        self.mlp = MLP(src_vocab, latent_dim, 2*nconds)
         self.sampler2 = SAMPLER(d_model, latent_dim)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
+        self.out = nn.Linear(d_model, trg_vocab)
 
-        # model transferring
-        self.transfer_parameters(transformer)
+        self._reset_parameters()
+        self._freeze_parameters()
+        self._transfer_parameters(transformer)
 
         # other layers
         if self.use_cond2dec == True:
             self.prop_fc = nn.Linear(trg_vocab, 1)
-        # generator
-        # self.generator = Generator(d_model, trg_vocab)
-        self.out = nn.Linear(d_model, trg_vocab)
-
-        # initialize parameters
-        self._reset_parameters()
 
     def _reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def transfer_parameters(self, transformer):
-        return
+    def _freeze_parameters(self):
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        for param in self.sampler1.parameters():
+            param.requires_grad = False
+        for param in self.out.parameters():
+            param.requires_grad = False
+        for param in self.sampler2.parameters():
+            param.requires_grad = False
+        for param in self.decoder.parameters():
+            param.requires_grad = False
+
+    def _transfer_parameters(self, transformer):
+        for name, param in transformer.named_parameters():
+            name_split = name.split('.')
+            sub_name = '.'.join(name_split[1:])
+
+            if name_split[-2] in ('mu', 'log_var'):
+                self.sampler1.state_dict()[sub_name].copy_(param)
+                self.sampler2.state_dict()[sub_name].copy_(param)
+            elif name_split[0] == 'out':
+                self.out.state_dict()[sub_name] = param
+            elif name_split[0] == 'encoder':
+                self.encoder.state_dict()[sub_name].copy_(param)
+            elif name_split[0] == 'decoder':
+                self.decoder.state_dict()[sub_name].copy_(param)
+            else:
+                exit("There may be something missing.")
 
     def forward(self, src, trg, econds, mconds, dconds):
         src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
@@ -215,7 +238,7 @@ class MLP_Transformer(nn.Module):
         if self.use_cond2dec == True:
             output_prop = self.prop_fc(output[:, :self.nconds, :])
             output_mol = output[:, self.nconds:, :]
-        else:
+        elif self.use_cond2lat == True:
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
         return (output_prop, output_mol,
@@ -284,10 +307,12 @@ class Transformer(nn.Module):
         return self.decoder(trg, z, conds, src_mask, trg_mask)
 
 
-def build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H, 
-                      latent_dim, dropout, nconds, use_cond2dec, use_cond2lat):
-    return Transformer(src_vocab, trg_vocab, N, d_model, d_ff, H, 
-                       latent_dim, dropout, nconds, use_cond2dec, use_cond2lat)
+def build_mlptransformer(transformer, src_vocab, trg_vocab, N, d_model, 
+                         d_ff, H, latent_dim, dropout, nconds, 
+                         use_cond2dec, use_cond2lat, variational):
+    return MLP_Transformer(transformer, src_vocab, trg_vocab, N, d_model,
+                           d_ff, H, latent_dim, dropout, nconds,
+                           use_cond2dec, use_cond2lat, variational)
 
 
 def load_from_file(model, file_path):

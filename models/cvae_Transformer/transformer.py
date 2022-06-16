@@ -101,7 +101,7 @@ class Decoder(nn.Module):
         if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
-        if self.use_cond2lat == True:
+        elif self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
 
@@ -178,14 +178,24 @@ def build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H,
     return Transformer(src_vocab, trg_vocab, N, d_model, d_ff, H, 
                        latent_dim, dropout, nconds, use_cond2dec, use_cond2lat)
 
-
-def load_from_file(file_path):
-    # Load model
-    checkpoint = torch.load(file_path, map_location='cuda:0')
-    # checkpoint = torch.load(file_path) # change
-    params = checkpoint['model_parameters']
-    model = Transformer(params['vocab_size'], params['vocab_size'], params['N'], params['d_model'],
-                        params['d_ff'], params['H'], params['latent_dim'], params['dropout'], params['nconds'], 
-                        params['use_cond2dec'], params['use_cond2lat'], params['variational'])
-    model.load_state_dict(checkpoint['model_state_dict'])
+# for molGCT
+def load_from_file(opt, file_path, src_len_tokens, trg_len_tokens):
+    model = Transformer(src_len_tokens, trg_len_tokens,
+                        opt.N, opt.d_model, opt.d_ff, 
+                        opt.H, opt.latent_dim, opt.dropout, 
+                        opt.nconds, use_cond2dec=False, use_cond2lat=True)
+    model.load_state_dict(torch.load(file_path))
+    model = model.to(opt.device)
     return model
+
+# replaced by the upper one
+# def load_from_file(file_path):
+#     # Load model
+#     checkpoint = torch.load(file_path, map_location='cuda:0')
+#     # checkpoint = torch.load(file_path) # change
+#     params = checkpoint['model_parameters']
+#     model = Transformer(params['vocab_size'], params['vocab_size'], params['N'], params['d_model'],
+#                         params['d_ff'], params['H'], params['latent_dim'], params['dropout'], params['nconds'], 
+#                         params['use_cond2dec'], params['use_cond2lat'], params['variational'])
+#     model.load_state_dict(checkpoint['model_state_dict'])
+#     return model

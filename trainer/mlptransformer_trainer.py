@@ -2,8 +2,8 @@
 
 import os
 import torch
-import pandas as pd
-import pickle as pkl
+# import pandas as pd
+# import pickle as pkl
 from tqdm import tqdm
 
 import configuration.config_default as cfgd
@@ -11,8 +11,8 @@ import configuration.config_default as cfgd
 import utils.log as ul
 import utils.file as uf
 import utils.gpu as ug
-import models.dataset as md
-import Process.vocabulary as mv
+# import models.dataset as md
+# import Process.vocabulary as mv
 
 from models.cvae_Transformer import decode, transformer, mask
 from models.cvae_Transformer.noam_opt import NoamOpt as moptim
@@ -22,25 +22,35 @@ from models.mlpcvae_Transformer import mlptransformer
 
 import Process.data_preparation as pdp
 import Process.batch as pb
-from itertools import tee
-import torch.nn as nn
+# from itertools import tee
+# import torch.nn as nn
 
 import time
 from datetime import timedelta
 
-DEBUG = False
+
+DEBUG = True
 
 
-def get_dataIterator(opt, data_type, SRC=None, TRG=None):
+def get_fields(data_type, lang_format, field_path, load_field):
+    if data_type == 'train':
+        if load_field is True:
+            SRC, TRG = pdp.create_fields(lang_format, field_path)
+        else:
+            SRC, TRG = pdp.create_fields(lang_format, None)
+    elif data_type == 'validation':
+            SRC, TRG = pdp.create_fields(lang_format, field_path)
+    return SRC, TRG
+
+
+def get_dataIterator(opt, data_type, SRC, TRG, n_samples=None):
     if opt.dataset == 'moses' and data_type == 'validation':
         data_type = 'test'
 
     dataset = pdp.get_dataset(opt.dataset, data_type)
 
-    if data_type == 'train':
-        dataset = dataset[:80]
-    else:
-        dataset = dataset[:80]
+    if n_samples is not None:
+        dataset = dataset[:n_samples]
 
     print(" - amount:", len(dataset))
 
@@ -48,44 +58,60 @@ def get_dataIterator(opt, data_type, SRC=None, TRG=None):
         df_conds = pdp.get_property(dataset, opt.lang_format, opt.cond_list)
     else:
         df_conds = None
+    print(df_conds.head())
+    data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, 
+                                   SRC, TRG, df_conds, debug=DEBUG)
 
-    if data_type == 'train':
-        if opt.load_field:
-            SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
-        else:
-            SRC, TRG = pdp.create_fields(opt.lang_format, None)
-    elif data_type == 'validation':
-            SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
-
-    data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, SRC, TRG, df_conds)
-
-    return data_iter, SRC, TRG
+    return data_iter
 
 
-def get_dataset_iterator(opt):
+# def get_dataIterator(opt, data_type, SRC=None, TRG=None):
+#     if opt.dataset == 'moses' and data_type == 'validation':
+#         data_type = 'test'
+
+#     dataset = pdp.get_dataset(opt.dataset, data_type)
+
+#     if data_type == 'train':
+#         dataset = dataset[:80]
+#     else:
+#         dataset = dataset[:80]
+
+#     print(" - amount:", len(dataset))
+
+#     if opt.nconds > 0:
+#         df_conds = pdp.get_property(dataset, opt.lang_format, opt.cond_list)
+#     else:
+#         df_conds = None
+
+#     if data_type == 'train':
+#         if opt.load_field:
+#             SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
+#         else:
+#             SRC, TRG = pdp.create_fields(opt.lang_format, None)
+#     elif data_type == 'validation':
+#             SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
+
+#     data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, SRC, TRG, df_conds)
+
+#     return data_iter, SRC, TRG
+
+
+def get_dataset_iterator(opt, SRC, TRG, n_samples=None):
     if opt.train_verbose:
-        print("\n - get training iterator...")
+        print("\n- get training iterator...")
     start = time.time()
-    train_iterator, SRC, TRG = get_dataIterator(opt, 'train', None, None)
+    train_iterator = get_dataIterator(opt, 'train', SRC, TRG, n_samples=n_samples)
     elipsed_time = time.time() - start
-    print(" - preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
+    print("- preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
 
     if opt.train_verbose:
-        print("\n - get validation iterator...")
+        print("\n- get validation iterator...")
     start = time.time()
-    valid_iterator, _, _ = get_dataIterator('validation', SRC, TRG)
+    valid_iterator = get_dataIterator(opt, 'validation',SRC, TRG, n_samples=n_samples)
     elipsed_time = time.time() - start
-    print(" - preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
+    print("- preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
 
-    return train_iterator, valid_iterator, SRC, TRG
-
-
-def show_num_model_parameters(model):
-    # https://stackoverflow.com/questions/49201236/check-the-total-number-of-parameters-in-a-pytorch-model
-    pytorch_total_params = sum(p.numel() for p in model.parameters())
-    print("Pytorch total parameters:", pytorch_total_params)
-    pytorch_total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("Pytorch total trainable parameters:", pytorch_total_trainable_params)
+    return train_iterator, valid_iterator
 
 
 class TransformerTrainer(object):
@@ -117,17 +143,23 @@ class TransformerTrainer(object):
                                                       self.opt.nconds, self.opt.use_cond2dec, self.opt.use_cond2lat)
             else:
                 file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
-                model = transformer.load_from_file(file_path)        
+                model = transformer.load_from_file(file_path)      
         
         elif train_stage == 2:
-            file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
-            model = transformer.load_from_file(file_path)        
+            file_path = os.path.join('molGCT', 'molgct.pt')
+            # file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.starting_epoch-1}.pt')
+            model = transformer.load_from_file(self.opt, file_path, src_len_tokens, trg_len_tokens)
+            # model = transformer.load_from_file(file_path)
             
             if self.opt.starting_epoch == 1:
-                model = transformer.build_transformer(model, src_len_tokens, trg_len_tokens,
-                                                      self.opt.N, self.opt.d_model, self.opt.d_ff, 
-                                                      self.opt.H, self.opt.latent_dim, self.opt.dropout, 
-                                                      self.opt.nconds, self.opt.use_cond2dec, self.opt.use_cond2lat)
+                model = transformer.build_transformer(src_len_tokens, trg_len_tokens, self.opt.N, 
+                                                      self.opt.d_model, self.opt.d_ff, self.opt.H, 
+                                                      self.opt.latent_dim, self.opt.dropout, self.opt.nconds, 
+                                                      self.opt.use_cond2dec, self.opt.use_cond2lat)
+                model = mlptransformer.build_mlptransformer(model, src_len_tokens, trg_len_tokens, self.opt.N, 
+                                                            self.opt.d_model, self.opt.d_ff, self.opt.H, 
+                                                            self.opt.latent_dim, self.opt.dropout, self.opt.nconds, 
+                                                            self.opt.use_cond2dec, self.opt.use_cond2lat, self.opt.variational)
             else:
                 file_path = os.path.join(self.save_path, f'checkpoint/model_{self.opt.mlp_starting_epoch-1}.pt')
                 model = mlptransformer.load_from_file(model, file_path)
@@ -304,16 +336,35 @@ class TransformerTrainer(object):
         # print(f"local rank {self.opt.local_rank} exits.")
 
         self.opt.device = ug.allocate_gpu()
-        train_iterator, valid_iterator, SRC, TRG = get_dataset_iterator(self.opt)
-        model = self.get_model(len(SRC.vocab), len(TRG.vocab))
 
-        show_num_model_parameters(model)
+        print("- Get Fields...")        
+        # SRC, TRG = pdp.create_fields(self.opt.lang_format, weights_path='molGCT')
+        SRC, TRG = get_fields("train", self.opt.lang_format,  
+                              self.opt.field_path, self.opt.load_field)
+        
+        print("- Get dataIterator...")
+        train_iterator, valid_iterator = get_dataset_iterator(self.opt, SRC, TRG, n_samples=80)
+        
+        train_dl = self.get_dataloader(train_iterator)
 
-        exit(0)
+        print("- Get model...")
+        model = self.get_model(len(SRC.vocab), len(TRG.vocab), self.opt.train_stage)
 
+        print("- Get optimizer...")
         optim = self.get_optimization(model)
+
+        print("- Get optimizer...")
         criterion = Criterion(size=len(TRG.vocab), padding_idx=self.pad_idx,
                               smoothing=self.opt.label_smoothing)
+
+        print("- Total parameters:", 
+              sum(p.numel() for p in model.parameters()))
+        print("- Total trainable parameters:", 
+              sum(p.numel() for p in model.parameters() if p.requires_grad))
+
+        for n, p in model.named_parameters():
+            if p.requires_grad == True:
+                print(n)
 
         loss_acc_writer = ul.get_logger(name="loss_accuracy",
                                         log_path=os.path.join(self.save_path, 'loss_accuracy.log'))
@@ -358,8 +409,8 @@ class TransformerTrainer(object):
 
             if lowest_loss > rec_loss_val + KL_div_val:
                 # store lowest-loss new model every time is safer
-                if os.path.exists(os.path.join(self.save_path, "checkpoint", f"best_{epoch_best}.pt")):
-                    os.remove(os.path.join(self.save_path, "checkpoint", f"best_{epoch_best}.pt"))
+                if os.path.exists(os.path.join(self.save_path, "checkpoint", f"mlpbest_{epoch_best}.pt")):
+                    os.remove(os.path.join(self.save_path, "checkpoint", f"mlpbest_{epoch_best}.pt"))
                     
                 self.save(model, optim, f"best_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
                 lowest_loss = rec_loss_val + KL_div_val
@@ -370,10 +421,10 @@ class TransformerTrainer(object):
             else:
                 early_stop_cnt += 1
 
-            self.save(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
+            self.save(model, optim, f"mlpmodel_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
             epoch += 1
 
             if early_stop_cnt > early_stop:
                 break
 
-        self.save(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
+        self.save(model, optim, f"mlpmodel_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))

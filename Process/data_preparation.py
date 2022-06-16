@@ -1,29 +1,25 @@
 import os
 import argparse
 from typing import Dict, Tuple, List
-
 import numpy as np
 import pandas as pd
 import dill as pickle
 from multiprocessing import Pool
+
+import moses
 import torch
-# from torchtext.legacy import data
 from torchtext import data
+# from torchtext.legacy import data
 
-from sklearn.model_selection import train_test_split
-
-import utils.file as uf
 from Tokenize import moltokenize
-import configuration.config_default as cfgd
 import Process.batch as bt
+from utils import compute_property as cp
 
 SEED = 42
 SPLIT_RATIO = 0.8
 
-import moses
-from utils import compute_property as cp
 
-def get_dataset(dataset_name: str, 
+def get_dataset(dataset_name: str,
                 data_type='train')->np.array:
     if dataset_name == 'moses':
         dataset = moses.get_dataset(data_type)
@@ -41,7 +37,6 @@ def get_property(dataset: List,
 
     pool = Pool(n_jobs)
     
-
     if lang_format == 'SMILES':
         dataset = list(pool.map(cp.MolFromSmiles, dataset))
 
@@ -76,7 +71,6 @@ def read_data_from_path(data_path: Dict[str, str]
 
     return dataset
 
-
 def create_fields(lang_format="SMILES",
                   weights_path=None
                   )-> Tuple[data.field.Field, data.field.Field]:
@@ -92,7 +86,7 @@ def create_fields(lang_format="SMILES",
     lang_supported = ['SMILES', 'SELFIES']
 
     if lang_format not in lang_supported:
-        print('- invalid src language: {0} supported languages: {1}'.format(lang_format, lang_supported))
+        print(f'- invalid src language: {lang_format} supported languages: {lang_supported}')
 
     print("- loading molecule tokenizers...")
 
@@ -102,11 +96,15 @@ def create_fields(lang_format="SMILES",
     SRC = data.Field(tokenize=t_src.tokenizer, batch_first=True)
     TRG = data.Field(tokenize=t_trg.tokenizer, batch_first=True, init_token='<sos>', eos_token='<eos>')
 
+    print(pickle.load(open(os.path.join('..', 'molGCT', 'saved_model', 'SRC.pkl'), 'rb')))
+    print('>', os.path.exists(os.path.join('..', 'molGCT', 'saved_model', 'SRC.pkl')))
     if weights_path is not None:
         try:
-            print("- loading presaved fields...")
-            SRC = pickle.load(open(f'{weights_path}/SRC.pkl', 'rb'))
-            TRG = pickle.load(open(f'{weights_path}/TRG.pkl', 'rb'))
+            print("- loading presaved fields...") 
+            SRC = pickle.load(open(os.path.join('..', 'molGCT', 'saved_model', 'SRC.pkl'), 'rb'))
+            TRG = pickle.load(open(os.path.join('..', 'molGCT', 'saved_model', 'TRG.pkl'), 'rb'))
+            # SRC = pickle.load(open(os.path.join(weights_path, 'SRC.pkl'), 'rb'))
+            # TRG = pickle.load(open(os.path.join(weights_path, 'TRG.pkl'), 'rb'))
         except:
             print("- error opening SRC.pkl and TRG.pkl field files, please ensure they are in " + weights_path + "/")
             quit()
@@ -123,15 +121,16 @@ def _extend_fields(data_fields, cond_list):
     return data_fields
 
 
-def _get_iterator(dataset, batch_size, device, data_type):
+def _get_iterator(dataset, batch_size, device, data_type, debug=False):
     if data_type == 'train':
+        shuffle = True if debug == False else False
         return data.Iterator(dataset, batch_size=batch_size, 
                              sort_key=lambda x: (len(x.src),len(x.trg)), 
-                             device=device, train=True, repeat=False, shuffle=True)
+                             device=device, train=True, repeat=False, shuffle=shuffle)
     elif data_type in ('test', 'attn_test'):
         return data.Iterator(dataset, batch_size=batch_size, 
                              sort_key=lambda x: (len(x.src),len(x.trg)), 
-                             device=device, train=False, repeat=False, shuffle=True)
+                             device=device, train=False, repeat=False, shuffle=False)
 
 
 def _mask_invalid_len_data(df, nconds, lang_format, max_strlen):
@@ -148,38 +147,37 @@ def _mask_invalid_len_data(df, nconds, lang_format, max_strlen):
 
 import joblib
 from sklearn.preprocessing import RobustScaler, StandardScaler
-from sklearn_pandas import DataFrameMapper
 
 
-def _transform_conditions(df_conds, scaler_path, new_scaler=False):
-    """
-    The following website provides a scaling methods on a DataFrame with several columns of features
-    ref: https://stackoverflow.com/questions/35723472/how-to-use-sklearn-fit-transform-with-pandas-and-return-dataframe-instead-of-num
-    """
+def _transform_conditions(df_conds, scaler_path, 
+                          property_order, new_scaler=False):
     if not new_scaler:
         try:
-            print(" - load map_scaler in", scaler_path)
-            map_scaler = joblib.load(os.path.join(scaler_path, 'map_scaler.pkl'))
+            # scaler order: [[logP, tPSA, QED]]
+            scaler = joblib.load(os.path.join(scaler_path, 'scaler.pkl')) 
+            print("- load scaler from", os.path.join(scaler_path, 'scaler.pkl'))
         except:
-            exit("error:", os.path.join(scaler_path, 'map_scaler.pkl'), " file not found")
+            exit("error:", os.path.join(scaler_path, 'scaler.pkl'), " file not found")
     else:
-        print(" - create map scaler")
+        print("- create map scaler")
         scaler = RobustScaler(quantile_range = (0.1,0.9))
-        # scaler = StandardScaler()
-        map_scaler = DataFrameMapper([(df_conds.columns, scaler)])
-        map_scaler.fit(df_conds.copy(), len(df_conds.columns))
+        scaler.fit(df_conds.copy(), len(df_conds.columns))
 
-    scaled_features = map_scaler.transform(df_conds.copy())
-    df_scaled_features = pd.DataFrame(scaled_features, 
-                                      index=df_conds.index, columns=df_conds.columns)
-    
+    # check if the property orders of the data and the scaler are match
+    if list(df_conds.columns) != property_order:
+        df_conds = df_conds.reindex(columns=property_order)
+
+    conds = df_conds.to_numpy()
+    conds = scaler.transform(conds)
+    df_conds_new = pd.DataFrame(conds, columns=property_order)
+
     print(f"\n - cond original\n{df_conds.describe()}:\n")
-    print(f"\n - cond transformed\n{df_scaled_features.describe()}:\n")
+    print(f"\n - cond transformed\n{df_conds_new.describe()}:\n")
 
     if new_scaler:
         print(" - dump map scaler in", scaler_path)
-        joblib.dump(map_scaler, open(os.path.join(scaler_path, 'map_scaler.pkl'), 'wb'))
-    return df_scaled_features
+        joblib.dump(scaler, open(os.path.join(scaler_path, 'new_scaler.pkl'), 'wb'))
+    return df_conds_new
 
 
 def create_dataset(opt: argparse.Namespace,
@@ -189,28 +187,33 @@ def create_dataset(opt: argparse.Namespace,
                    SRC: data.field.Field,
                    TRG: data.field.Field,
                    conds: pd.DataFrame,
+                   debug: bool
                    )-> bt.MyIterator:
 
     raw_data = {'src': [line for line in source], 'trg': [line for line in target]}
     df = pd.DataFrame(raw_data, columns=["src", "trg"])
 
     if opt.nconds > 0:
-        if tr_te == 'train' and not opt.load_scalar:
-            conds = _transform_conditions(conds, opt.data_path, new_scaler=True)
+        # if tr_te == 'train' and not opt.load_scaler:
+        if opt.load_scaler is not True:
+            conds = _transform_conditions(conds, opt.scaler_path,
+                                          None, new_scaler=True)
         else:
-            conds = _transform_conditions(conds, opt.data_path, new_scaler=False)
+            # use the scaler from molGCT
+            property_order = ['logP', 'tPSA', 'QED']
+            conds = _transform_conditions(conds, opt.scaler_path, 
+                                          property_order, new_scaler=False)
         df = pd.concat([df, conds], axis=1)
-    df = _mask_invalid_len_data(df, opt.nconds, opt.lang_format, opt.max_strlen)
+    df = _mask_invalid_len_data(df, opt.nconds, 
+                                opt.lang_format, opt.max_strlen)
 
     data_fields = [('src', SRC), ('trg', TRG)]
     data_fields = _extend_fields(data_fields, opt.cond_list)
     data_path = os.path.join(opt.data_path, 'DB_temp.csv')
     df.to_csv(data_path, index=False)
 
-    dataset = data.TabularDataset(data_path, format='csv', fields=data_fields, skip_header=True)
-
-    # if opt.verbose:
-    #     print(f' - tokenized {tr_te} sample 0:', vars(dataset[0]))
+    dataset = data.TabularDataset(data_path, format='csv', 
+                                  fields=data_fields, skip_header=True)
 
     if tr_te == "train":
         toklenList = []
@@ -219,7 +222,7 @@ def create_dataset(opt: argparse.Namespace,
         df_toklenList = pd.DataFrame(toklenList, columns=["toklen"])
         df_toklenList.to_csv(os.path.join(opt.data_path, "toklen_list.csv"), index=False)
     
-    data_iter = _get_iterator(dataset, opt.batch_size, opt.device, data_type=tr_te)
+    data_iter = _get_iterator(dataset, opt.batch_size, opt.device, data_type=tr_te, debug=debug)
 
     # print(" - dict-key:", dataset[0].__dict__.keys())
     # print(" - source:", dataset[0].src)

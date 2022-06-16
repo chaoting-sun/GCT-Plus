@@ -28,7 +28,8 @@ def general_opts():
     
     general_parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
     general_parser.add_argument('-field_path', type=str, default="weights", help="weights of fields")
-    general_parser.add_argument('-load_scalar', action='store_true', help="load the weights of fields")
+    general_parser.add_argument('-load_scaler', action='store_true', help="load the weights of fields")
+    general_parser.add_argument('-scaler_path', type=str, default='molGCT')
     # general_parser.add_argument('-verbose', action='store_true', help="If the results will be printed")
     
     """ MODEL ARCHITECTURE """
@@ -76,12 +77,14 @@ def train_opts(parser):
 
     """ First-Stage Training """
     train1_parser = parser.add_parser('train-1st', parents=[parent_parser])
+    train1_parser.add_argument('-train_stage', type=int, default=1)
     train1_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train1_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
     train1_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
 
     """ Second-Stage Training """
     train2_parser = parser.add_parser('train-2nd', parents=[parent_parser])
+    train2_parser.add_argument('-train_stage', type=int, default=2)
     train2_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train2_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
     train2_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
