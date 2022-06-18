@@ -2,7 +2,7 @@ import joblib
 import pandas as pd
 
 from sklearn.preprocessing import RobustScaler, StandardScaler
-
+from configuration.config_default import CONDITIONS
 
 def get_scaler(condition, scaler_path=None):
     if not scaler_path:
@@ -18,9 +18,10 @@ def get_scaler(condition, scaler_path=None):
 
     return scaler
 
-
+# 改
 def scaler_transform(condition, scaler):
     """ scaler transformation """
+    condition = condition.reindex(columns=CONDITIONS)
     condition = condition.to_numpy()
     condition = scaler.transform(condition)
     return pd.DataFrame(condition, columns=condition.columns)

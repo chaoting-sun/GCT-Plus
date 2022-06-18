@@ -298,6 +298,7 @@ class TransformerTrainer(object):
             data_name=self.opt.data_name,
             data_type='train', 
             condition_list=self.opt.cond_list, 
+            scaler_path=self.opt.scaler_path,
             condition_path=None,
             similarity=self.opt.similarity, # 補 
             lang_format=self.opt.lang_format,
@@ -323,10 +324,6 @@ class TransformerTrainer(object):
             SRC.build_vocab(dataset)
             TRG.build_vocab(dataset)
             save_fields(SRC, TRG, self.opt.field_path)
-        
-        print(">>> Transform Dataset")
-        
-
         
         exit(0)
 

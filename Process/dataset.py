@@ -2,6 +2,7 @@
 import os
 import pandas as pd
 from multiprocessing import Pool
+from Process import scaler
 
 # ml modules
 import moses
@@ -11,6 +12,7 @@ from torchtext.legacy import data
 # other packages
 from utils.compute_property import property_prediction
 from configuration.config_default import MAX_STRLEN
+from Process.scaler import get_scaler, scaler_transform
 
 
 def get_dataset(data_name, data_type='train') -> pd.DataFrame:
@@ -83,9 +85,9 @@ def data_augmentation(dataset, similarity):
     return dataset
 
 
-def get_dataset_dataframe(data_name, data_type, condition_list, condition_path=None,
-                          similarity=1, lang_format='SMILES', n_jobs=1, n_samples=None, 
-                          max_strlen=MAX_STRLEN) -> pd.DataFrame:
+def get_dataset_dataframe(data_name, data_type, condition_list, scaler_path=None, 
+                          condition_path=None, similarity=1, lang_format='SMILES',
+                          n_jobs=1, n_samples=None, max_strlen=MAX_STRLEN) -> pd.DataFrame:
     dataset = get_dataset(data_name, data_type)
     dataset = mask_invalid_len_data(dataset, len(condition_list), 
                                     lang_format, max_strlen)
@@ -96,6 +98,9 @@ def get_dataset_dataframe(data_name, data_type, condition_list, condition_path=N
     
     condition = get_condition(dataset, condition_list,
                               condition_path, n_jobs)
+    if scaler_path is not None:
+        scaler = get_scaler(condition_list)
+        condition = scaler_transform(condition_list, scaler)
     return pd.concat([dataset, condition], axis=1)
 
 
