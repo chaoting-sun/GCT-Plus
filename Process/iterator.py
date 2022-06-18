@@ -1,61 +1,19 @@
-from sklearn.preprocessing import RobustScaler, StandardScaler
-import joblib
 import os
+import joblib
 import argparse
-from typing import Dict, Tuple, List
-import numpy as np
 import pandas as pd
 import dill as pickle
-from multiprocessing import Pool
+from typing import List
 
-import moses
-import torch
 from torchtext import data
 # from torchtext.legacy import data
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
-from Tokenize import moltokenize
 import Process.batch as bt
-from trainer.mlptransformer_trainer import get_dataset
-
-from utils.compute_property import property_prediction
-from configuration.config_default import MAX_STRLEN, CONDITIONS, LANG_SUPPORTED
+from configuration.config_default import CONDITIONS
 
 SEED = 42
 SPLIT_RATIO = 0.8
-
-
-def get_iterator(dataset, batch_size, device, data_type, debug=False):
-    if data_type == 'train':
-        shuffle = True if debug == False else False
-        return data.Iterator(dataset, batch_size=batch_size,
-                             sort_key=lambda x: (len(x.src), len(x.trg)),
-                             device=device, train=True, repeat=False, shuffle=shuffle)
-    elif data_type in ('test', 'attn_test'):
-        return data.Iterator(dataset, batch_size=batch_size,
-                             sort_key=lambda x: (len(x.src), len(x.trg)),
-                             device=device, train=False, repeat=False, shuffle=False)
-
-
-def get_scaler(condition, scaler_path=None):
-    if not scaler_path:
-        try:
-            scaler = joblib.load(scaler_path)
-            print("- load scaler from", scaler_path)
-        except:
-            exit(f"error: {scaler_path} file not found")
-    else:
-        scaler = RobustScaler(quantile_range=(0.1, 0.9))
-        scaler.fit(condition.copy(), len(condition.columns))
-        joblib.dump(scaler, open(scaler_path), 'wb')
-
-    return scaler
-
-
-def scaler_transform(condition, scaler):
-    """ scaler transformation """
-    condition = condition.to_numpy()
-    condition = scaler.transform(condition)
-    return pd.DataFrame(condition, columns=condition.columns)
 
 
 def create_iterator(opt: argparse.Namespace,

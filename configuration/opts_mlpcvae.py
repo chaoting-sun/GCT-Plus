@@ -21,15 +21,14 @@ def general_opts():
     general_parser.add_argument('-nconds', type=int, default=3, help="Number of conditions")
     general_parser.add_argument('-cond_list', nargs='+', default=['logP', 'QED', 'tPSA'], help="Conditions")
     general_parser.add_argument('-n_jobs', type=int, default=1, help="number of CPU cores")
-    general_parser.add_argument('-max_strlen', type=int, default=80, help="The expected max. string length")
     general_parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
-    general_parser.add_argument('-dataset', type=str, default='moses', help='Path of the original data')
+    general_parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
     general_parser.add_argument('-data_path', type=str, default='./data/moses', help='Path of the preprocessed data')
     
     general_parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
-    general_parser.add_argument('-field_path', type=str, default="weights", help="weights of fields")
+    general_parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")
     general_parser.add_argument('-load_scaler', action='store_true', help="load the weights of fields")
-    general_parser.add_argument('-scaler_path', type=str, default='molGCT')
+    general_parser.add_argument('-scaler_folder', type=str, default='molGCT')
     # general_parser.add_argument('-verbose', action='store_true', help="If the results will be printed")
     
     """ MODEL ARCHITECTURE """

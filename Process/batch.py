@@ -2,8 +2,8 @@ import numpy as np
 
 import torch
 from torch.autograd import Variable
-from torchtext import data
-# from torchtext.legacy import data
+# from torchtext import data
+from torchtext.legacy import data
 
 
 """

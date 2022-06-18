@@ -18,6 +18,11 @@ def logP(mol: Mol) -> float:
     return Descriptors.MolLogP(mol)
 
 
+def tPSA(mol: Mol) -> float:
+    """ RDKit's topological polar surface area """
+    return Descriptors.TPSA(mol)
+
+
 def QED(mol: Mol) -> float:
     """ RDKit's Quantitative Estimates of Drug-likeness """
     return Descriptors.qed(mol)
@@ -33,8 +38,10 @@ def NP(mol) -> float:
     return npscorer.scoreMol(mol)
 
 
-def tPSA(mol: Mol) -> float:
-    """ RDKit's topological polar surface area """
-    return Descriptors.TPSA(mol)
-
-
+property_prediction = {
+    "logP": logP,
+    "tPSA": tPSA,
+    "QED": QED,
+    "SA": SA,
+    "NP": NP
+}

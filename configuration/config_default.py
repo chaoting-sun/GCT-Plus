@@ -1,16 +1,11 @@
 import math
 
 """ Data """
-DATA_DEFAULT = {
-    'max_sequence_length': 128,
-    'padding_value': 0
-}
+PAD = 0
+MAX_STRLEN = 80
 
-""" Properties """
-PROPERTIES = ['LogP', 'tPSA', 'QED']
+""" desired conditions """
+CONDITIONS = ['LogP', 'tPSA', 'QED']
 
-""" For Test_Property test """
-LOD_MIN = 1.0
-LOD_MAX = 3.4
-
-
+""" language supported """
+LANG_SUPPORTED = ['SMILES', 'SELFIES']

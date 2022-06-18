@@ -1,117 +1,72 @@
-# Molecular Optimization
-
 import os
-import torch
+import gc
+from tqdm import tqdm
+import time
+from datetime import timedelta
 # import pandas as pd
 # import pickle as pkl
-from tqdm import tqdm
+# from itertools import tee
 
-import configuration.config_default as cfgd
+import torch
+# import torch.nn as nn
+
 
 import utils.log as ul
 import utils.file as uf
 import utils.gpu as ug
 # import models.dataset as md
-# import Process.vocabulary as mv
 
 from models.cvae_Transformer import decode, transformer, mask
 from models.cvae_Transformer.noam_opt import NoamOpt as moptim
 from models.cvae_Transformer.loss import LossCompute, Criterion, KLAnnealer
 
 from models.mlpcvae_Transformer import mlptransformer
+import configuration.config_default as cfgd
 
-import Process.data_preparation as pdp
+
+from Process import dataset as pdataset
+from Process import field as pfield
+from Process import create_fields, create_total_fields, save_fields
+
+# import Process.data_preparation as pdp
+# import Process.vocabulary as mv
 import Process.batch as pb
-# from itertools import tee
-# import torch.nn as nn
-
-import time
-from datetime import timedelta
-
 
 DEBUG = True
+N_SAMPLES = 80 if DEBUG is True else None
 
 
-def get_fields(data_type, lang_format, field_path, load_field):
-    if data_type == 'train':
-        if load_field is True:
-            SRC, TRG = pdp.create_fields(lang_format, field_path)
-        else:
-            SRC, TRG = pdp.create_fields(lang_format, None)
-    elif data_type == 'validation':
-            SRC, TRG = pdp.create_fields(lang_format, field_path)
-    return SRC, TRG
+# get_dataset_dataframe(data_name, data_type, condition_list, condition_path=None,
+#                           similarity=1, n_jobs=1, n_samples=None)
 
 
-def get_dataIterator(opt, data_type, SRC, TRG, n_samples=None):
-    if opt.dataset == 'moses' and data_type == 'validation':
-        data_type = 'test'
-
-    dataset = pdp.get_dataset(opt.dataset, data_type)
-
-    if n_samples is not None:
-        dataset = dataset[:n_samples]
-
-    print(" - amount:", len(dataset))
-
-    if opt.nconds > 0:
-        df_conds = pdp.get_property(dataset, opt.lang_format, opt.cond_list)
-    else:
-        df_conds = None
-    print(df_conds.head())
-    data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, 
-                                   SRC, TRG, df_conds, debug=DEBUG)
-
-    return data_iter
+# def get_dataset(data_name, datatype, cond_list, similarity=0, n_samples=None):
+#     dataset = pdp.get_dataset(data_name, datatype)
+#     df = pd.DataFrame({
+#         'src': [line for line in dataset],
+#         'trg': [line for line in dataset]},
+#         columns=["src", "trg"]
+#     )
 
 
-# def get_dataIterator(opt, data_type, SRC=None, TRG=None):
-#     if opt.dataset == 'moses' and data_type == 'validation':
-#         data_type = 'test'
+#     assert 0 <= similarity and similarity <= 1
+#     if similarity != 0:
+        
 
-#     dataset = pdp.get_dataset(opt.dataset, data_type)
+#     conditions = pdp.get_conditions(dataset, cond_list)
+#     if n_samples is not None:
+#         return dataset[:n_samples], conditions[:n_samples]
+#     return dataset, conditions
+    
 
-#     if data_type == 'train':
-#         dataset = dataset[:80]
-#     else:
-#         dataset = dataset[:80]
-
-#     print(" - amount:", len(dataset))
-
-#     if opt.nconds > 0:
-#         df_conds = pdp.get_property(dataset, opt.lang_format, opt.cond_list)
-#     else:
-#         df_conds = None
-
-#     if data_type == 'train':
-#         if opt.load_field:
-#             SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
-#         else:
-#             SRC, TRG = pdp.create_fields(opt.lang_format, None)
-#     elif data_type == 'validation':
-#             SRC, TRG = pdp.create_fields(opt.lang_format, opt.field_path)
-
-#     data_iter = pdp.create_dataset(opt, data_type, dataset, dataset, SRC, TRG, df_conds)
-
-#     return data_iter, SRC, TRG
-
-
-def get_dataset_iterator(opt, SRC, TRG, n_samples=None):
-    if opt.train_verbose:
-        print("\n- get training iterator...")
-    start = time.time()
-    train_iterator = get_dataIterator(opt, 'train', SRC, TRG, n_samples=n_samples)
-    elipsed_time = time.time() - start
-    print("- preprocessing time for training set:", str(timedelta(seconds=elipsed_time)), "\n")
-
-    if opt.train_verbose:
-        print("\n- get validation iterator...")
-    start = time.time()
-    valid_iterator = get_dataIterator(opt, 'validation',SRC, TRG, n_samples=n_samples)
-    elipsed_time = time.time() - start
-    print("- preprocessing time for validation set:", str(timedelta(seconds=elipsed_time)), "\n")
-
-    return train_iterator, valid_iterator
+# def get_dataset_iterator(opt, SRC, TRG, n_samples=None):
+#     dataset, conditions = get_dataset(opt.dataset, opt.cond_list, 
+#                                     'train', n_samples)
+#     train_iterator = pdp.create_iterator(opt, 'train', dataset, dataset, 
+#                                          SRC, TRG, conditions, debug=DEBUG)
+#     validation_iterator = pdp.create_iterator(opt, 'train', dataset, dataset,
+#                                               SRC, TRG, conditions, debug=DEBUG)
+#     return train_iterator, validation_iterator
 
 
 class TransformerTrainer(object):
@@ -120,8 +75,8 @@ class TransformerTrainer(object):
         # parameters for training
         self.opt = opt
         self.save_path = os.path.join('experiments', opt.save_directory)
-        self.pad_idx = cfgd.DATA_DEFAULT['padding_value']
-        self.max_len_trg = cfgd.DATA_DEFAULT['max_sequence_length']
+        self.pad_idx = cfgd.PAD
+        self.max_len_trg = cfgd.MAX_STRLEN
         # for logging
         self.LOG = ul.get_logger(name="train_model", log_path=os.path.join(self.save_path, 'train_model.log'))
         self.LOG.info(opt)
@@ -335,18 +290,53 @@ class TransformerTrainer(object):
         #     ug.initialize_process_group(local_rank=os.eviron['LOCAL_RANK'])
         # print(f"local rank {self.opt.local_rank} exits.")
 
+        print(">>> Get GPU...")
         self.opt.device = ug.allocate_gpu()
 
-        print("- Get Fields...")        
-        # SRC, TRG = pdp.create_fields(self.opt.lang_format, weights_path='molGCT')
-        SRC, TRG = get_fields("train", self.opt.lang_format,  
-                              self.opt.field_path, self.opt.load_field)
+        print(">>> Preprocess & Save the Data...")
+        df = pdataset.get_dataset_dataframe(
+            data_name=self.opt.data_name,
+            data_type='train', 
+            condition_list=self.opt.cond_list, 
+            condition_path=None,
+            similarity=self.opt.similarity, # 補 
+            lang_format=self.opt.lang_format,
+            n_jobs=self.opt.n_jobs,
+            n_samples=N_SAMPLES
+        )
+        df.to_csv(self.opt.data_path)
+        del df
+        gc.collect()
+
+        print(">>> Create/Load Fields...")
+        SRC, TRG = pfield.create_fields(self.opt.lang_format, self.opt.field_path)
+        total_fields = create_total_fields(SRC, TRG, self.opt.cond_list)
+        self.opt.src_pad = SRC.vocab.stoi['<pad>']
+        self.opt.trg_pad = TRG.vocab.stoi['<pad>']
+        assert self.opt.src_pad == self.opt.trg_pad
+
+        print(">>> Create Dataset...")
+        dataset = pdataset.to_dataset(self.opt.data_path, total_fields)
+
+        print(">>> Save Fields...")
+        if self.opt.load_field is False:
+            SRC.build_vocab(dataset)
+            TRG.build_vocab(dataset)
+            save_fields(SRC, TRG, self.opt.field_path)
         
+        print(">>> Transform Dataset")
+        
+
+        
+        exit(0)
+
         print("- Get dataIterator...")
+        n_samples = 100
+        dataset, conditions = get_dataset(self.opt.dataset, 'train', 
+                                          self.opt.cond_list, n_samples=n_samples)
+
         train_iterator, valid_iterator = get_dataset_iterator(self.opt, SRC, TRG, n_samples=80)
         
-        train_dl = self.get_dataloader(train_iterator)
-
         print("- Get model...")
         model = self.get_model(len(SRC.vocab), len(TRG.vocab), self.opt.train_stage)
 

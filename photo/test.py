@@ -1,6 +1,5 @@
 import os
 from math import ceil
-import ternary
 import pandas as pd
 import numpy as np
 
@@ -9,6 +8,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from pandas.plotting import scatter_matrix
 import plotly.express as px
+from moses.metrics import metrics
+from moses import get_dataset
 
 logp_lb = 0.03
 logp_ub = 4.97
@@ -26,10 +27,12 @@ def pearson_correlation_coefficient(properties):
     logp = properties['logP'].tolist()
     tpsa = properties['tPSA'].tolist()
     qed = properties['QED'].tolist()
-
+  
     print(pearsonr(logp, tpsa)[0])
     print(pearsonr(logp, qed)[0])
     print(pearsonr(qed, tpsa)[0])
+
+    exit()
 
     corr = properties.corr()
     cmap = sns.diverging_palette(10, 220, as_cmap=True)
@@ -130,14 +133,21 @@ def analyze_data(prop_df):
 
 
 if __name__ == '__main__':
-    file_path = '/fileserver-gamma/chaoting/ML/data/moses/prop_temp.csv'
-    prop_df = pd.read_csv(file_path)
+    # file_path = '/fileserver-gamma/chaoting/ML/data/moses/prop_temp.csv'
+    # prop_df = pd.read_csv(file_path)
+    # pearson_correlation_coefficient(prop_df)
 
-    analyze_data(prop_df)
+    # analyze_data(prop_df)
     
     # error_plot()
 
-    # pearson_correlation_coefficient(prop_df)
+    df = get_dataset('train')
+
+    intDiv = metrics.internal_diversity(df[:100000])
+    print("internal diversity >", intDiv)
+    exit()
+
+    pearson_correlation_coefficient(prop_df)
 
     # print(prop_df['logP'].min(), prop_df['logP'].max())
     # print(prop_df['tPSA'].min(), prop_df['tPSA'].max())
