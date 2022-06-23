@@ -8,12 +8,12 @@ import os
 from multiprocessing import Pool
 import math
 
-import utils.log as ul
-import utils.chem as uc
-import configuration.config_default as cfgd
-import utils.file as uf
-import utils.plot as up
-import configuration.opts as opts
+import Utils.log as ul
+import Utils.chem as uc
+import Configuration.config_default as cfgd
+import Utils.file as uf
+import Utils.plot as up
+import Configuration.opts as opts
 from postprocess import draw_molecules
 
 NUM_WORKERS = 16

@@ -17,8 +17,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from Tokenize import moltokenize
-import configuration.opts as opts
-from models.cvae_Transformer import transformer
+import Configuration.opts as opts
+from Model.cvae_Transformer import transformer
 from Process import data_preparation as dp
 import beam
 

@@ -5,13 +5,13 @@ import numpy as np
 import pandas as pd
 
 
-import utils.log as ul
-import models.dataset as md
-import utils.gpu as ut
-import configuration.opts as opts
+import Utils.log as ul
+import Model.dataset as md
+import Utils.gpu as ut
+import Configuration.opts as opts
 import Process.vocabulary as mv
-import configuration.config_default as cfgd
-from models.cvae_Transformer import decode, transformer
+import Configuration.config_default as cfgd
+from Model.cvae_Transformer import decode, transformer
 
 import torch
 
