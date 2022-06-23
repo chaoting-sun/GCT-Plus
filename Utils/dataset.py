@@ -9,10 +9,9 @@ import moses
 import torch
 from torchtext import data
 # from torchtext.legacy import data
-from sklearn.preprocessing import RobustScaler, StandardScaler
 
 # other packages
-from .property import to_mol, property_prediction
+from .property import to_mol, property_prediction, tanimoto_similarity
 from .field import get_fields, save_fields
 
 
@@ -61,66 +60,13 @@ def get_condition(dataset, condition_list,
     condition_dict = {}
 
     pool = Pool(n_jobs)
-    mol = list(pool.map(to_mol, dataset['molecule']))
+    mol = list(pool.map(to_mol, dataset['smiles']))
     
     for prop in condition_list:
         results = pool.map(property_prediction[prop], mol)
         condition_dict[prop] = list(results)
     return pd.DataFrame.from_dict(condition_dict)
 
-
-def data_augmentation(dataset, similarity):
-    assert 0 <= similarity and similarity <= 1
-    # 補
-    return dataset
-
-
-def get_scaler(condition, scaler_path=None):
-    if scaler_path is not None:
-        try:
-            scaler = joblib.load(scaler_path)
-            print("- load scaler from", scaler_path)
-        except:
-            exit(f"error: {scaler_path} file not found")
-    else:
-        if os.path.exists(scaler_path):
-            exit(f"Scaler already existed: {scaler_path}")
-        scaler = RobustScaler(quantile_range=(0.1, 0.9))
-        scaler.fit(condition.copy(), len(condition.columns))
-        joblib.dump(scaler, open(scaler_path), 'wb')
-
-    return scaler
-
-
-def scaler_transform(condition, scaler):
-    """ 
-    scaler transformation
-    return a DataFrame of rescaled properties
-    
-    Parameters:
-        condition: DataFrame, the properties
-        scaler: a property transformer
-    """
-    return pd.DataFrame(scaler.transform(condition), 
-                        columns=condition.columns)
-
-
-def get_raw_dataset(data_name, data_type, scaler_path, condition_list,
-                    condition_path, max_strlen, n_jobs):
-    dataset = get_benchmarking_dataset(data_name, data_type)
-    dataset = dataset.loc[(dataset['molecule'].str.len() + len(condition_list) < max_strlen)]
-    condition = get_condition(dataset, condition_list, condition_path, n_jobs)
-
-    scaler = get_scaler(condition[condition_list], scaler_path)
-    condition = scaler_transform(condition, scaler)
-
-    src = dataset.rename(columns={'no':'src_no', 'molecule': 'src'})
-    trg = dataset.rename(columns={'no':'trg_no', 'molecule': 'trg'})
-    src_c = condition.rename(columns={c: f'src_{c}' for c in condition.columns})
-    trg_c = condition.rename(columns={c: f'trg_{c}' for c in condition.columns})
-    
-    return pd.concat([src[['src_no']], trg[['trg_no']],
-                      src[['src']], trg[['trg']], src_c, trg_c], axis=1)
 
 
 def get_dataset(data_path, conditions, field_path, load_field=False,
