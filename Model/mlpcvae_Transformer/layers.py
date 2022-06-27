@@ -51,7 +51,6 @@ class DecoderLayer(nn.Module):
     def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):
         # masked multi-head self-attention
         x2 = self.norm_1(x)
-        print("decoder:", x2.size(), trg_mask.size())
         attn_1, concat_attn_1 = self.attn_1(x2, x2, x2, trg_mask)
         w = self.dropout_1(attn_1)
         x = x + w

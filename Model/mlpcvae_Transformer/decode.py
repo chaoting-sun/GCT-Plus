@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Variable
 
-from Model.VAETransformer.mask import create_src_mask, nopeak_mask
+from Model.mlpcvae_Transformer.mask import create_src_mask, nopeak_mask
 
 # torch function:
 # torch.max(input, dim): return (max, max_indices)
@@ -11,10 +11,9 @@ from Model.VAETransformer.mask import create_src_mask, nopeak_mask
 # ref1: https://zhuanlan.zhihu.com/p/339207092
 # ref2: https://towardsdatascience.com/the-three-decoding-methods-for-nlp-23ca59cb1e9d
 
-def decode(model, src, conds, max_len, type, use_cond2dec=False):
-    src_mask = create_src_mask(src=src, cond=conds)
-
-    z, _, _, _ = model.encode(src, conds, src_mask)
+def decode(model, src, econds, mconds, dconds, max_strlen, type, use_cond2dec=False):
+    src_mask = create_src_mask(src=src, cond=econds)
+    z = model.encoder_mlp(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
     break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
@@ -22,15 +21,15 @@ def decode(model, src, conds, max_len, type, use_cond2dec=False):
     # create a batch of starting tokens (1)
     ys = torch.ones(src.shape[0], 1, requires_grad=True).type_as(src.data)
 
-    for i in range(max_len-1):
+    for i in range(max_strlen-1):
         with torch.no_grad():
             # create a sequence (nopeak) mask for target
             # use_cond2dec should be true s.t. trg_mask considers both the conditions and smiles tokens
-            trg_mask = nopeak_mask(ys.size(-1), conds.size(1), src.get_device(), use_cond2dec) 
+            trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), src.get_device(), use_cond2dec) 
             # dim. of output: (bs, ys.size(-1)+1, d_model)
-            output = model.decode(ys, z, conds, src_mask, trg_mask)[0]
+            output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
             # dim. of output: (bs, ys.size(-1)+1, vocab_size)
-            output = model.generator(output)
+            output = model.out(output)
             # we care about the last token
             output = output[:, -1, :]
             # may need to check if the probability of the output is log-based

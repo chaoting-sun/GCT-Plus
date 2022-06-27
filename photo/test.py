@@ -131,6 +131,16 @@ def analyze_data(prop_df):
     # print('tPSA count in the bound:', prop_df['tPSA' < tpsa_ub].count() / len(prop_df))
     # print('QED count in the bound:', prop_df['QED' < qed_ub].count() / len(prop_df))
 
+import sys
+from rdkit import Chem
+
+def numAtomsFromSmiles(smiles: str):
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        sys.exit("Invalid SMILES: " + smiles)
+    mol = Chem.AddHs(mol)
+    return mol.GetNumAtoms()
+
 
 if __name__ == '__main__':
     # file_path = '/fileserver-gamma/chaoting/ML/data/moses/prop_temp.csv'
@@ -141,8 +151,29 @@ if __name__ == '__main__':
     
     # error_plot()
 
-    df = get_dataset('train')
+    n_samples = 100000
 
+    train = get_dataset('train')[:n_samples]
+    test = get_dataset('test')[:n_samples]
+    test_scaffolds = get_dataset('test_scaffolds')[:n_samples]
+
+    train = list(map(numAtomsFromSmiles, train))
+    test = list(map(numAtomsFromSmiles, test))
+    test_scaffolds = list(map(numAtomsFromSmiles, test_scaffolds))
+
+    df = pd.DataFrame({
+        'train': train,
+        'test': test,
+        'train_scaffolds': test_scaffolds
+    })
+
+    fig = df.plot.kde(bw_method=0.1).get_figure()
+    plt.tight_layout()
+    fig.savefig('atomnum_dist.png')
+    
+    exit()
+
+    df = get_dataset('train')
     intDiv = metrics.internal_diversity(df[:100000])
     print("internal diversity >", intDiv)
     exit()

@@ -10,8 +10,6 @@ from Tokenize import moltokenize
 
 
 def smiles_fields(smiles_field_path=None):
-    print("- loading molecule tokenizers...")
-
     t_src = moltokenize()
     t_trg = moltokenize()
 
@@ -21,11 +19,10 @@ def smiles_fields(smiles_field_path=None):
     
     if smiles_field_path is not None:
         try:
-            print("- loading presaved fields...")
             SRC = pickle.load(open(os.path.join(smiles_field_path, 'SRC.pkl'), 'rb'))
             TRG = pickle.load(open(os.path.join(smiles_field_path, 'TRG.pkl'), 'rb'))
         except:
-            print("- Files SRC.pkl/TRG.pkl not in:" + smiles_field_path)
+            print(">>> Files SRC.pkl/TRG.pkl not in:" + smiles_field_path)
             exit(1)
 
     return (SRC, TRG)

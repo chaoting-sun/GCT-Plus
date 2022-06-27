@@ -1,7 +1,7 @@
 #!/usr/bin/env bash 
 
-python3 -u \
-    main.py \
+nohup python3 -u \
+    main_preprocess.py \
         -similarity 0.60 \
         -n_jobs 4 \
         -load_field \
@@ -9,6 +9,4 @@ python3 -u \
         -field_path ./molGCT \
         -load_scaler \
         -variational \
-
-
-        
+        >preprocess.out 2>preprocess.err&

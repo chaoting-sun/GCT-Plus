@@ -240,7 +240,6 @@ class MLP_Transformer(nn.Module):
         x = self.mlp(z1, mconds)
         z2, mu2, log_var2 = self.sampler2(x)
 
-        print(">>", trg.size(), z1.size(), dconds.size(), src_mask.size(), trg_mask.size())
         d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
         
         output = self.out(d_output)

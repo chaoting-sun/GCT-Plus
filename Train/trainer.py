@@ -10,9 +10,9 @@ from datetime import timedelta
 import torch
 # import torch.nn as nn
 
-from Model.cvae_Transformer import decode, transformer, mask
-from Model.cvae_Transformer.noam_opt import NoamOpt as moptim
-from Model.cvae_Transformer.loss import LossCompute, Criterion, KLAnnealer
+from Model.mlpcvae_Transformer import decode
+from Model.mlpcvae_Transformer.noam_opt import NoamOpt as moptim
+from Model.mlpcvae_Transformer.loss import LossCompute, Criterion
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
 # import Process.data_preparation as pdp
@@ -31,9 +31,9 @@ class Trainer(object):
         self.LOG.info(args)
 
 
-    def get_optimization(self, model):
+    def get_optimization(self, trainable_parameters):
         if self.args.starting_epoch == 1:
-            optimizer = torch.optim.Adam(model.parameters(), lr=0,
+            optimizer = torch.optim.Adam(trainable_parameters, lr=0,
                                          betas=(self.args.adam_beta1, 
                                                 self.args.adam_beta2), 
                                          eps=self.args.adam_eps)
@@ -43,15 +43,15 @@ class Trainer(object):
             checkpoint = torch.load(os.path.join(self.save_path, f'model_{self.args.starting_epoch-1}.pt'), map_location='cuda:0')
             optim_dict = checkpoint['optimizer_state_dict']
             optim = moptim(optim_dict['model_size'], optim_dict['factor'], 
-                           optim_dict['warmup'], torch.optim.Adam(model.parameters(), lr=0))
+                           optim_dict['warmup'], torch.optim.Adam(trainable_parameters, lr=0))
             optim.load_state_dict(optim_dict)
         return optim
 
 
     def save_checkpoint(self, model, optim, model_name, src_vocab_size, trg_vocab_size):
         # save optimizer and hyperparameters
+        os.makedirs(self.save_path, exist_ok=True)
         file_name = os.path.join(self.save_path, model_name)
-        os.makedirs(file_name, exist_ok=True)
         model_params = { 
             'N': self.args.N, 'H': self.args.H, 'd_ff': self.args.d_ff, 'nconds': self.args.nconds, 
             'd_model': self.args.d_model, 'dropout': self.args.dropout, 'latent_dim': self.args.latent_dim, 
@@ -63,7 +63,7 @@ class Trainer(object):
             'optimizer_state_dict': optim.save_state_dict(),
             'model_parameters': model_params
         }
-        torch.save_checkpoint(save_dict, file_name)
+        torch.save(save_dict, file_name)
 
 
     def run_epoch(self, iter, model, loss_compute, device):
@@ -84,19 +84,16 @@ class Trainer(object):
             econds = batch.econds.to(device) 
             mconds = batch.mconds.to(device)
             dconds = batch.dconds.to(device) 
-            
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
             _, out, _, _, _ = model.forward(src, trg, econds, mconds, dconds)
 
             # Compute loss (rec-loss + KL-div) and update
             loss = loss_compute(out, trg_y)
-            
             sum_loss += float(loss)
             smiles = decode.decode(model, src, econds, mconds, dconds, self.args.max_strlen, 
                                    type='greedy', use_cond2dec=self.args.use_cond2dec)
-            print(smiles)
             n_samples += batch.trg.size(0)
-            n_tokens += float((batch.trg_y != self.pad_idx).data.sum())
+            n_tokens += float((batch.trg_y != self.args.src_pad_idx).data.sum())
 
             for b in range(batch.trg.size(0)):
                 if torch.equal(smiles[b, :], trg[b]):
@@ -110,14 +107,21 @@ class Trainer(object):
         src_vocab_size, trg_vocab_size = len(SRC.vocab), len(TRG.vocab)
 
         model = model.to(device)
-        optim = self.get_optimization(model)
+        
+        print(">>> GET OPTIMIZER")
+        optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
+
+        print(">>> GET CRITERION")
         criterion = Criterion(size=len(TRG.vocab), padding_idx=SRC.vocab.stoi['<pad>'],
                               smoothing=self.args.label_smoothing)
         
+        lowest_loss = 1000000
         early_stop, stop_cnt = 8, 0
         epoch = epoch_best = self.args.starting_epoch
 
         while epoch <= self.args.num_epoch:
+            print(f">>> EPOCHS: ", epoch)
+
             self.LOG.info("Starting EPOCH #%d", epoch)
 
             """ Train """
@@ -125,18 +129,22 @@ class Trainer(object):
             model.train()
             acc_train, loss_train = self.run_epoch(train_iter, model,
                                     LossCompute(criterion, optim), device)
+            print(">>> training accuracy: {:.6}\ttraining loss: {:.6}".format(acc_train, loss_train))
+
             self.LOG.info("Training end")
 
             """ Validation """
             self.LOG.info("Validation start")
             model.eval()
             with torch.no_grad():
-                acc_val, loss_val = self.validation(valid_iter, model,
+                acc_val, loss_val = self.run_epoch(valid_iter, model,
                                     LossCompute(criterion, None), device)
+            print(">>> validation accuracy: {:.6}\tvalidation loss: {:.6}".format(acc_val, loss_val))
+
             self.LOG.info("Validation end")
 
             """ Recording """
-            self.LOG.info(">>Train:Acc/loss {:.6},{:.6}\tValidation:Acc/loss {:.6},{:.6}".
+            self.LOG.info("Train:Acc/loss {:.6},{:.6}\tValidation:Acc/loss {:.6},{:.6}".
                           format(acc_train, loss_train, acc_val, loss_val))
 
             """ Recording the best """

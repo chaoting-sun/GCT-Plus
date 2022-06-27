@@ -16,11 +16,6 @@ def get_logger(name, log_path, level=logging.INFO):
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    # Logging to a file
-    try:
-        os.makedirs(log_path)
-    except FileExistsError:
-        pass
     file_handler = logging.FileHandler(log_path)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)

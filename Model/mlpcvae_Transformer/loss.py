@@ -12,6 +12,45 @@ class LossCompute:
         self.loss_function = loss_function
         self.optim = optim
 
+    def __call__(self, x, y):
+        loss = self.loss_function(x.contiguous().view(-1, x.size(-1)),
+                                  y.contiguous().view(-1))
+        if self.optim is not None: # training section
+            loss.backward()
+            self.optim.step()
+            self.optim.optimizer.zero_grad()
+        return loss.data
+
+
+class Criterion(nn.Module):
+    """ 
+    - function: compute reconstruction loss (contain label smoothing) and KL divergence
+        - dependence 1: ReconstructionLoss
+        - dependence 2: KLDivergence
+    """
+    def __init__(self, size, padding_idx, smoothing=0.00):
+        super(Criterion, self).__init__()
+        self.padding_idx = padding_idx
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+        self.size = size
+        self.true_dist = None
+
+    def forward(self, x, target):
+        rec_loss = ReconstructionLoss(x, target, self.size, self.smoothing, 
+                                      self.confidence, self.padding_idx)
+        return rec_loss
+
+
+class VAELossCompute:
+    """ 
+    - function: compute loss and train model
+        - dependence: loss function
+    """
+    def __init__(self, loss_function, optim):
+        self.loss_function = loss_function
+        self.optim = optim
+
     def __call__(self, x, y, norm, mu, logvar, beta):
         rec_loss, KL_div = self.loss_function(x.contiguous().view(-1, x.size(-1)),
                                               y.contiguous().view(-1), mu, logvar, beta)
@@ -25,14 +64,14 @@ class LossCompute:
         return rec_loss.data, KL_div
 
 
-class Criterion(nn.Module):
+class VAECriterion(nn.Module):
     """ 
     - function: compute reconstruction loss (contain label smoothing) and KL divergence
         - dependence 1: ReconstructionLoss
         - dependence 2: KLDivergence
     """
     def __init__(self, size, padding_idx, smoothing=0.00):
-        super(Criterion, self).__init__()
+        super(VAECriterion, self).__init__()
         self.padding_idx = padding_idx
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
@@ -65,7 +104,9 @@ def ReconstructionLoss(x, target, size, smoothing, confidence, padding_idx):
     mask = torch.nonzero(target.data == padding_idx)
     if mask.dim() > 0:
         true_dist.index_fill_(0, mask.squeeze(), 0.0)
-    
+    print('x:', x.size(), x)
+    print('true_dist:', target.size(), target)
+
     # return recontruction loss (sum of a batch)
     return nn.KLDivLoss(reduction='batchmean')(x, Variable(true_dist, requires_grad=False))
 
