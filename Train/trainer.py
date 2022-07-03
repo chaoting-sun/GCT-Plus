@@ -123,19 +123,18 @@ class Trainer(object):
         print('>>> SAMPLE SMILES:')
         printsmiles(sample)
 
+        print("--- accuracy: {:.6}\tloss: {:.6}".format(
+            n_correct*1.0/n_samples, sum_loss/n_tokens))
+
         # the accuracy in a epoch & average loss of each predicted token
         return n_correct*1.0/n_samples, sum_loss/n_tokens
 
 
     def train(self, model, train_iter, valid_iter, SRC, TRG, device):
-        src_vocab_size, trg_vocab_size = len(SRC.vocab), len(TRG.vocab)
-
-        model = model.to(device)
-        
-        print(">>> GET OPTIMIZER")
+        print(">>> PREPARING OPTIMIZER")
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
 
-        print(">>> GET CRITERION")
+        print(">>> PREPARING LOSS FUNCTION")
         criterion = Criterion(size=len(TRG.vocab), 
                               padding_idx=TRG.vocab.stoi['<pad>'],
                               smoothing=self.args.label_smoothing)
@@ -144,28 +143,27 @@ class Trainer(object):
         early_stop, stop_cnt = 10, 0
         epoch = epoch_best = self.args.starting_epoch
 
+        print('>>> TRAINING THE MODEL')
         while epoch <= self.args.num_epoch:
-            print(f">>> EPOCHS: ", epoch)
+            print(f"{epoch} EPOCH: ")
 
             self.LOG.info("Starting EPOCH #%d", epoch)
 
             """ Train """
-            self.LOG.info("Training start")
             model.train()
+
+            self.LOG.info("Training start")
             acc_train, loss_train = self.run_epoch(train_iter, model,
                                     LossCompute(criterion, optim), device, TRG)
-            print(">>> training accuracy: {:.6}\ttraining loss: {:.6}".format(acc_train, loss_train))
-
             self.LOG.info("Training end")
 
             """ Validation """
-            self.LOG.info("Validation start")
             model.eval()
+
+            self.LOG.info("Validation start")
             with torch.no_grad():
                 acc_val, loss_val = self.run_epoch(valid_iter, model,
                                     LossCompute(criterion, None), device, TRG)
-            print(">>> validation accuracy: {:.6}\tvalidation loss: {:.6}".format(acc_val, loss_val))
-
             self.LOG.info("Validation end")
 
             """ Recording """
@@ -178,14 +176,14 @@ class Trainer(object):
                 if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
                     os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
                     
-                self.save_checkpoint(model, optim, f"best_{epoch}.pt", src_vocab_size, trg_vocab_size)
+                self.save_checkpoint(model, optim, f"best_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
                 lowest_loss = loss_val
                 epoch_best = epoch
                 stop_cnt = 0
             else:
                 stop_cnt += 1
 
-            self.save_checkpoint(model, optim, f"model_{epoch}.pt", src_vocab_size, trg_vocab_size)
+            self.save_checkpoint(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
             
             epoch += 1
             if stop_cnt >= early_stop:

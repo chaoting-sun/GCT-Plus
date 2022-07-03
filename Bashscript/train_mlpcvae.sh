@@ -22,8 +22,8 @@
 #     >train_sim1.out 2>train_sim1.err &
 
 # train
-# CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 python3 -u \
-CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+# CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 python3 -u \
     main_train.py \
         -similarity 1 \
         -n_jobs 2 \
@@ -40,4 +40,4 @@ CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -starting_epoch 1 \
         -train_verbose \
         -train_stage 2 \
-    >train_sim1_5.out 2>train_sim1_5.err &
+    # >train_sim1_5.out 2>train_sim1_5.err &

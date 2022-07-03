@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from .sublayers import Norm
 from .layers import EncoderLayer, DecoderLayer
 from .embeddings import Embeddings, PositionalEncoding
-from .mask import create_masks
+from .mask import create_masks, create_source_mask
 
 
 import copy
@@ -17,24 +17,11 @@ def get_clones(layer, N):
     return nn.ModuleList([copy.deepcopy(layer) for _ in range(N)])
 
 
-class Generator(nn.Module):
-    "Define standard linear + softmax generation step."
-
-    def __init__(self, d_model, vocab):
-        super(Generator, self).__init__()
-        self.proj = nn.Linear(d_model, vocab)
-
-    def forward(self, x):
-
-        return F.log_softmax(self.proj(x), dim=-1)
-
-
 class MLP(nn.Module):
     def __init__(self, vocab_size, latent_dim, mcond_dim, d_model):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
-        
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
@@ -247,6 +234,115 @@ class MLP_Transformer(nn.Module):
         z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
         x = self.mlp(z1, mconds)
         z2, mu2, log_var2 = self.sampler2(x)
+        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
+        output = self.out(d_output)
+        
+        if self.use_cond2dec == True:
+            output_prop = self.prop_fc(output[:, :self.nconds, :])
+            output_mol = output[:, self.nconds:, :]
+        elif self.use_cond2lat == True:
+            output_prop = torch.zeros(output.size(0), self.nconds, 1)
+            output_mol = output
+
+        output_mol = F.log_softmax(output_mol, dim=-1)
+
+        return (output_prop, output_mol,
+                (mu1, log_var1, z1),
+                (mu2, log_var2, z2),
+                (q_k_enc, q_k_dec1, q_k_dec2))
+        # return output_prop, output_mol, mu, log_var, z, q_k_enc, q_k_dec1, q_k_dec2
+
+
+class MLP_Encoder(nn.Module):
+    def __init__(self, transformer, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
+                 dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
+        super(MLP_Transformer, self).__init__()
+        # settings
+        self.nconds = nconds
+        self.use_cond2dec = use_cond2dec
+        self.use_cond2lat = use_cond2lat
+
+        # model architecture
+        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
+                               nconds, dropout, variational)
+        self.sampler1 = Sampler(d_model, latent_dim, variational)
+        self.mlp = MLP(src_vocab, latent_dim, 2*nconds, d_model)
+        self.sampler2 = Sampler(d_model, latent_dim, variational)
+        self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
+                               nconds, dropout, use_cond2dec, use_cond2lat)
+        self.out = nn.Linear(d_model, trg_vocab)
+
+        self._reset_parameters()
+        self._transfer_parameters(transformer)
+        self._freeze_parameters()
+
+        # other layers
+        if self.use_cond2dec == True:
+            self.prop_fc = nn.Linear(trg_vocab, 1)
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)                
+
+    def _freeze_parameters(self):
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        for param in self.sampler1.parameters():
+            param.requires_grad = False
+        for param in self.out.parameters():
+            param.requires_grad = False
+        for param in self.sampler2.parameters():
+            param.requires_grad = False
+        for param in self.decoder.parameters():
+            param.requires_grad = False
+
+    def _transfer_parameters(self, transformer):
+        for name, param in transformer.named_parameters():
+            name_split = name.split('.')
+            sub_name = '.'.join(name_split[1:])
+
+            if name_split[-2] in ('fc_mu', 'fc_log_var'):
+                self.sampler1.state_dict()[sub_name].copy_(param)
+                self.sampler2.state_dict()[sub_name].copy_(param)
+            elif name_split[-2] == 'out':
+                self.out.state_dict()[sub_name] = param
+            elif name_split[0] == 'encoder':
+                self.encoder.state_dict()[sub_name].copy_(param)
+            elif name_split[0] == 'decoder':
+                self.decoder.state_dict()[sub_name].copy_(param)
+            else:
+                exit("There may be something missing.")
+
+
+    def get_latent_space(self, seq, seq_mask, econds):
+        x, q_k_enc = self.encoder(seq, econds, seq_mask)
+        z, mu, log_var = self.sampler1(x)
+        return z     
+
+    
+    def encoder_mlp(self, src, econds, mconds, src_mask):
+        x, _ = self.encoder(src, econds, src_mask)
+        z1, _, _ = self.sampler1(x)
+        x = self.mlp(z1, mconds)
+        z2, _, _ = self.sampler2(x)
+        return z2
+
+    def forward(self, src, trg, econds, mconds, dconds):
+        src_pad_mask = create_source_mask(src, econds)
+        trg_pad_mask = create_source_mask(trg, dconds)
+
+        src_z = self.get_latent_space(src, src_pad_mask)
+        trg_z_truth = self.get_latent_space(trg, trg_pad_mask)
+        trg_z_predict = self.mlp(src_z, mconds)
+
+        x, q_k_enc = self.encoder(src, econds, src_mask)
+        z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
+        x = self.mlp(z1, mconds)
+        z2, mu2, log_var2 = self.sampler2(x)
+
+        src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
+
         d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
         output = self.out(d_output)
         

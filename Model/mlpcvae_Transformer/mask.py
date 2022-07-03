@@ -12,7 +12,7 @@ def subsequent_mask(size):
 """
 create masks for Transformer
 """
-def nopeak_mask(size, cond_dim, device, use_cond2dec):
+def nopeak_mask(size, cond_dim, use_cond2dec, device=None):
     np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')
     if use_cond2dec == True:
         cond_mask = np.zeros((1, cond_dim, cond_dim))
@@ -23,52 +23,44 @@ def nopeak_mask(size, cond_dim, device, use_cond2dec):
         lower_mask = np.concatenate([cond_mask_lowerleft, np_mask], axis=2)
         np_mask = np.concatenate([upper_mask, lower_mask], axis=1)
     np_mask = Variable(torch.from_numpy(np_mask) == 0)
-    if device == 0:
-      np_mask = np_mask.cuda()
+    if device is not None:
+        np_mask = np_mask.to(device)
     return np_mask
 
 
-def create_src_mask(src, cond):
-    src_mask = (src != 0).unsqueeze(-2)
-    cond_mask = torch.unsqueeze(cond, -2)
+def create_condition_mask(conditions):
+    # (bs, nconds) -> (bs, 1, nconds)    
+    cond_mask = torch.unsqueeze(conditions, -2)
     cond_mask = torch.ones_like(cond_mask, dtype=bool)
-    src_mask = torch.cat([cond_mask, src_mask], dim=2) # pad mask (cond + smiles)
-    return src_mask
+    return cond_mask
 
 
-def create_trg_mask(trg, cond, use_cond2dec):
-    cond_mask = torch.unsqueeze(cond, -2)
-    cond_mask = torch.ones_like(cond_mask, dtype=bool)
-    # pad mask
-    trg_mask = (trg != 0).unsqueeze(-2)
+def create_source_mask(source, conditions=None, condition_mask=None):
+    # (bs, strlen) -> (bs, 1, strlen)
+    source_mask = (source != 0).unsqueeze(-2)
+    if conditions is not None:
+        if condition_mask is None:
+            condition_mask = create_condition_mask(conditions)
+        # (bs, 1, strlen+nconds)
+        return torch.cat([condition_mask, source_mask], dim=2)
+    return source_mask
+
+
+def create_target_mask(target, condition_mask, use_cond2dec):
+    # padding mask
+    target_mask = (target != 0).unsqueeze(-2)
     if use_cond2dec == True:
-        trg_mask = torch.cat([cond_mask, trg_mask], dim=2) 
-    # seq mask
-    np_mask = nopeak_mask(trg.size(1), cond.size(-1), trg.get_device(), use_cond2dec)
-    if trg.is_cuda:
-        np_mask.cuda()
-    # pad + seq mask
-    trg_mask = trg_mask & np_mask
-    return trg_mask
+        target_mask = torch.cat([condition_mask, target_mask], dim=2) 
+    # sequence mask
+    np_mask = nopeak_mask(target.size(1), condition_mask.size(-1), 
+                          use_cond2dec, target.get_device())
+    return target_mask & np_mask
 
 
-def create_masks(src, trg, cond, use_cond2dec=True):
-    src_mask = (src != 0).unsqueeze(-2)
-    cond_mask = torch.unsqueeze(cond, -2)
-    cond_mask = torch.ones_like(cond_mask, dtype=bool)
-    src_mask = torch.cat([cond_mask, src_mask], dim=2)
-
-    if trg is not None:
-        # trg: pad mask (cond + smiles)
-        trg_mask = (trg != 0).unsqueeze(-2)
-        if use_cond2dec == True:
-            trg_mask = torch.cat([cond_mask, trg_mask], dim=2) 
-        # trg: seq mask (cond + smiles)
-        np_mask = nopeak_mask(trg.size(1), cond.size(-1), src.get_device(), use_cond2dec)
-        if trg.is_cuda:
-            np_mask.cuda()
-        # trg: pad + seq mask (cond + smiles)
-        trg_mask = trg_mask & np_mask
-    else:
-        trg_mask = None
-    return src_mask, trg_mask
+def create_masks(source, target, condition, use_cond2dec=True):
+    condition_mask = create_condition_mask(condition)
+    source_mask = create_source_mask(source, condition, condition_mask)
+    if target is not None:
+        target_mask = create_target_mask(target, condition_mask, use_cond2dec)
+    device = source.get_device()
+    return source_mask.to(device), target_mask.to(device)

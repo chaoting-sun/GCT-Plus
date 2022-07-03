@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
-from Model.mlpcvae_Transformer.mask import create_src_mask, nopeak_mask
+from Model.mlpcvae_Transformer.mask import create_source_mask, nopeak_mask
 
 # torch function:
 # torch.max(input, dim): return (max, max_indices)
@@ -13,7 +13,7 @@ from Model.mlpcvae_Transformer.mask import create_src_mask, nopeak_mask
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx, 
            max_strlen, type, use_cond2dec=False):
-    src_mask = create_src_mask(src=src, cond=econds)
+    src_mask = create_source_mask(src, econds)
     z = model.encoder_mlp(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
@@ -26,7 +26,8 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
         with torch.no_grad():
             # create a sequence (nopeak) mask for target
             # use_cond2dec should be true s.t. trg_mask considers both the conditions and smiles tokens
-            trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), src.get_device(), use_cond2dec) 
+            trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), 
+                                   use_cond2dec, src.get_device()) 
             # dim. of output: (bs, ys.size(-1)+1, d_model)
             output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
             # dim. of output: (bs, ys.size(-1)+1, vocab_size)
