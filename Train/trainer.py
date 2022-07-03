@@ -1,3 +1,4 @@
+from genericpath import exists
 import os
 import gc
 import time
@@ -26,8 +27,9 @@ class Trainer(object):
     def __init__(self, args):
         # parameters for training
         self.args = args
-        self.save_path = os.path.join('Experiment', args.save_directory)
-        self.LOG = get_logger(name="train_model", log_path=os.path.join(self.save_path, 'train_model.log'))
+        os.makedirs(args.save_directory, exist_ok=True)
+        self.LOG = get_logger(name="train_model", 
+                              log_path=os.path.join(args.save_directory, 'train_model.log'))
         self.LOG.info(args)
 
 
@@ -40,7 +42,8 @@ class Trainer(object):
             optim = moptim(self.args.d_model, self.args.factor,
                            self.args.warmup_steps, optimizer)           
         else:
-            checkpoint = torch.load(os.path.join(self.save_path, f'model_{self.args.starting_epoch-1}.pt'), map_location='cuda:0')
+            checkpoint = torch.load(os.path.join(self.args.save_directory, 
+                                    f'model_{self.args.starting_epoch-1}.pt'), map_location='cuda:0')
             optim_dict = checkpoint['optimizer_state_dict']
             optim = moptim(optim_dict['model_size'], optim_dict['factor'], 
                            optim_dict['warmup'], torch.optim.Adam(trainable_parameters, lr=0))
@@ -49,9 +52,9 @@ class Trainer(object):
 
 
     def save_checkpoint(self, model, optim, model_name, src_vocab_size, trg_vocab_size):
-        # save optimizer and hyperparameters
-        os.makedirs(self.save_path, exist_ok=True)
-        file_name = os.path.join(self.save_path, model_name)
+        # save optimizer and hyperparametdecodeers
+        os.makedirs(self.args.save_directory, exist_ok=True)
+        file_name = os.path.join(self.args.save_directory, model_name)
         model_params = { 
             'N': self.args.N, 'H': self.args.H, 'd_ff': self.args.d_ff, 'nconds': self.args.nconds, 
             'd_model': self.args.d_model, 'dropout': self.args.dropout, 'latent_dim': self.args.latent_dim, 
@@ -66,38 +69,59 @@ class Trainer(object):
         torch.save(save_dict, file_name)
 
 
-    def run_epoch(self, iter, model, loss_compute, device):
+    def run_epoch(self, data_iter, model, loss_compute, device, TRG):
         """
         The following variables records the total values from the dataset
         """
-        sum_loss = 0
-        n_tokens = 0
-        n_samples = 0
-        n_correct = 0
-        
-        dataloader = to_dataloader(iter, self.args.conditions)
-        
-        for i, batch in tqdm(enumerate(dataloader), total=len(iter)):
-            src = batch.src.to(device)
-            trg_y = batch.trg_y.to(device)
-            trg = batch.trg.to(device)
-            econds = batch.econds.to(device) 
-            mconds = batch.mconds.to(device)
-            dconds = batch.dconds.to(device) 
-            # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-            _, out, _, _, _ = model.forward(src, trg, econds, mconds, dconds)
+        sum_loss, n_tokens, n_samples, n_correct = 0, 0, 0, 0
+        dataloader = to_dataloader(data_iter, self.args.conditions, device)
 
+        # torch.set_printoptions(threshold=10_000)
+
+        # for i, batch in tqdm(enumerate(dataloader), total=len(data_iter)):
+        for i, batch in enumerate(dataloader):
+            # dim of out: (batch_size, max_trg_seq_length-1, d_model)
+            _, out, _, _, _ = model.forward(batch.src, 
+                                            batch.trg, 
+                                            batch.econds, 
+                                            batch.mconds, 
+                                            batch.dconds)
+             
             # Compute loss (rec-loss + KL-div) and update
-            loss = loss_compute(out, trg_y)
+            loss = loss_compute(out, batch.trg_y)
+            
+            smiles = decode.decode(model, batch.src,
+                                   batch.econds, 
+                                   batch.mconds, 
+                                   batch.dconds, 
+                                   self.args.sos_idx,
+                                   self.args.eos_idx,
+                                   self.args.max_strlen, 
+                                   type='greedy', 
+                                   use_cond2dec=self.args.use_cond2dec)
+
             sum_loss += float(loss)
-            smiles = decode.decode(model, src, econds, mconds, dconds, self.args.max_strlen, 
-                                   type='greedy', use_cond2dec=self.args.use_cond2dec)
             n_samples += batch.trg.size(0)
             n_tokens += float((batch.trg_y != self.args.src_pad_idx).data.sum())
 
+            # correctness: all tokens of a SMILES as a unit
             for b in range(batch.trg.size(0)):
-                if torch.equal(smiles[b, :], trg[b]):
+                if torch.equal(smiles[b, :], batch.trg[b]):
                     n_correct += 1
+            
+            print('average_accuracy: {:.6f}\taverage_loss_each_token: {:.6f}'.
+                  format(n_correct*1.0/n_samples, sum_loss/n_tokens))
+            
+            if i == len(data_iter) - 1:
+                sample = smiles[:6]
+
+        def printsmiles(smiles):
+            smiles = smiles.cpu().numpy()
+            for i in range(len(smiles)):
+                outs = ''.join([TRG.vocab.itos[tok] for tok in smiles[i]])
+                print(i, outs)
+        print('>>> SAMPLE SMILES:')
+        printsmiles(sample)
 
         # the accuracy in a epoch & average loss of each predicted token
         return n_correct*1.0/n_samples, sum_loss/n_tokens
@@ -112,11 +136,12 @@ class Trainer(object):
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
 
         print(">>> GET CRITERION")
-        criterion = Criterion(size=len(TRG.vocab), padding_idx=SRC.vocab.stoi['<pad>'],
+        criterion = Criterion(size=len(TRG.vocab), 
+                              padding_idx=TRG.vocab.stoi['<pad>'],
                               smoothing=self.args.label_smoothing)
         
         lowest_loss = 1000000
-        early_stop, stop_cnt = 8, 0
+        early_stop, stop_cnt = 10, 0
         epoch = epoch_best = self.args.starting_epoch
 
         while epoch <= self.args.num_epoch:
@@ -128,7 +153,7 @@ class Trainer(object):
             self.LOG.info("Training start")
             model.train()
             acc_train, loss_train = self.run_epoch(train_iter, model,
-                                    LossCompute(criterion, optim), device)
+                                    LossCompute(criterion, optim), device, TRG)
             print(">>> training accuracy: {:.6}\ttraining loss: {:.6}".format(acc_train, loss_train))
 
             self.LOG.info("Training end")
@@ -138,7 +163,7 @@ class Trainer(object):
             model.eval()
             with torch.no_grad():
                 acc_val, loss_val = self.run_epoch(valid_iter, model,
-                                    LossCompute(criterion, None), device)
+                                    LossCompute(criterion, None), device, TRG)
             print(">>> validation accuracy: {:.6}\tvalidation loss: {:.6}".format(acc_val, loss_val))
 
             self.LOG.info("Validation end")
@@ -150,8 +175,8 @@ class Trainer(object):
             """ Recording the best """
             if lowest_loss > loss_val:
                 # store lowest-loss new model every time is safer
-                if os.path.exists(os.path.join(self.save_path, f"best_{epoch_best}.pt")):
-                    os.remove(os.path.join(self.save_path, f"best_{epoch_best}.pt"))
+                if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
+                    os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
                     
                 self.save_checkpoint(model, optim, f"best_{epoch}.pt", src_vocab_size, trg_vocab_size)
                 lowest_loss = loss_val

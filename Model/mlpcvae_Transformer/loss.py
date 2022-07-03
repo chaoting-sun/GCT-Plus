@@ -88,7 +88,8 @@ class VAECriterion(nn.Module):
 def ReconstructionLoss(x, target, size, smoothing, confidence, padding_idx):
     # dim. of true_dist: (batch_size*max_trg_len, vocab_len)
     true_dist = x.data.clone()
-
+    torch.set_printoptions(threshold=10_000)
+    
     # fill true_dist with "self.smoothing / (self.size - 2)"
     # -2 as we are not distributing the smoothing mass over
     # the pad token idx and over the ground truth index
@@ -98,16 +99,15 @@ def ReconstructionLoss(x, target, size, smoothing, confidence, padding_idx):
     true_dist.scatter_(dim=1, index=target.data.unsqueeze(1), value=confidence)
 
     # The pad index does not have prob. Set it to be 0
-    true_dist[:, padding_idx] = 0       
+    true_dist[:, padding_idx] = 0
 
     # the padding positions are not revalent to the sequence, and does not have prob.
     mask = torch.nonzero(target.data == padding_idx)
     if mask.dim() > 0:
         true_dist.index_fill_(0, mask.squeeze(), 0.0)
-    print('x:', x.size(), x)
-    print('true_dist:', target.size(), target)
 
     # return recontruction loss (sum of a batch)
+    # One should notice that x should pass through log_softmax before we compute kldiv
     return nn.KLDivLoss(reduction='batchmean')(x, Variable(true_dist, requires_grad=False))
 
 

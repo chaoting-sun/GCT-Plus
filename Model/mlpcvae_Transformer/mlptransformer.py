@@ -35,8 +35,14 @@ class MLP(nn.Module):
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
         
-        mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model]
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
+        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
+        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
+        mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
+        # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
         self.mlp_layers = self.build_mlp(mlp_stacks)
+        self.norm = Norm(d_model)
 
     def build_mlp(self, stacks):
         layers = []        
@@ -47,9 +53,10 @@ class MLP(nn.Module):
     def forward(self, x, mconds):
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([x, mconds], dim=2)
+
         for i in range(len(self.mlp_layers)):
             x = self.mlp_layers[i](x)
-        return x
+        return self.norm(x) # should add to avoid inf
 
 
 class Sampler(nn.Module):
@@ -70,7 +77,8 @@ class Sampler(nn.Module):
     def forward(self, x):
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)
-        return self.sampling(mu, log_var), mu, log_var
+        z = self.sampling(mu, log_var)
+        return z, mu, log_var
 
 
 class Encoder(nn.Module):
@@ -185,8 +193,8 @@ class MLP_Transformer(nn.Module):
         self.out = nn.Linear(d_model, trg_vocab)
 
         self._reset_parameters()
-        self._freeze_parameters()
         self._transfer_parameters(transformer)
+        self._freeze_parameters()
 
         # other layers
         if self.use_cond2dec == True:
@@ -195,7 +203,7 @@ class MLP_Transformer(nn.Module):
     def _reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+                nn.init.xavier_uniform_(p)                
 
     def _freeze_parameters(self):
         for param in self.encoder.parameters():
@@ -214,10 +222,10 @@ class MLP_Transformer(nn.Module):
             name_split = name.split('.')
             sub_name = '.'.join(name_split[1:])
 
-            if name_split[-2] in ('mu', 'log_var'):
+            if name_split[-2] in ('fc_mu', 'fc_log_var'):
                 self.sampler1.state_dict()[sub_name].copy_(param)
                 self.sampler2.state_dict()[sub_name].copy_(param)
-            elif name_split[0] == 'out':
+            elif name_split[-2] == 'out':
                 self.out.state_dict()[sub_name] = param
             elif name_split[0] == 'encoder':
                 self.encoder.state_dict()[sub_name].copy_(param)
@@ -239,9 +247,7 @@ class MLP_Transformer(nn.Module):
         z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
         x = self.mlp(z1, mconds)
         z2, mu2, log_var2 = self.sampler2(x)
-
         d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
-        
         output = self.out(d_output)
         
         if self.use_cond2dec == True:
@@ -250,6 +256,9 @@ class MLP_Transformer(nn.Module):
         elif self.use_cond2lat == True:
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
+
+        output_mol = F.log_softmax(output_mol, dim=-1)
+
         return (output_prop, output_mol,
                 (mu1, log_var1, z1),
                 (mu2, log_var2, z2),

@@ -17,10 +17,10 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from Tokenize import moltokenize
-import Configuration.opts as opts
+from Configuration.config import options as opts
 from Model.cvae_Transformer import transformer
-from Process import data_preparation as dp
-import beam
+from Utils.field import smiles_fields
+# import beam
 
 
 def get_sampled_element(myCDF):
@@ -275,6 +275,21 @@ def sample_molecule(opt, toklen_data, model, SRC, TRG, scaler):
 
 from moses.metrics import metrics
 
+total_num_each = 100  # 100
+num_samples_each = 5
+tol_failure_num = 500  # 300 # tolerated failure number
+
+logp_lb = 0.03
+logp_ub = 4.97
+tpsa_lb = 17.92
+tpsa_ub = 112.83
+qed_lb = 0.58
+qed_ub = 0.95
+
+logp_values = np.linspace(logp_lb, logp_ub, num=num_samples_each)
+tpsa_values = np.linspace(tpsa_lb, tpsa_ub, num=num_samples_each)
+qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
+
 
 def inference():
     # fix_random_seed()
@@ -289,25 +304,11 @@ def inference():
 
     os.makedirs('molGCT/inference', exist_ok=True)
 
-    total_num_each = 100  # 100
-    num_samples_each = 5
-    tol_failure_num = 500  # 300 # tolerated failure number
-
-    logp_lb = 0.03
-    logp_ub = 4.97
-    tpsa_lb = 17.92
-    tpsa_ub = 112.83
-    qed_lb = 0.58
-    qed_ub = 0.95
-
-    logp_values = np.linspace(logp_lb, logp_ub, num=num_samples_each)
-    tpsa_values = np.linspace(tpsa_lb, tpsa_ub, num=num_samples_each)
-    qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
 
     robustScaler = joblib.load('molGCT/scaler.pkl')
 
     """ Tools """
-    SRC, TRG = dp.create_fields(weights_path='molGCT')
+    SRC, TRG = smiles_fields(weights_path='molGCT')
     model = get_model(opt, SRC, TRG)
     toklen_data = pd.read_csv(opt.toklen_list)
 
@@ -490,5 +491,26 @@ def inference():
     data_df = pd.DataFrame.from_dict(header_dict)
     data_df.to_csv('molGCT/inference/output.csv')
 
+
+def intdiv():
+    smiles_list = []
+    for logp in logp_values:
+        for tpsa in tpsa_values:
+            for qed in qed_values:
+
+                sample_p = os.path.join('molGCT', 'inference',
+                                        '{:.2f}_{:.2f}_{:.2f}.txt'.format(logp, tpsa, qed))
+                print("File path:", sample_p)
+                """
+                Sample molecules
+                """
+                df = pd.read_csv(sample_p, sep='\t')
+                smiles_list.extend(df['smiles'].tolist())
+    
+    div = metrics.internal_diversity(smiles_list)
+    print(div)
+
+
 if __name__ == "__main__":
-    inference()
+    # inference()
+    intdiv()

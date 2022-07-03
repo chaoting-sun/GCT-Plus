@@ -20,10 +20,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
 
-    if not os.path.exists(os.path.join(args.processed_path, 'data', 'train.csv')):
+    if not os.path.exists(os.path.join(args.data_path, 'train.csv')):
         exit('File not found: train.csv')
 
-    if not os.path.exists(os.path.join(args.processed_path, 'data', 'validation.csv')):
+    if not os.path.exists(os.path.join(args.data_path, 'validation.csv')):
         exit('File not found: validation.csv')
 
     train(args, debug=DEBUG)

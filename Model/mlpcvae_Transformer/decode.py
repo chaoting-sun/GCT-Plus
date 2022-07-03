@@ -1,6 +1,6 @@
 import torch
+import torch.nn.functional as F
 from torch.autograd import Variable
-
 from Model.mlpcvae_Transformer.mask import create_src_mask, nopeak_mask
 
 # torch function:
@@ -11,7 +11,8 @@ from Model.mlpcvae_Transformer.mask import create_src_mask, nopeak_mask
 # ref1: https://zhuanlan.zhihu.com/p/339207092
 # ref2: https://towardsdatascience.com/the-three-decoding-methods-for-nlp-23ca59cb1e9d
 
-def decode(model, src, econds, mconds, dconds, max_strlen, type, use_cond2dec=False):
+def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx, 
+           max_strlen, type, use_cond2dec=False):
     src_mask = create_src_mask(src=src, cond=econds)
     z = model.encoder_mlp(src, econds, mconds, src_mask)
 
@@ -19,7 +20,7 @@ def decode(model, src, econds, mconds, dconds, max_strlen, type, use_cond2dec=Fa
     break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
     
     # create a batch of starting tokens (1)
-    ys = torch.ones(src.shape[0], 1, requires_grad=True).type_as(src.data)
+    ys = (torch.ones(src.shape[0], 1, requires_grad=True)*sos_idx).type_as(src.data)
 
     for i in range(max_strlen-1):
         with torch.no_grad():
@@ -30,11 +31,12 @@ def decode(model, src, econds, mconds, dconds, max_strlen, type, use_cond2dec=Fa
             output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
             # dim. of output: (bs, ys.size(-1)+1, vocab_size)
             output = model.out(output)
-            # we care about the last token
+            # 1.
             output = output[:, -1, :]
-            # may need to check if the probability of the output is log-based
-            prob = torch.exp(output)
-
+            prob = F.softmax(output, dim=-1)
+            # 2.
+            # output = output[:, -1, :]
+            # prob = torch.exp(output)
             if type == 'greedy':
                 _, next_word = torch.max(prob, dim=1)
                 ys = torch.cat([ys, next_word.unsqueeze(-1)], dim=1)  # [batch_size, i]
@@ -44,7 +46,7 @@ def decode(model, src, econds, mconds, dconds, max_strlen, type, use_cond2dec=Fa
                 next_word = torch.squeeze(next_word) # shape: (batch_size)
             
             # update the break condition. 2 is the stop token
-            break_condition = (break_condition | (next_word.to('cpu')==2))
+            break_condition = (break_condition | (next_word.to('cpu')==eos_idx))
             # If all satisfies the break condition, then break the loop.
             if all(break_condition):
                 break

@@ -27,7 +27,6 @@ def get_benchmarking_dataset(data_name, data_type='train') -> pd.DataFrame:
     if data_name == 'moses':
         dataset = moses.get_dataset(data_type)
     elif data_name == 'guacamol':
-        # 補
         pass
     dataset = pd.DataFrame.from_dict({
         'no': [i+1 for i in range(len(dataset))],
@@ -36,31 +35,21 @@ def get_benchmarking_dataset(data_name, data_type='train') -> pd.DataFrame:
     return dataset
 
 
-def get_condition(dataset, condition_list,
-                  condition_path=None, n_jobs=1) -> pd.DataFrame:
+def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:
     """
     Compute the properties of the source and target in dataset
     Return a DataFrame of given properties
 
     Arguments:
-        dataset: a DataFrame of source and target strings
+        dataset: a list of SMILES
         condition_list: the list of property names
         condition_path: the conditions to download
         n_jobs: number of processes
     """
-    if condition_path is not None:
-        try:
-            condition_library = pd.read_csv(condition_path)
-        except:
-            print("File not Found:", condition_path)
-            exit(1)
-        # 補
-        return condition_library
-
     condition_dict = {}
 
     pool = Pool(n_jobs)
-    mol = list(pool.map(to_mol, dataset['smiles']))
+    mol = list(pool.map(to_mol, dataset))
     
     for prop in condition_list:
         results = pool.map(property_prediction[prop], mol)
@@ -69,9 +58,8 @@ def get_condition(dataset, condition_list,
 
 
 
-def get_dataset(data_path, conditions, field_path, load_field=False,
-                train=None, validation=None, test=None):
-    fields = get_fields(conditions, field_path)
+def get_dataset(data_path, fields, train=None, validation=None, test=None):
+    # fields = get_fields(conditions, field_path)
     train_data, valid_data = data.TabularDataset.splits(path=data_path,
                                                         train=train,
                                                         validation=validation,
@@ -79,13 +67,7 @@ def get_dataset(data_path, conditions, field_path, load_field=False,
                                                         format='csv', 
                                                         fields=fields, 
                                                         skip_header=True)
-    field_dict = {p: f for p, f in fields}
-    if load_field is False:
-        field_dict['src'].build_vocab(train_data)
-        field_dict['trg'].build_vocab(valid_data)
-        save_fields(field_dict['src'], field_dict['trg'], field_path)
-
-    return (train_data, valid_data), (field_dict['src'], field_dict['trg'])
+    return train_data, valid_data
 
 
 def get_iterator(dataset, data_type, batch_size, device):
@@ -122,25 +104,25 @@ class Batch:
             self.econds = src_cond
             self.mconds = torch.cat([src_cond, dif_cond], dim=1)
             self.dconds = trg_cond
+        
 
-
-def rebatch(batch, cond_list):
+def rebatch(batch, conditions, device):
     "Fix order in torchtext to match ours"
-    src, trg = batch.src.transpose(0, 1), batch.trg.transpose(0, 1)
-    if len(cond_list) > 0:
+    src = batch.src.transpose(0, 1).to(device)
+    trg = batch.trg.transpose(0, 1).to(device)
+    # src, trg = batch.src, batch.trg
+    if len(conditions) > 0:
         src_conds, trg_conds = [], []
-        for c in cond_list:
+        for c in conditions:
             src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
             trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-        src_cond_t = torch.cat(src_conds, dim=1)
-        trg_cond_t = torch.cat(trg_conds, dim=1)
-        dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
+        src_cond_t = torch.cat(src_conds, dim=1).to(device)
+        trg_cond_t = torch.cat(trg_conds, dim=1).to(device)
+        dif_cond_t = torch.sub(trg_cond_t, src_cond_t).to(device)
     else:
-        src_cond_t = None
-        trg_cond_t = None
-        dif_cond_t = None
+        src_cond_t = trg_cond_t = dif_cond_t = None    
     return Batch(src, trg, src_cond_t, trg_cond_t, dif_cond_t)
 
 
-def to_dataloader(data_iter, condition_list):
-    return (rebatch(batch, condition_list) for batch in data_iter)
+def to_dataloader(data_iter, conditions, device):
+    return (rebatch(batch, conditions, device) for batch in data_iter)

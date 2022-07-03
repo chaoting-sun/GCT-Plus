@@ -14,9 +14,7 @@ def options(parser):
     parser.add_argument('-n_jobs', type=int, default=1, help="number of CPU cores")
     parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
     parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
-    parser.add_argument('-condition_path', type=str, default='/fileserver-gamma/chaoting/ML/data/moses/')
-    parser.add_argument('-serial_path', type=str, default='/fileserver-gamma/chaoting/ML/data/moses_aug/')
-    parser.add_argument('-processed_path', type=str, default='/fileserver-gamma/chaoting/ML/data/moses_aug/')
+    parser.add_argument('-data_path', type=str, required=True, help="Path of dataset")
     
     parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
     parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")
@@ -81,7 +79,7 @@ def train_opts(parser):
     train2_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
     train2_parser.add_argument('-transferring_model_path', type=str, default='molGCT/molgct.pt')
     train2_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
-    train2_parser.add_argument('-save_path', type=str, required=True)
+    # train2_parser.add_argument('-save_path', type=str, required=True)
 
 
 def generate_opts(parser):

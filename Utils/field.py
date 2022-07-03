@@ -33,13 +33,25 @@ def condition_fields(conditions):
             batch_first=True, dtype=torch.float) for _ in conditions]
 
 
+# def get_fields(conditions, smiles_field_path=None):
+#     SRC, TRG = smiles_fields(smiles_field_path)
+#     COND = condition_fields(conditions)
+#     total_fields = [('src_no', None), ('trg_no', None),
+#                     ('src', SRC), ('trg', TRG)]
+#     total_fields.extend([(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
+#     total_fields.extend([(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
+#     return total_fields
+
 def get_fields(conditions, smiles_field_path=None):
+    # the orders in the DataFrame
+    # src,trg,src_no,src_logP,src_tPSA,src_QED,trg_no,trg_logP,trg_tPSA,trg_QED
     SRC, TRG = smiles_fields(smiles_field_path)
     COND = condition_fields(conditions)
-    total_fields = [('src_no', None), ('trg_no', None),
-                    ('src', SRC), ('trg', TRG)]
-    total_fields.extend([(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-    total_fields.extend([(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
+    total_fields = [('src', SRC), ('trg', TRG)]
+    total_fields.extend([('src_no', None)] + 
+                        [(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
+    total_fields.extend([('trg_no', None)] +
+                        [(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
     return total_fields
 
 
