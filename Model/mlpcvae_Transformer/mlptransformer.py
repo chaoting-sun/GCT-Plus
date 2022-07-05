@@ -86,12 +86,17 @@ class Encoder(nn.Module):
         self.fc_log_var = nn.Linear(d_model, latent_dim)
 
     def forward(self, src, conds, mask):
+        # dim: -> (batch_size, d_model*nconds)
         cond2enc = self.embed_cond2enc(conds)
-        cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1) 
+        # dim: -> (batch_size, nconds, d_model)
+        cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
+        # dim: -> (batch_size, src_maxstr, d_model)
         x = self.embed_sentence(src)
+        # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
         for i in range(self.N):
+            # dim: -> (batch_size, src_maxstr, d_model)
             x, q_k_enc_tmp = self.layers[i](x, mask)
             q_k_enc_tmp = q_k_enc_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
             if i == 0:
@@ -101,17 +106,6 @@ class Encoder(nn.Module):
 
         x = self.norm(x)
         return x, q_k_enc
-        # mu = self.fc_mu(x) # d_model -> opt.latent_dim
-        # log_var = self.fc_log_var(x) # d_model -> opt.latent_dim
-        # return self.sampling(mu, log_var), mu, log_var, q_k_enc
-
-    # def sampling(self, mu, log_var):
-    #     if self.variational:
-    #         std = torch.exp(0.5*log_var)
-    #         eps = torch.randn_like(std)
-    #         return eps.mul(std).add(mu)
-    #     else:
-    #         return mu
 
 
 class Decoder(nn.Module):
@@ -134,15 +128,18 @@ class Decoder(nn.Module):
         self.norm = Norm(d_model)
 
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
+        # dim: -> (batch_size, trg_maxstr-1, d_model)
         x = self.embed(trg)
-
+        # dim: -> (batch_size, trg_maxstr, d_model)
         e_outputs = self.fc_z(e_outputs)
 
         if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
         elif self.use_cond2lat == True:
+            # dim: -> (batch_size, nconds, d_model)
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
+            # dim: -> (batch_size, nconds+maxstr, d_model)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
 
         x = self.pe(x)
@@ -256,7 +253,7 @@ class MLP_Transformer(nn.Module):
 class MLP_Encoder(nn.Module):
     def __init__(self, transformer, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLP_Transformer, self).__init__()
+        super(MLP_Encoder, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -314,12 +311,6 @@ class MLP_Encoder(nn.Module):
             else:
                 exit("There may be something missing.")
 
-
-    def get_latent_space(self, seq, seq_mask, econds):
-        x, q_k_enc = self.encoder(seq, econds, seq_mask)
-        z, mu, log_var = self.sampler1(x)
-        return z     
-
     
     def encoder_mlp(self, src, econds, mconds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
@@ -330,33 +321,16 @@ class MLP_Encoder(nn.Module):
 
     def forward(self, src, trg, econds, mconds, dconds):
         src_pad_mask = create_source_mask(src, econds)
+        x, _ = self.encoder(src, econds, src_pad_mask)
+        z, _, _ = self.sampler1(x)
+        x = self.mlp(z, mconds)
+        trg_z_pred, _, _ = self.sampler2(x) # output of mlp
+        trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
+
         trg_pad_mask = create_source_mask(trg, dconds)
+        x, _ = self.encoder(trg, dconds, trg_pad_mask)
+        trg_z_truth, _, _ = self.sampler2(x)
 
-        src_z = self.get_latent_space(src, src_pad_mask)
-        trg_z_truth = self.get_latent_space(trg, trg_pad_mask)
-        trg_z_predict = self.mlp(src_z, mconds)
+        # print('pred/truth:', trg_z_pred.size(), trg_z_truth.size())
 
-        x, q_k_enc = self.encoder(src, econds, src_mask)
-        z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
-        x = self.mlp(z1, mconds)
-        z2, mu2, log_var2 = self.sampler2(x)
-
-        src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
-
-        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
-        output = self.out(d_output)
-        
-        if self.use_cond2dec == True:
-            output_prop = self.prop_fc(output[:, :self.nconds, :])
-            output_mol = output[:, self.nconds:, :]
-        elif self.use_cond2lat == True:
-            output_prop = torch.zeros(output.size(0), self.nconds, 1)
-            output_mol = output
-
-        output_mol = F.log_softmax(output_mol, dim=-1)
-
-        return (output_prop, output_mol,
-                (mu1, log_var1, z1),
-                (mu2, log_var2, z2),
-                (q_k_enc, q_k_dec1, q_k_dec2))
-        # return output_prop, output_mol, mu, log_var, z, q_k_enc, q_k_dec1, q_k_dec2
+        return trg_z_truth, trg_z_pred

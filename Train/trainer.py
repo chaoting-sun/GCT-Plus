@@ -81,14 +81,15 @@ class Trainer(object):
         # for i, batch in tqdm(enumerate(dataloader), total=len(data_iter)):
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-            _, out, _, _, _ = model.forward(batch.src, 
-                                            batch.trg, 
-                                            batch.econds, 
-                                            batch.mconds, 
-                                            batch.dconds)
+            trg_z_truth, trg_z_pred = model.forward(batch.src, 
+                                                    batch.trg, 
+                                                    batch.econds, 
+                                                    batch.mconds, 
+                                                    batch.dconds)
              
             # Compute loss (rec-loss + KL-div) and update
-            loss = loss_compute(out, batch.trg_y)
+            loss = loss_compute(trg_z_truth, trg_z_pred)
+            # loss = loss_compute(out, batch.trg_y)
             
             smiles = decode.decode(model, batch.src,
                                    batch.econds, 
@@ -135,9 +136,7 @@ class Trainer(object):
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
 
         print(">>> PREPARING LOSS FUNCTION")
-        criterion = Criterion(size=len(TRG.vocab), 
-                              padding_idx=TRG.vocab.stoi['<pad>'],
-                              smoothing=self.args.label_smoothing)
+        criterion = Criterion()
         
         lowest_loss = 1000000
         early_stop, stop_cnt = 10, 0

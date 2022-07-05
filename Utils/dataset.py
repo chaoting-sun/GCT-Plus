@@ -110,6 +110,7 @@ def rebatch(batch, conditions, device):
     "Fix order in torchtext to match ours"
     src = batch.src.transpose(0, 1).to(device)
     trg = batch.trg.transpose(0, 1).to(device)
+
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:
         src_conds, trg_conds = [], []

@@ -6,9 +6,8 @@ from torchtext import data
 
 from Train.trainer import Trainer
 from Utils import set_seed, allocate_gpu, get_dataset, get_iterator, get_fields, save_fields
-from Model import transformer as mt
 from Model import mlptransformer as mlpt
-from Model.build_model import build_transformer, build_mlptransformer
+from Model.build_model import build_transformer, build_mlptransformer, build_mlpencoder
 from Utils.dataset import to_dataloader
 
 def train(args, debug=False):
@@ -55,18 +54,18 @@ def train(args, debug=False):
     print('>>> PREPARING MODEL - TRAINING STAGE', args.train_stage)
     if args.train_stage == 1:
         tf_path = os.path.join(args.save_directory, 'checkpoint', f'model_{args.starting_epoch-1}.pt')
-        model = mt.build_transformer(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, args.d_ff, 
-                                     args.H, args.latent_dim, args.dropout, args.nconds, args.use_cond2dec,
-                                     args.use_cond2lat, tf_path)
+        model = build_transformer(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, args.d_ff, 
+                                  args.H, args.latent_dim, args.dropout, args.nconds, args.use_cond2dec,
+                                  args.use_cond2lat, tf_path)
     
     elif args.train_stage == 2:
         if args.starting_epoch == 1:
             mlptf_path = None
         else:
             mlptf_path = os.path.join(args.save_directory, f'model_{args.starting_epoch-1}.pt')
-        model = build_mlptransformer(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, args.d_ff, 
-                                     args.H, args.latent_dim, args.dropout, args.nconds, args.use_cond2dec,
-                                     args.use_cond2lat, args.variational, args.transferring_model_path, mlptf_path)
+        model = build_mlpencoder(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, args.d_ff, 
+                                 args.H, args.latent_dim, args.dropout, args.nconds, args.use_cond2dec,
+                                 args.use_cond2lat, args.variational, args.transferring_model_path, mlptf_path)
     model = model.to(device)        
 
     print("--- total parameters:", sum(p.numel() for p in model.parameters()))

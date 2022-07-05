@@ -76,7 +76,6 @@ class MultiHeadAttention(nn.Module):
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
         output = self.out(concat)
-
         concat_attn = scores_attn.transpose(1, 2).contiguous().view(bs, -1, scores_attn.size(-1) * self.h)
 
         return output, concat_attn

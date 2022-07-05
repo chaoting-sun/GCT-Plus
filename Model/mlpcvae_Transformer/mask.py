@@ -29,7 +29,7 @@ def nopeak_mask(size, cond_dim, use_cond2dec, device=None):
 
 
 def create_condition_mask(conditions):
-    # (bs, nconds) -> (bs, 1, nconds)    
+    # (bs, nconds) -> (bs, 1, nconds)
     cond_mask = torch.unsqueeze(conditions, -2)
     cond_mask = torch.ones_like(cond_mask, dtype=bool)
     return cond_mask
