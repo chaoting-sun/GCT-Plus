@@ -8,7 +8,7 @@ from Train.trainer import Trainer
 from Utils import set_seed, allocate_gpu, get_dataset, get_iterator, get_fields, save_fields
 from Model import mlptransformer as mlpt
 from Model.build_model import build_transformer, build_mlptransformer, build_mlpencoder
-from Utils.dataset import to_dataloader
+
 
 def train(args, debug=False):
     set_seed(51)
@@ -37,8 +37,8 @@ def train(args, debug=False):
         TRG.build_vocab(valid_data)
         save_fields(SRC, TRG, args.field_path)
 
-    # print("--- SRC VOCAB:", SRC.vocab.stoi)
-    # print("--- TRG VOCAB:", TRG.vocab.stoi)
+    print("--- SRC VOCAB:", SRC.vocab.stoi)
+    print("--- TRG VOCAB:", TRG.vocab.stoi)
 
     args.sos_idx = TRG.vocab.stoi['<sos>']
     args.eos_idx = TRG.vocab.stoi['<eos>']

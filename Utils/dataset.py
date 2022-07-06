@@ -95,21 +95,43 @@ def to_tokenlist(dataset, data_path):
 
 class Batch:
     "Object for holding a batch of data with mask during training."
-    def __init__(self, src, trg, src_cond=None, dif_cond=None, trg_cond=None):
+    def __init__(self, src, trg, pad_idx, src_cond=None, dif_cond=None, trg_cond=None):
         self.src = src
-        self.trg = trg[:, :-1]  # the input of the model
-        self.trg_y = trg[:, 1:] # the expected output
-    
+        self.trg_y = trg[:, 1:] # the expected output of the decoder
+        self.trg_de = trg[:, :-1]  # the input of the decoder
+        
+        self.trg_en = self.trg_y
+        for i in range(self.trg_en.size(0)):
+            for j in range(self.trg_en.size(0)-1, -1):
+                if self.trg_en[i][j] != pad_idx:
+                    self.trg_en[i][j] = pad_idx
+                    break
+
+        torch.set_printoptions(threshold=10_000)
+
+        print('src:', self.src.size(), self.src[0])
+        print('trg_y:', self.trg_y.size(), self.trg_y[0])
+        print('trg_de:', self.trg_de.size(), self.trg_de[0])
+        print('trg_en:', self.trg_en.size(), self.trg_en[0])
+
         if src_cond is not None:
             self.econds = src_cond
             self.mconds = torch.cat([src_cond, dif_cond], dim=1)
             self.dconds = trg_cond
         
 
-def rebatch(batch, conditions, device):
-    "Fix order in torchtext to match ours"
-    src = batch.src.transpose(0, 1).to(device)
-    trg = batch.trg.transpose(0, 1).to(device)
+def rebatch(batch, conditions, pad_idx, device):
+    src, trg = batch.src.transpose(0, 1), batch.trg.transpose(0, 1)
+    src_len, trg_len = src.size(1), trg.size(1)
+    print(src_len, trg_len)
+    if src_len >= trg_len:
+        pad = torch.ones((src.size(0), abs(src_len - trg_len + 1)), 
+                        dtype=torch.long) * pad_idx
+        trg = torch.cat([trg, pad], dim=1).to(device)
+    else:
+        pad = torch.ones((src.size(0), abs(trg_len - src_len - 1)), 
+                        dtype=torch.long) * pad_idx
+        src = torch.cat([src, pad], dim=1).to(device)
 
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:
@@ -122,8 +144,8 @@ def rebatch(batch, conditions, device):
         dif_cond_t = torch.sub(trg_cond_t, src_cond_t).to(device)
     else:
         src_cond_t = trg_cond_t = dif_cond_t = None    
-    return Batch(src, trg, src_cond_t, trg_cond_t, dif_cond_t)
+    return Batch(src, trg, pad_idx, src_cond_t, trg_cond_t, dif_cond_t)
 
 
-def to_dataloader(data_iter, conditions, device):
-    return (rebatch(batch, conditions, device) for batch in data_iter)
+def to_dataloader(data_iter, conditions, pad_idx, device):
+    return (rebatch(batch, conditions, pad_idx, device) for batch in data_iter)

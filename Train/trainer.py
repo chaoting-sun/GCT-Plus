@@ -74,7 +74,7 @@ class Trainer(object):
         The following variables records the total values from the dataset
         """
         sum_loss, n_tokens, n_samples, n_correct = 0, 0, 0, 0
-        dataloader = to_dataloader(data_iter, self.args.conditions, device)
+        dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'], device)
 
         # torch.set_printoptions(threshold=10_000)
 

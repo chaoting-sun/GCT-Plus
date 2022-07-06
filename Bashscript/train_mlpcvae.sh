@@ -23,7 +23,7 @@
 
 # train
 # CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 python3 -u \
+CUDA_VISIBLE_DEVICES=2 CUDA_LAUNCH_BLOCKING=1 python3 -u \
     main_train.py \
         -similarity 1 \
         -n_jobs 2 \
