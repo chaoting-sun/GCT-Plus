@@ -1,8 +1,9 @@
 #!/usr/bin/env bash 
 
-nohup python3 -u \
+# nohup python3 -u \
+python3 -u \
     main_preprocess.py \
-        -similarity 1 \
+        -similarity 0.7 \
         -n_jobs 8 \
         -load_field \
         -data_name moses \
@@ -10,4 +11,4 @@ nohup python3 -u \
         -field_path ./molGCT \
         -load_scaler \
         -variational \
-        >preprocess.out 2>preprocess.err&
+        # >preprocess.out 2>preprocess.err&

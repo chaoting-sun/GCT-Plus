@@ -24,9 +24,9 @@ class MLP(nn.Module):
         self.latent_dim = latent_dim
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
+        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
-        mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
+        # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
         # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
         self.mlp_layers = self.build_mlp(mlp_stacks)
         self.norm = Norm(d_model)
@@ -319,7 +319,7 @@ class MLP_Encoder(nn.Module):
         z2, _, _ = self.sampler2(x)
         return z2
 
-    def forward(self, src, trg, econds, mconds, dconds):
+    def forward(self, src, trg_en, econds, mconds, dconds):
         src_pad_mask = create_source_mask(src, econds)
         x, _ = self.encoder(src, econds, src_pad_mask)
         z, _, _ = self.sampler1(x)
@@ -327,10 +327,14 @@ class MLP_Encoder(nn.Module):
         trg_z_pred, _, _ = self.sampler2(x) # output of mlp
         trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
 
-        trg_pad_mask = create_source_mask(trg, dconds)
-        x, _ = self.encoder(trg, dconds, trg_pad_mask)
+        trg_pad_mask = create_source_mask(trg_en, dconds)
+        x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
         trg_z_truth, _, _ = self.sampler2(x)
 
-        # print('pred/truth:', trg_z_pred.size(), trg_z_truth.size())
 
-        return trg_z_truth, trg_z_pred
+        # print('model trg_en:', trg_en.size(), trg_en)
+        # print('model dconds:', dconds.size(), dconds)
+        # print('model x:', x.size(), x)
+        # print('model trg_z_truth', trg_z_truth.size(), trg_z_truth)
+
+        return trg_z_pred, trg_z_truth

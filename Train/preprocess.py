@@ -88,8 +88,8 @@ def data_augmentation(dataset, save_path, similarity, n_jobs):
     print(">>> ELAPSED TIME:", str(timedelta(seconds=elipsed_time)))
 
 
-def data_preparation(dataset, conditions, condition_path, serial_path,
-                     save_path, scaler_path=None):
+def data_preparation(dataset, conditions, condition_path, 
+                     serial_path, save_path, scaler_path=None, n_samples=None):
     print('>>> OBTAIN CONDITIONS')
     prop = pd.read_csv(condition_path)
     prop = pd.concat([prop[['no']], scaler_transform(prop[conditions], scaler_path)], axis=1)
@@ -97,6 +97,8 @@ def data_preparation(dataset, conditions, condition_path, serial_path,
 
     print('>>> OBTAIN PAIRPATH')
     pair = pd.read_csv(serial_path)
+    if n_samples is not None:
+        pair = pair[:n_samples]
     print(pair.describe())
 
     src_no = pair['no1'].tolist()
@@ -113,13 +115,15 @@ def data_preparation(dataset, conditions, condition_path, serial_path,
     print('>>> GET TARGET SMILES/CONDITIONS')
     trg_smi = dataset.set_index('no').loc[trg_no].reset_index(inplace=False)
     trg_smi = trg_smi[['smiles']].rename(columns={'smiles': 'trg'})
+    trg_en_smi = trg_smi[['trg']].rename(columns={'trg': 'trg_en'})
     trg_prop = prop.set_index('no').loc[trg_no].reset_index(inplace=False)
     trg_prop = trg_prop.rename(columns={ k:f'trg_{k}' for k in trg_prop.columns })
     print(trg_smi.describe())
     print(trg_prop.describe())
 
     print('>>> GET RESULTS')
-    results = pd.concat([src_smi, trg_smi, src_prop, trg_prop], axis=1)
+    results = pd.concat([src_smi, trg_en_smi, trg_smi, src_prop, trg_prop], axis=1)
+    # results = pd.concat([src_smi, trg_smi, src_prop, trg_prop], axis=1)
     results.to_csv(save_path, index=False)
 
     print(results.head())
@@ -190,16 +194,23 @@ def preprocess(args, debug=False):
     """
     Dataset path 
     """
+    # datatype = 'train'
+    # n_samples = 10000
 
-    n_samples_train = 100000
-    n_samples_valid = 10000
-    n_samples_test = 10000
+    datatype = 'validation'
+    n_samples = 1000
+    
+    datadict = {
+        'train': 'train',
+        'validation': 'test',
+        'test': 'test_scaffolds'
+    }
 
     for data in ('train', 'validation', 'test'):
         os.makedirs(os.path.join(args.data_path, 'raw', data), exist_ok=True)
         os.makedirs(os.path.join(args.data_path, 'aug', data), exist_ok=True)
     
-    os.makedirs(os.path.join(args.data_path, 'aug', 'data_sim1'), exist_ok=True)
+    os.makedirs(os.path.join(args.data_path, 'aug', 'data'), exist_ok=True)
 
     # allworks('train', args.conditions, args.similarity, args.data_path,
     #           args.scaler_path, args.max_strlen, args.n_jobs, n_samples_train)
@@ -212,22 +223,14 @@ def preprocess(args, debug=False):
         cond_path = os.path.join(data_path, f'raw/{data_name}/prop_serial.csv')
         pair_path = os.path.join(data_path, f'aug/{data_name}', 
                                 'pair_serial_{:.2f}.csv'.format(similarity))
-        proc_path = os.path.join(data_path, f'aug/data_sim1/{data_name}.csv')
+        proc_path = os.path.join(data_path, 'aug/data_sim{:.2f}/{}.csv'.format(similarity, data_name))
         return cond_path, pair_path, proc_path
-
-    datadict = {
-        'train': 'train',
-        'validation': 'test',
-        'test': 'test_scaffolds'
-    }
-    datatype = 'validation'
-    dataname = datadict[datatype]
 
     print('>>> CREATE PATHS')
     c_path, pair_path, proc_path = get_path(args.data_path, datatype, args.similarity)
 
     print('>>> OBTAIN DATAPATH')
-    dataset = moses.get_dataset(dataname)
+    dataset = moses.get_dataset(datadict[datatype])
     dataset = pd.DataFrame({'smiles': dataset,
                             'no': [i+1 for i in range(len(dataset))]})
     dataset = dataset.loc[(dataset['smiles'].str.len() 
@@ -243,4 +246,5 @@ def preprocess(args, debug=False):
                      condition_path=c_path,
                      serial_path=pair_path, 
                      save_path=proc_path,
-                     scaler_path=args.scaler_path)
+                     scaler_path=args.scaler_path,
+                     n_samples=n_samples)

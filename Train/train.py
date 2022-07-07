@@ -5,8 +5,7 @@ import torch
 from torchtext import data
 
 from Train.trainer import Trainer
-from Utils import set_seed, allocate_gpu, get_dataset, get_iterator, get_fields, save_fields
-from Model import mlptransformer as mlpt
+from Utils import set_seed, allocate_gpu, get_fields, save_fields
 from Model.build_model import build_transformer, build_mlptransformer, build_mlpencoder
 
 

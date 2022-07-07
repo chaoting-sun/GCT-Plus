@@ -81,14 +81,13 @@ class Trainer(object):
         # for i, batch in tqdm(enumerate(dataloader), total=len(data_iter)):
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-            trg_z_truth, trg_z_pred = model.forward(batch.src, 
-                                                    batch.trg, 
+            trg_z_pred, trg_z_truth = model.forward(batch.src,
+                                                    batch.trg_en,
                                                     batch.econds, 
                                                     batch.mconds, 
                                                     batch.dconds)
-             
             # Compute loss (rec-loss + KL-div) and update
-            loss = loss_compute(trg_z_truth, trg_z_pred)
+            loss = loss_compute(trg_z_pred, trg_z_truth)
             # loss = loss_compute(out, batch.trg_y)
             
             smiles = decode.decode(model, batch.src,

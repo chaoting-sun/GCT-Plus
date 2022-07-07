@@ -52,14 +52,13 @@ class Criterion(nn.Module):
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
 
     def forward(self, predict, target):
-        print('loss fcn:', predict.size(), target.size())
         return self.kl_loss(predict, target)
 
 
 def ReconstructionLoss(x, target, size, smoothing, confidence, padding_idx):
     # dim. of true_dist: (batch_size*max_trg_len, vocab_len)
     true_dist = x.data.clone()
-    torch.set_printoptions(threshold=10_000)
+    # torch.set_printoptions(threshold=10_000)
     
     # fill true_dist with "self.smoothing / (self.size - 2)"
     # -2 as we are not distributing the smoothing mass over

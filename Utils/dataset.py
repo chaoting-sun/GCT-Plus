@@ -57,34 +57,6 @@ def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:
     return pd.DataFrame.from_dict(condition_dict)
 
 
-
-def get_dataset(data_path, fields, train=None, validation=None, test=None):
-    # fields = get_fields(conditions, field_path)
-    train_data, valid_data = data.TabularDataset.splits(path=data_path,
-                                                        train=train,
-                                                        validation=validation,
-                                                        test=test,
-                                                        format='csv', 
-                                                        fields=fields, 
-                                                        skip_header=True)
-    return train_data, valid_data
-
-
-def get_iterator(dataset, data_type, batch_size, device):
-    if data_type == 'train':
-        train, shuffle = True, True
-    else:
-        train, shuffle = False, False
-
-    return data.BucketIterator(dataset=dataset,
-                               batch_size=batch_size,
-                               sort_key=lambda x: (len(x.src), len(x.trg)),
-                               device=device,
-                               train=train,
-                               repeat=False,
-                               shuffle=shuffle)
-
-
 def to_tokenlist(dataset, data_path):
     toklenList = []
     for i in range(len(dataset)):
@@ -95,43 +67,38 @@ def to_tokenlist(dataset, data_path):
 
 class Batch:
     "Object for holding a batch of data with mask during training."
-    def __init__(self, src, trg, pad_idx, src_cond=None, dif_cond=None, trg_cond=None):
-        self.src = src
-        self.trg_y = trg[:, 1:] # the expected output of the decoder
-        self.trg_de = trg[:, :-1]  # the input of the decoder
-        
-        self.trg_en = self.trg_y
-        for i in range(self.trg_en.size(0)):
-            for j in range(self.trg_en.size(0)-1, -1):
-                if self.trg_en[i][j] != pad_idx:
-                    self.trg_en[i][j] = pad_idx
-                    break
+    def __init__(self, src, trg_en, trg, pad_idx, 
+                 src_cond=None, dif_cond=None, trg_cond=None, device=None):
+        self.src = src.to(device)
+        self.trg_en = trg_en.to(device)    # the encoder input
+        self.trg_y = trg[:, 1:].to(device) # the expected output of the decoder
+        self.trg = trg[:, :-1].to(device)  # the input of the decoder
 
-        torch.set_printoptions(threshold=10_000)
+        # torch.set_printoptions(threshold=10_000)
 
-        print('src:', self.src.size(), self.src[0])
-        print('trg_y:', self.trg_y.size(), self.trg_y[0])
-        print('trg_de:', self.trg_de.size(), self.trg_de[0])
-        print('trg_en:', self.trg_en.size(), self.trg_en[0])
+        # print('src:', self.src.size(), self.src[0])
+        # print('trg_y:', self.trg_y.size(), self.trg_y[0])
+        # print('trg:', self.trg.size(), self.trg_de[0])
+        # print('trg_en:', self.trg_en.size(), self.trg_en[0])
 
         if src_cond is not None:
-            self.econds = src_cond
-            self.mconds = torch.cat([src_cond, dif_cond], dim=1)
-            self.dconds = trg_cond
-        
+            self.econds = src_cond.to(device)
+            self.mconds = torch.cat([src_cond, dif_cond], dim=1).to(device)
+            self.dconds = trg_cond.to(device)
 
 def rebatch(batch, conditions, pad_idx, device):
-    src, trg = batch.src.transpose(0, 1), batch.trg.transpose(0, 1)
-    src_len, trg_len = src.size(1), trg.size(1)
-    print(src_len, trg_len)
-    if src_len >= trg_len:
-        pad = torch.ones((src.size(0), abs(src_len - trg_len + 1)), 
-                        dtype=torch.long) * pad_idx
-        trg = torch.cat([trg, pad], dim=1).to(device)
-    else:
-        pad = torch.ones((src.size(0), abs(trg_len - src_len - 1)), 
-                        dtype=torch.long) * pad_idx
-        src = torch.cat([src, pad], dim=1).to(device)
+    src = batch.src.transpose(0, 1)
+    trg_en = batch.trg_en.transpose(0, 1)
+    trg = batch.trg.transpose(0, 1)
+
+    src_len, trg_len = src.size(1), trg_en.size(1)
+    pad = torch.ones((src.size(0), abs(src_len - trg_len)), 
+                    dtype=torch.long) * pad_idx
+    
+    if src_len > trg_len:
+        trg_en = torch.cat([trg_en, pad], dim=1)
+    elif src_len < trg_len:
+        src = torch.cat([src, pad], dim=1)
 
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:
@@ -139,12 +106,13 @@ def rebatch(batch, conditions, pad_idx, device):
         for c in conditions:
             src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
             trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-        src_cond_t = torch.cat(src_conds, dim=1).to(device)
-        trg_cond_t = torch.cat(trg_conds, dim=1).to(device)
-        dif_cond_t = torch.sub(trg_cond_t, src_cond_t).to(device)
+        src_cond_t = torch.cat(src_conds, dim=1)
+        trg_cond_t = torch.cat(trg_conds, dim=1)
+        dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
     else:
         src_cond_t = trg_cond_t = dif_cond_t = None    
-    return Batch(src, trg, pad_idx, src_cond_t, trg_cond_t, dif_cond_t)
+    return Batch(src, trg_en, trg, pad_idx, src_cond_t,
+                 trg_cond_t, dif_cond_t, device)
 
 
 def to_dataloader(data_iter, conditions, pad_idx, device):
