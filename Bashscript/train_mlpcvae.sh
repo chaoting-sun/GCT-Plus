@@ -21,9 +21,9 @@
 #         -train_stage 2 \
 #     >train_sim1.out 2>train_sim1.err &
 
-SIMILARITY=0.70
-MLP_STACK=6
-GPU_IDX=2
+SIMILARITY=1.00
+MLP_STACK=1
+GPU_IDX=0
 
 # train
 # CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \

@@ -97,7 +97,7 @@ class Trainer(object):
                                    self.args.sos_idx,
                                    self.args.eos_idx,
                                    self.args.max_strlen, 
-                                   type='greedy', 
+                                   decode_type='greedy', 
                                    use_cond2dec=self.args.use_cond2dec)
 
             sum_loss += float(loss)

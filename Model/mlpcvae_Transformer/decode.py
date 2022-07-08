@@ -12,7 +12,7 @@ from Model.mlpcvae_Transformer.mask import create_source_mask, nopeak_mask
 # ref2: https://towardsdatascience.com/the-three-decoding-methods-for-nlp-23ca59cb1e9d
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx, 
-           max_strlen, type, use_cond2dec=False):
+           max_strlen, decode_type, use_cond2dec=False):
     src_mask = create_source_mask(src, econds)
     z = model.encoder_mlp(src, econds, mconds, src_mask)
 
@@ -38,10 +38,10 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
             # 2.
             # output = output[:, -1, :]
             # prob = torch.exp(output)
-            if type == 'greedy':
+            if decode_type == 'greedy':
                 _, next_word = torch.max(prob, dim=1)
                 ys = torch.cat([ys, next_word.unsqueeze(-1)], dim=1)  # [batch_size, i]
-            elif type == 'multinomial':
+            elif decode_type == 'multinomial':
                 next_word = torch.multinomial(prob, 1) # shape: (batch_size, 1)
                 ys = torch.cat([ys, next_word], dim=1) #[batch_size, i]
                 next_word = torch.squeeze(next_word) # shape: (batch_size)

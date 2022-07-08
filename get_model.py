@@ -1,31 +1,28 @@
 import os
 import math
-import numpy as np
 import random
-import pandas as pd
-import argparse
-from sklearn.cluster import mean_shift
-import torch
 import joblib
+import argparse
+import pandas as pd
+import numpy as np
+import pandas as pd
 import dill as pickle
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors, QED
 from moses.metrics import metrics
 
+import torch
 # from torchtext.legacy import data
 from torch.autograd import Variable
 import torch.nn.functional as F
 
 from Configuration.config import options
-from Model.cvae_Transformer import transformer
 from Model.build_model import build_transformer
 from Utils.field import smiles_fields
 from Utils import allocate_gpu
 # import beam
-
 from Utils.seed import set_seed
-
 from Inference.generate_mols import sample_molecule
 from Model.build_model import build_mlpencoder
 
@@ -311,8 +308,6 @@ def mlptf_test():
     logp = 2
     tpsa = 20
     qed = 0.6
-
-
 
 
 def inference_test():

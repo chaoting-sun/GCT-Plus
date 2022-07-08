@@ -22,12 +22,12 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
+        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
         # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
-        mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
+        # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
         self.mlp_layers = self.build_mlp(mlp_stacks)
         self.norm = Norm(d_model)
 
@@ -91,7 +91,7 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds, d_model)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
         # dim: -> (batch_size, src_maxstr, d_model)
-        x = self.embed_sentence(src)
+        x = self.embed_sentence(src) # ????????????? RuntimeError: CUDA error: device-side assert triggered
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
@@ -341,7 +341,7 @@ class MLP_Encoder(nn.Module):
 
 
         # print('model trg_en:', trg_en.size(), trg_en)
-        # print('model dconds:', dconds.size(), dconds)
+        # print('model dconds:', dconds.size(), dconds)x
         # print('model x:', x.size(), x)
         # print('model trg_z_truth', trg_z_truth.size(), trg_z_truth)
 
