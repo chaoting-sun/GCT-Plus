@@ -91,9 +91,9 @@ class Trainer(object):
             # loss = loss_compute(out, batch.trg_y)
             
             smiles = decode.decode(model, batch.src,
-                                   batch.econds, 
-                                   batch.mconds, 
-                                   batch.dconds, 
+                                   batch.econds,
+                                   batch.mconds,
+                                   batch.dconds,
                                    self.args.sos_idx,
                                    self.args.eos_idx,
                                    self.args.max_strlen, 

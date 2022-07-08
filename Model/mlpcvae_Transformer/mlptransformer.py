@@ -24,10 +24,10 @@ class MLP(nn.Module):
         self.latent_dim = latent_dim
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
-        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
         # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
-        # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
+        mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
         self.mlp_layers = self.build_mlp(mlp_stacks)
         self.norm = Norm(d_model)
 
@@ -318,6 +318,14 @@ class MLP_Encoder(nn.Module):
         x = self.mlp(z1, mconds)
         z2, _, _ = self.sampler2(x)
         return z2
+
+
+    def mlp_decoder(self, trg, e_outputs, 
+                    mconds, dconds, src_mask, trg_mask):
+        x = self.mlp(e_outputs, mconds)
+        e_outputs, _, _ = self.sampler2(x)
+        return self.decoder(trg, e_outputs, dconds, src_mask, trg_mask)
+
 
     def forward(self, src, trg_en, econds, mconds, dconds):
         src_pad_mask = create_source_mask(src, econds)

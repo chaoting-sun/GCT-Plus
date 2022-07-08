@@ -3,6 +3,7 @@ import math
 import numpy as np
 import random
 import pandas as pd
+import argparse
 from sklearn.cluster import mean_shift
 import torch
 import joblib
@@ -10,17 +11,23 @@ import dill as pickle
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors, QED
+from moses.metrics import metrics
 
 # from torchtext.legacy import data
-from torchtext import data
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from Tokenize import moltokenize
-from Configuration.config import options as opts
+from Configuration.config import options
 from Model.cvae_Transformer import transformer
+from Model.build_model import build_transformer
 from Utils.field import smiles_fields
+from Utils import allocate_gpu
 # import beam
+
+from Utils.seed import set_seed
+
+from Inference.generate_mols import sample_molecule
+from Model.build_model import build_mlpencoder
 
 
 def get_sampled_element(myCDF):
@@ -39,8 +46,14 @@ def run_sampling(xc, dxc, myPDF, myCDF, nRuns):
 
 
 def tokenlen_gen_from_data_distribution(data, nBins, size):
-    count_c, bins_c, = np.histogram(data, bins=nBins)
+    # obtain the discrete distribution of all the token length
+    print('nbins:', nBins)
+    count_c, bins_c = np.histogram(data, bins=nBins)
+    print('count_c:', count_c)
+    print('bins_c:', bins_c)
+
     myPDF = count_c / np.sum(count_c)
+    print('diff:', np.diff(bins_c))
     dxc = np.diff(bins_c)[0]
     xc = bins_c[0:-1] + 0.5 * dxc
 
@@ -56,8 +69,10 @@ def tokenlen_gen_from_data_distribution(data, nBins, size):
     return tokenlen_list
 
 
-def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
+def gen_mol(cond, model, opt, SRC, TRG, toklen, z, device, scaler=None):
     # model.eval()
+    print('cond1:', cond)
+
     if scaler is None:
         scaler = joblib.load('molGCT/scaler.pkl')
     #robustScaler = pickle.load(open(f'{opt.load_weights}/scaler.pkl', "rb"))
@@ -70,10 +85,12 @@ def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
     else:
         cond = np.array(cond.split(',')[:-1]).reshape(1, -1)
 
+    print('cond2:', cond)
+
     cond = scaler.transform(cond)
     cond = Variable(torch.Tensor(cond))
 
-    sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z)
+    sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z, device)
     return sentence
 
 
@@ -94,7 +111,7 @@ def k_best_outputs(outputs, out, log_scores, i, k):
     return outputs, log_scores
 
 
-def init_vars(cond, model, SRC, TRG, toklen, opt, z):
+def init_vars(cond, model, SRC, TRG, toklen, opt, z, device=None):
     init_tok = TRG.vocab.stoi['<sos>']
 
     src_mask = (torch.ones(1, 1, toklen) != 0)
@@ -102,21 +119,19 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
 
     trg_in = torch.LongTensor([[init_tok]])
 
-    if opt.device == 0:
-        trg_in, z, src_mask, trg_mask = trg_in.cuda(
-        ), z.cuda(), src_mask.cuda(), trg_mask.cuda()
-
-    # print('z:', z)
-    # print('trg_in:', trg_in)
-    # print('cond:', cond)
-    # print('src_mask:', src_mask)
-    # print('trg_mask:', trg_mask)
+    if device is not None:
+        z = z.to(device)
+        trg_in = trg_in.to(device)
+        src_mask = src_mask.to(device)
+        trg_mask = trg_mask.to(device)
 
     if opt.use_cond2dec == True:
-        output_mol = model.out(model.decoder(
-            trg_in, z, cond, src_mask, trg_mask))[:, 3:, :]
+        output_mol = model.out(model.mlp_decoder(trg_in, z, cond,
+                                                 src_mask, trg_mask))[:, 3:, :]        
+        # output_mol = model.out(model.decoder(trg_in, z, cond,
+        #                                      src_mask, trg_mask))[:, 3:, :]
     else:
-        output_mol = model.out(model.decoder(
+        output_mol = model.out(model.mlp_decoder(
             trg_in, z, cond, src_mask, trg_mask)[0])
 
     out_mol = F.softmax(output_mol, dim=-1)
@@ -126,14 +141,15 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
                               for prob in probs.data[0]]).unsqueeze(0)
 
     outputs = torch.zeros(opt.k, opt.max_strlen).long()
-    if opt.device == 0:
-        outputs = outputs.cuda()
+    if device is not None:
+        outputs = outputs.to(device)
+
     outputs[:, 0] = init_tok
     outputs[:, 1] = ix[0]
 
     e_outputs = torch.zeros(opt.k, z.size(-2), z.size(-1))
-    if opt.device == 0:
-        e_outputs = e_outputs.cuda()
+    if device is not None:
+        e_outputs = e_outputs.to(device)
     e_outputs[:, :] = z[0]
 
     return outputs, e_outputs, log_scores
@@ -155,19 +171,21 @@ def nopeak_mask(size, opt):
     return np_mask
 
 
-def beam_search(cond, model, SRC, TRG, toklen, opt, z):
-    if opt.device == 0:
-        cond = cond.cuda()
+def beam_search(cond, model, SRC, TRG, toklen, opt, z, device=None):
+    if device is not None:
+        cond = cond.to(device)
     cond = cond.view(1, -1)
 
+    # 维持三个变量，e_outputs,outputs,log_scores
+    # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
     outputs, e_outputs, log_scores = init_vars(
-        cond, model, SRC, TRG, toklen, opt, z)
+        cond, model, SRC, TRG, toklen, opt, z, device)
 
     cond = cond.repeat(opt.k, 1)
     src_mask = (torch.ones(1, 1, toklen) != 0)
     src_mask = src_mask.repeat(opt.k, 1, 1)
-    if opt.device == 0:
-        src_mask = src_mask.cuda()
+    if device is not None:
+        src_mask = src_mask.to(device)
     eos_tok = TRG.vocab.stoi['<eos>']
 
     ind = None
@@ -175,13 +193,6 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
     for i in range(2, opt.max_strlen):
         trg_mask = nopeak_mask(i, opt)
         trg_mask = trg_mask.repeat(opt.k, 1, 1)
-        # print("\n-----------------------------")
-        # print("trg", np.shape(outputs[:,:i]), outputs[:,:i][0])
-        # print("z", np.shape(e_outputs), e_outputs[0])
-        # print("cond", np.shape(cond), cond[0])
-        # print("src_mask", np.shape(src_mask), src_mask[0])
-        # print("trg_mask", np.shape(trg_mask), trg_mask[0])
-        # print("\n-----------------------------")
         if opt.use_cond2dec == True:
             output_mol = model.out(model.decoder(
                 outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0])[:, 3:, :]
@@ -195,7 +206,9 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
             outputs, out_mol, log_scores, i, opt.k)
         # Occurrences of end symbols for all input sentences.
         ones = (outputs == eos_tok).nonzero()
-        sentence_lengths = torch.zeros(len(outputs), dtype=torch.long).cuda()
+        sentence_lengths = torch.zeros(len(outputs), dtype=torch.long)
+        if device is not None:
+            sentence_lengths = sentence_lengths.to(device)
         for vec in ones:
             i = vec[0]
             if sentence_lengths[i] == 0:  # First end symbol has not been found yet
@@ -223,23 +236,11 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
 ##########################################################################
 
 
-def fix_random_seed(seed=0):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
 def get_model(opt, SRC, TRG):
-    model = transformer.build_transformer(len(SRC.vocab), len(TRG.vocab),
-                                          opt.N, opt.d_model, opt.d_ff,
-                                          opt.H, opt.latent_dim, opt.dropout,
-                                          opt.nconds, use_cond2dec=False, use_cond2lat=True)
-    model.load_state_dict(torch.load(opt.molgct_model))
+    model = build_transformer(len(SRC.vocab), len(TRG.vocab), opt.N, opt.d_model,
+                              opt.d_ff, opt.H, opt.latent_dim, opt.dropout, opt.nconds,
+                              use_cond2dec=False, use_cond2lat=True, file_path=opt.molgct_model)
+    # model.load_state_dict(torch.load())
     model = model.to(opt.device)
     return model
 
@@ -259,21 +260,20 @@ def get_mol_prop(mol):
     return logP_v, tPSA_v, QED_v
 
 
-def sample_molecule(opt, toklen_data, model, SRC, TRG, scaler):
+def sample_molecule(opt, toklen_data, model, SRC, TRG, scaler, device):
     toklen = int(tokenlen_gen_from_data_distribution(data=toklen_data, nBins=int(
         toklen_data.max() - toklen_data.min()), size=1)) + 3  # +3 due to cond2enc
+
     z = torch.Tensor(np.random.normal(size=(1, toklen, opt.latent_dim)))
 
     molecule = []
     for cond in opt.conds:
         molecule.append(gen_mol(cond + ',', model, opt,
-                        SRC, TRG, toklen, z, scaler))
+                        SRC, TRG, toklen, z, device, scaler))
     toklen_gen = molecule[0].count(" ") + 1
     molecule = ''.join(molecule).replace(" ", "")
     return molecule, toklen_gen, toklen
 
-
-from moses.metrics import metrics
 
 total_num_each = 100  # 100
 num_samples_each = 5
@@ -291,19 +291,86 @@ tpsa_values = np.linspace(tpsa_lb, tpsa_ub, num=num_samples_each)
 qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
 
 
+def mlptf_test():
+    set_seed(seed=21)
+    """ Options """
+    parser = argparse.ArgumentParser()
+    parser = options(parser)
+    opt = parser.parse_args()
+
+    opt.save_directory = f'/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/mlptf_train_stage2_sim0.70_1'
+    device = allocate_gpu()
+    SRC, TRG = smiles_fields(smiles_field_path='molGCT')
+
+    mlptf_path = os.path.join(opt.save_directory, f'model_{opt.starting_epoch-1}.pt')
+    model = build_mlpencoder(len(SRC.vocab), len(TRG.vocab), opt.N, opt.d_model, opt.d_ff, 
+                             opt.H, opt.latent_dim, opt.dropout, opt.nconds, opt.use_cond2dec,
+                             opt.use_cond2lat, opt.variational, opt.transferring_model_path, mlptf_path)
+    model = model.to(device)
+
+    logp = 2
+    tpsa = 20
+    qed = 0.6
+
+
+
+
+def inference_test():
+    set_seed(seed=21)
+    """ Options """
+    parser = argparse.ArgumentParser()
+    parser = options(parser)
+    opt = parser.parse_args()
+
+    device = allocate_gpu()
+    opt.k = 4
+    opt.molgct_model = 'molGCT/molgct.pt'
+    opt.toklen_list = 'Data/moses/toklen_list.csv'
+
+    os.makedirs('molGCT/inference', exist_ok=True)
+
+    robustScaler = joblib.load('molGCT/scaler.pkl')
+
+    """ Tools """
+    print('>>> GET SRC/TRG FEILDS')
+    SRC, TRG = smiles_fields(smiles_field_path='molGCT')
+
+    print('>>> GET MODEL')
+    model = get_model(opt, SRC, TRG)
+    toklen_data = pd.read_csv(opt.toklen_list)
+
+    # tf_name = [n for n, p in model.named_parameters()]
+    # print("transformer:\n", tf_name)
+
+    model.eval()
+    RDLogger.DisableLog('rdApp.*')  # disable error from RDlLo
+
+    print('>>> SAMPLE MOLECULES')
+    logp = 2
+    tpsa = 20
+    qed = 0.6
+
+    opt.conds = [f'{logp}, {tpsa}, {qed}']
+
+    smiles, _, _ = sample_molecule(opt, toklen_data, model,
+                                   SRC, TRG, robustScaler, device)
+    molecule = Chem.MolFromSmiles(smiles)
+
+    print(smiles, molecule)
+
+
 def inference():
-    # fix_random_seed()
+    set_seed(seed=21)
     """ Options """
     parser = opts.general_opts()
     opt = parser.parse_args()
 
-    opt.device = 0
+    device = allocate_gpu()
     opt.k = 4
     opt.molgct_model = 'molGCT/molgct.pt'
     opt.toklen_list = 'data/moses/toklen_list.csv'
 
     os.makedirs('molGCT/inference', exist_ok=True)
-
 
     robustScaler = joblib.load('molGCT/scaler.pkl')
 
@@ -344,8 +411,8 @@ def inference():
 
                         while valid_num < total_num_each:
                             sample_num += 1
-                            smiles, _, _ = sample_molecule(
-                                opt, toklen_data, model, SRC, TRG, robustScaler)
+                            smiles, _, _ = sample_molecule(opt, toklen_data, model,
+                                                           SRC, TRG, robustScaler, device)
                             molecule = Chem.MolFromSmiles(smiles)
 
                             if molecule is not None:
@@ -357,7 +424,7 @@ def inference():
 
                                 line = "{:.2f}\t{:.2f}\t{:.2f}\t"\
                                        "{:.2f}\t{:.2f}\t{:.2f}\t{}".format(
-                                    logp, tpsa, qed, logp_p, tpsa_p, qed_p, smiles)
+                                           logp, tpsa, qed, logp_p, tpsa_p, qed_p, smiles)
                                 print(f'[sample{sample_num}]>>> '+line)
                                 sample_file.write(line+'\n')
                             else:
@@ -426,13 +493,13 @@ def inference():
 
                     mean_f.write(header)
                     mean_f.write(line)
- 
+
     header = 'logp\ttpsa\tqed\t'\
              'logp_mae\ttpsa_mae\tqed_mae\t'\
              'logp_mse\ttpsa_mse\tqed_mse\t'\
              'logp_max\ttpsa_max\tqed_max\t'\
              'valid\tunique\tsucess\tdiversity\n'
-    
+
     header_dict = {
         'logp': [],
         'tpsa': [],
@@ -454,14 +521,14 @@ def inference():
         'success': [],
         'diversity': []
     }
-    
+
     for logp in logp_values:
         for tpsa in tpsa_values:
             for qed in qed_values:
                 print("- Metrics file:", mean_p)
                 mean_p = os.path.join('molGCT', 'inference',
                                       'mean_{:.2f}_{:.2f}_{:.2f}.txt'.format(logp, tpsa, qed))
-                mean_df = pd.read_csv(mean_p, sep='\t')                
+                mean_df = pd.read_csv(mean_p, sep='\t')
 
                 header_dict['logp'].append(logp)
                 header_dict['tpsa'].append(tpsa)
@@ -470,23 +537,24 @@ def inference():
                 header_dict['logp_mae'].append(mean_df['logp_mae'].tolist()[0])
                 header_dict['tpsa_mae'].append(mean_df['tpsa_mae'].tolist()[0])
                 header_dict['qed_mae'].append(mean_df['qed_mae'].tolist()[0])
-                
+
                 header_dict['logp_mse'].append(mean_df['logp_mse'].tolist()[0])
                 header_dict['tpsa_mse'].append(mean_df['tpsa_mse'].tolist()[0])
                 header_dict['qed_mse'].append(mean_df['qed_mse'].tolist()[0])
-                
+
                 header_dict['logp_max'].append(mean_df['logp_max'].tolist()[0])
                 header_dict['tpsa_max'].append(mean_df['tpsa_max'].tolist()[0])
                 header_dict['qed_max'].append(mean_df['qed_max'].tolist()[0])
-                
+
                 header_dict['logp_min'].append(mean_df['logp_min'].tolist()[0])
                 header_dict['tpsa_min'].append(mean_df['tpsa_min'].tolist()[0])
                 header_dict['qed_min'].append(mean_df['qed_min'].tolist()[0])
-    
+
                 header_dict['valid'].append(mean_df['valid'].tolist()[0])
                 header_dict['unique'].append(mean_df['unique'].tolist()[0])
                 header_dict['success'].append(mean_df['success'].tolist()[0])
-                header_dict['diversity'].append(mean_df['diversity'].tolist()[0])
+                header_dict['diversity'].append(
+                    mean_df['diversity'].tolist()[0])
 
     data_df = pd.DataFrame.from_dict(header_dict)
     data_df.to_csv('molGCT/inference/output.csv')
@@ -506,11 +574,13 @@ def intdiv():
                 """
                 df = pd.read_csv(sample_p, sep='\t')
                 smiles_list.extend(df['smiles'].tolist())
-    
+
     div = metrics.internal_diversity(smiles_list)
     print(div)
 
 
 if __name__ == "__main__":
+    mlptf_test()
     # inference()
-    intdiv()
+    # intdiv()
+    # inference_test()

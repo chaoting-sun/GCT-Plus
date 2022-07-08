@@ -14,7 +14,7 @@ def options(parser):
     parser.add_argument('-n_jobs', type=int, default=1, help="number of CPU cores")
     parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
     parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
-    parser.add_argument('-data_path', type=str, required=True, help="Path of dataset")
+    parser.add_argument('-data_path', type=str, default='.', help="Path of dataset")
     
     parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
     parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")
@@ -102,4 +102,13 @@ def generate_opts(parser):
 
 
 def evaluation_opts(parser):
-    pass
+    parser.add_argument('-starting_epoch', type=int, default=20)
+    parser.add_argument('-save_directory', default='train')
+    parser.add_argument('-transferring_model_path', type=str, default='molGCT/molgct.pt')
+
+    parser.add_argument('-logp_lb', type=float, default=0.03)
+    parser.add_argument('-logp_ub', type=float, default=4.97)
+    parser.add_argument('-tpsa_lb', type=float, default=17.92)
+    parser.add_argument('-tpsa_ub', type=float, default=112.83)
+    parser.add_argument('-qed_lb', type=float, default=0.58)
+    parser.add_argument('-qed_ub', type=float, default=0.95)

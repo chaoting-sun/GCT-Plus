@@ -22,7 +22,7 @@
 #     >train_sim1.out 2>train_sim1.err &
 
 SIMILARITY=0.70
-MLP_STACK=3
+MLP_STACK=6
 GPU_IDX=2
 
 # train
