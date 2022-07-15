@@ -314,7 +314,7 @@ def inference():
 
 
     logp, tpsa, qed = 3.0, 85.3, 0.8
-    logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
+    # logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
     for i in range(50):
         opt.conds = [f'{logp}, {tpsa}, {qed}']
         smiles, _, _ = sample_molecule(

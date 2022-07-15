@@ -320,7 +320,7 @@ def mlptf_test():
 
 
 def inference_test():
-    set_seed(seed=21)
+    # set_seed(seed=21)
     """ Options """
     parser = argparse.ArgumentParser()
     parser = options(parser)
@@ -384,23 +384,22 @@ def inference():
     device = allocate_gpu()
     opt.k = 4
     opt.molgct_model = 'molGCT/molgct.pt'
-    opt.toklen_list = 'data/moses/toklen_list.csv'
+    opt.toklen_list = 'Data/moses/toklen_list.csv'
 
     os.makedirs('molGCT/inference', exist_ok=True)
 
     robustScaler = joblib.load('molGCT/scaler.pkl')
 
     """ Tools """
-    SRC, TRG = smiles_fields(weights_path='molGCT')
+    SRC, TRG = smiles_fields(smiles_field_path='molGCT')
     model = get_model(opt, SRC, TRG)
     toklen_data = pd.read_csv(opt.toklen_list)
 
     print("successful in getting the model.")
-    tf_name = [n for n, p in model.named_parameters()]
-    print("transformer:\n", tf_name)
 
     model.eval()
     RDLogger.DisableLog('rdApp.*')  # disable error from RDlLo
+
 
     for logp in logp_values:
         for tpsa in tpsa_values:
