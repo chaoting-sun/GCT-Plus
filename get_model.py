@@ -293,7 +293,7 @@ qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
 
 
 def inference():
-    # fix_random_seed()
+    fix_random_seed(seed=0)
     """ Options """
     parser = argparse.ArgumentParser()
     parser = options(parser)
