@@ -21,13 +21,13 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
     
     # create a batch of starting tokens (1)
     ys = (torch.ones(src.shape[0], 1, requires_grad=True)*sos_idx).type_as(src.data)
-
+    
     for i in range(max_strlen-1):
         with torch.no_grad():
             # create a sequence (nopeak) mask for target
             # use_cond2dec should be true s.t. trg_mask considers both the conditions and smiles tokens
             trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), 
-                                   use_cond2dec, src.get_device()) 
+                                   use_cond2dec, src.get_device())
             # dim. of output: (bs, ys.size(-1)+1, d_model)
             output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
             # dim. of output: (bs, ys.size(-1)+1, vocab_size)

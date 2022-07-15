@@ -91,7 +91,8 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds, d_model)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
         # dim: -> (batch_size, src_maxstr, d_model)
-        x = self.embed_sentence(src) # ????????????? RuntimeError: CUDA error: device-side assert triggered
+
+        x = self.embed_sentence(src)
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
@@ -310,22 +311,24 @@ class MLP_Encoder(nn.Module):
                 self.decoder.state_dict()[sub_name].copy_(param)
             else:
                 exit("There may be something missing.")
-
     
-    def encoder_mlp(self, src, econds, mconds, src_mask):
+    def encode_mlp(self, src, econds, mconds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z1, _, _ = self.sampler1(x)
         x = self.mlp(z1, mconds)
         z2, _, _ = self.sampler2(x)
         return z2
 
-
-    def mlp_decoder(self, trg, e_outputs, 
-                    mconds, dconds, src_mask, trg_mask):
+    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+        mconds, dconds = conds[0], conds[1]
         x = self.mlp(e_outputs, mconds)
         e_outputs, _, _ = self.sampler2(x)
-        return self.decoder(trg, e_outputs, dconds, src_mask, trg_mask)
+        return self.out(self.decoder(trg, e_outputs,
+                        dconds, src_mask, trg_mask)[0])
 
+    def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
+        return self.out(self.decoder(trg, e_outputs,
+                        dconds, src_mask, trg_mask)[0])
 
     def forward(self, src, trg_en, econds, mconds, dconds):
         src_pad_mask = create_source_mask(src, econds)
@@ -338,11 +341,5 @@ class MLP_Encoder(nn.Module):
         trg_pad_mask = create_source_mask(trg_en, dconds)
         x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
         trg_z_truth, _, _ = self.sampler2(x)
-
-
-        # print('model trg_en:', trg_en.size(), trg_en)
-        # print('model dconds:', dconds.size(), dconds)x
-        # print('model x:', x.size(), x)
-        # print('model trg_z_truth', trg_z_truth.size(), trg_z_truth)
 
         return trg_z_pred, trg_z_truth

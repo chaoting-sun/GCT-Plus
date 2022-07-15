@@ -15,17 +15,17 @@ def train(args, debug=False):
 
     print('>>> ALLOCATING DEVCIE - GPU')
     device = allocate_gpu()
+    # device = 'cpu'
 
     print('>>> PREPARING FIELDS - COND/SRC/TRG')
-    fields = get_fields(args.conditions, args.field_path)
-    field_dict = {p: f for p, f in fields}
-    SRC = field_dict['src']
-    TRG = field_dict['trg']
+    fields, SRC, TRG = get_fields(args.conditions, args.field_path)
 
     print('>>> PREPARING DATA - TRAINING/VALIDATION SET')
     train_data, valid_data = data.TabularDataset.splits(
         path=args.data_path, train='train.csv', validation='validation.csv',
         test=None, format='csv', fields=fields, skip_header=True)
+    print("--- NUMBER OF PAIRS IN TRAIN-DATA:", len(train_data))
+    print("--- NUMBER OF PAIRS IN VALID-DATA:", len(valid_data))
 
     train_iter, valid_iter = data.BucketIterator.splits(
         (train_data, valid_data), batch_sizes=(args.batch_size, args.batch_size),

@@ -73,6 +73,8 @@ class Trainer(object):
         """
         The following variables records the total values from the dataset
         """
+        verbose = False
+
         sum_loss, n_tokens, n_samples, n_correct = 0, 0, 0, 0
         dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'], device)
 
@@ -81,15 +83,21 @@ class Trainer(object):
         # for i, batch in tqdm(enumerate(dataloader), total=len(data_iter)):
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
+
+            if verbose:
+                print(">>> Pass the model")
             trg_z_pred, trg_z_truth = model.forward(batch.src,
                                                     batch.trg_en,
-                                                    batch.econds, 
-                                                    batch.mconds, 
+                                                    batch.econds,
+                                                    batch.mconds,
                                                     batch.dconds)
+
             # Compute loss (rec-loss + KL-div) and update
+            if verbose:
+                print(">>> Compute the loss")
             loss = loss_compute(trg_z_pred, trg_z_truth)
-            # loss = loss_compute(out, batch.trg_y)
-            
+            if verbose:
+                print('>>> Decode the smiles')
             smiles = decode.decode(model, batch.src,
                                    batch.econds,
                                    batch.mconds,
@@ -100,11 +108,15 @@ class Trainer(object):
                                    decode_type='greedy', 
                                    use_cond2dec=self.args.use_cond2dec)
 
+            if verbose:
+                print(">>> Sum the total loss")
             sum_loss += float(loss)
             n_samples += batch.trg.size(0)
             n_tokens += float((batch.trg_y != self.args.src_pad_idx).data.sum())
 
             # correctness: all tokens of a SMILES as a unit
+            if verbose:
+                print('>>> Compute the correctness')
             for b in range(batch.trg.size(0)):
                 if torch.equal(smiles[b, :], batch.trg[b]):
                     n_correct += 1

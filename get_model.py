@@ -18,13 +18,12 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from Configuration.config import options
-from Model.build_model import build_transformer
 from Utils.field import smiles_fields
 from Utils import allocate_gpu
 # import beam
 from Utils.seed import set_seed
 from Inference.generate_mols import sample_molecule
-from Model.build_model import build_mlpencoder
+from Model.build_model import build_mlpencoder, build_mlptransformer, build_transformer
 
 
 def get_sampled_element(myCDF):
@@ -44,13 +43,9 @@ def run_sampling(xc, dxc, myPDF, myCDF, nRuns):
 
 def tokenlen_gen_from_data_distribution(data, nBins, size):
     # obtain the discrete distribution of all the token length
-    print('nbins:', nBins)
     count_c, bins_c = np.histogram(data, bins=nBins)
-    print('count_c:', count_c)
-    print('bins_c:', bins_c)
 
     myPDF = count_c / np.sum(count_c)
-    print('diff:', np.diff(bins_c))
     dxc = np.diff(bins_c)[0]
     xc = bins_c[0:-1] + 0.5 * dxc
 
@@ -66,180 +61,205 @@ def tokenlen_gen_from_data_distribution(data, nBins, size):
     return tokenlen_list
 
 
-def gen_mol(cond, model, opt, SRC, TRG, toklen, z, device, scaler=None):
-    # model.eval()
-    print('cond1:', cond)
-
-    if scaler is None:
-        scaler = joblib.load('molGCT/scaler.pkl')
-    #robustScaler = pickle.load(open(f'{opt.load_weights}/scaler.pkl', "rb"))
-    if opt.conds == 'm':
-        cond = cond.reshape(1, -1)
-    elif opt.conds == 's':
-        cond = cond.reshape(1, -1)
-    elif opt.conds == 'l':
-        cond = cond.reshape(1, -1)
-    else:
-        cond = np.array(cond.split(',')[:-1]).reshape(1, -1)
-
-    print('cond2:', cond)
-
-    cond = scaler.transform(cond)
-    cond = Variable(torch.Tensor(cond))
-
-    sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z, device)
-    return sentence
-
-
-def k_best_outputs(outputs, out, log_scores, i, k):
-    probs, ix = out[:, -1].data.topk(k)
-    log_probs = torch.Tensor(
-        [math.log(p) for p in probs.data.view(-1)]).view(k, -1) + log_scores.transpose(0, 1)
-    k_probs, k_ix = log_probs.view(-1).topk(k)
-
-    row = torch.div(k_ix, k, rounding_mode='floor')
-    # row = k_ix // k
-    col = k_ix % k
-
-    outputs[:, :i] = outputs[row, :i]
-    outputs[:, i] = ix[row, col]
-
-    log_scores = k_probs.unsqueeze(0)
-    return outputs, log_scores
-
-
-def init_vars(cond, model, SRC, TRG, toklen, opt, z, device=None):
-    init_tok = TRG.vocab.stoi['<sos>']
-
-    src_mask = (torch.ones(1, 1, toklen) != 0)
-    trg_mask = nopeak_mask(1, opt)
-
-    trg_in = torch.LongTensor([[init_tok]])
-
-    if device is not None:
-        z = z.to(device)
-        trg_in = trg_in.to(device)
-        src_mask = src_mask.to(device)
-        trg_mask = trg_mask.to(device)
-
-    if opt.use_cond2dec == True:
-        output_mol = model.out(model.mlp_decoder(trg_in, z, cond,
-                                                 src_mask, trg_mask))[:, 3:, :]        
-        # output_mol = model.out(model.decoder(trg_in, z, cond,
-        #                                      src_mask, trg_mask))[:, 3:, :]
-    else:
-        output_mol = model.out(model.mlp_decoder(
-            trg_in, z, cond, src_mask, trg_mask)[0])
-
-    out_mol = F.softmax(output_mol, dim=-1)
-
-    probs, ix = out_mol[:, -1].data.topk(opt.k)
-    log_scores = torch.Tensor([math.log(prob)
-                              for prob in probs.data[0]]).unsqueeze(0)
-
-    outputs = torch.zeros(opt.k, opt.max_strlen).long()
-    if device is not None:
-        outputs = outputs.to(device)
-
-    outputs[:, 0] = init_tok
-    outputs[:, 1] = ix[0]
-
-    e_outputs = torch.zeros(opt.k, z.size(-2), z.size(-1))
-    if device is not None:
-        e_outputs = e_outputs.to(device)
-    e_outputs[:, :] = z[0]
-
-    return outputs, e_outputs, log_scores
-
-
-def nopeak_mask(size, opt):
+def nopeak_mask(size, cond_dim, use_cond2dec=True):
     np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')
-    if opt.use_cond2dec == True:
-        cond_mask = np.zeros((1, opt.cond_dim, opt.cond_dim))
-        cond_mask_upperright = np.ones((1, opt.cond_dim, size))
+    if use_cond2dec == True:
+        cond_mask = np.zeros((1, cond_dim, cond_dim))
+        cond_mask_upperright = np.ones((1, cond_dim, size))
         cond_mask_upperright[:, :, 0] = 0
-        cond_mask_lowerleft = np.zeros((1, size, opt.cond_dim))
+        cond_mask_lowerleft = np.zeros((1, size, cond_dim))
         upper_mask = np.concatenate([cond_mask, cond_mask_upperright], axis=2)
         lower_mask = np.concatenate([cond_mask_lowerleft, np_mask], axis=2)
         np_mask = np.concatenate([upper_mask, lower_mask], axis=1)
     np_mask = Variable(torch.from_numpy(np_mask) == 0)
-    if opt.device == 0:
-        np_mask = np_mask.cuda()
     return np_mask
 
 
-def beam_search(cond, model, SRC, TRG, toklen, opt, z, device=None):
-    if device is not None:
-        cond = cond.to(device)
-    cond = cond.view(1, -1)
-
-    # 维持三个变量，e_outputs,outputs,log_scores
-    # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
-    outputs, e_outputs, log_scores = init_vars(
-        cond, model, SRC, TRG, toklen, opt, z, device)
-
-    cond = cond.repeat(opt.k, 1)
-    src_mask = (torch.ones(1, 1, toklen) != 0)
-    src_mask = src_mask.repeat(opt.k, 1, 1)
-    if device is not None:
-        src_mask = src_mask.to(device)
-    eos_tok = TRG.vocab.stoi['<eos>']
-
-    ind = None
-
-    for i in range(2, opt.max_strlen):
-        trg_mask = nopeak_mask(i, opt)
-        trg_mask = trg_mask.repeat(opt.k, 1, 1)
-        if opt.use_cond2dec == True:
-            output_mol = model.out(model.decoder(
-                outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0])[:, 3:, :]
+class ModelPrediction(object):
+    def __init__(self, decoder, use_cond2dec):
+        self.decoder = decoder
+        self.use_cond2dec = use_cond2dec
+    
+    def predict(self, trg, e_outputs, conds, src_mask, trg_mask):
+        if self.use_cond2dec == True:
+            output_mol = self.decoder(trg, e_outputs, conds,
+                                      src_mask, trg_mask)[:, 3:, :]
         else:
-            output_mol = model.out(model.decoder(
-                outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0])
+            output_mol = self.decoder(trg, e_outputs, conds, src_mask, trg_mask)
+        return F.softmax(output_mol, dim=-1)
 
-        out_mol = F.softmax(output_mol, dim=-1)
 
-        outputs, log_scores = k_best_outputs(
-            outputs, out_mol, log_scores, i, opt.k)
-        # Occurrences of end symbols for all input sentences.
-        ones = (outputs == eos_tok).nonzero()
-        sentence_lengths = torch.zeros(len(outputs), dtype=torch.long)
-        if device is not None:
-            sentence_lengths = sentence_lengths.to(device)
-        for vec in ones:
-            i = vec[0]
-            if sentence_lengths[i] == 0:  # First end symbol has not been found yet
-                sentence_lengths[i] = vec[1]  # Position of first end symbol
+class ModelInference(object):
+    def __init__(self, k, cond_dim, latent_dim, max_strlen, model, use_cond2dec):
+        self.k = k
+        self.cond_dim = cond_dim
+        self.latent_dim = latent_dim
+        self.max_strlen = max_strlen
+        self.model = model
+        self.use_cond2dec = use_cond2dec
 
-        num_finished_sentences = len([s for s in sentence_lengths if s > 0])
 
-        if num_finished_sentences == opt.k:
-            alpha = 0.7
-            div = 1/(sentence_lengths.type_as(log_scores)**alpha)
-            _, ind = torch.max(log_scores * div, 1)
-            ind = ind.data[0]
-            break
+    def k_best_outputs(self, outputs, out, log_scores, i):
+        probs, ix = out[:, -1].data.topk(self.k)
+        # the log probabilities from init. token to now (dim=(k,1))
+        log_probs = torch.Tensor([math.log(p) for p in probs.data.view(-1)]).view(self.k, -1)\
+                                 + log_scores.transpose(0, 1)
+        k_probs, k_ix = log_probs.view(-1).topk(self.k)
 
-    if ind is None:
-        length = (outputs[0] == eos_tok).nonzero()[0]
-        outs = ' '.join([TRG.vocab.itos[tok] for tok in outputs[0][1:length]])
-        print(outs)
-        return outs
+        row = torch.div(k_ix, self.k, rounding_mode='floor')
+        # row = k_ix // k
+        col = k_ix % self.k
 
-    else:
-        length = (outputs[ind] == eos_tok).nonzero()[0]
-        return ' '.join([TRG.vocab.itos[tok] for tok in outputs[ind][1:length]])
+        # dim=(k,max_str)
+        outputs[:, :i] = outputs[row, :i]
+        outputs[:, i] = ix[row, col]
+
+        log_scores = k_probs.unsqueeze(0)
+        return outputs, log_scores
+
+
+    def init_vars(self, predictor, conds, init_tok, toklen, z, device):
+        trg_in = torch.LongTensor([[init_tok]]).to(device) # dim=(1,1)
+        src_mask = (torch.ones(1, 1, toklen) != 0).to(device)
+        trg_mask = nopeak_mask(1, self.cond_dim, self.use_cond2dec).to(device)
+
+        out_mol = predictor.predict(trg_in, z, conds, src_mask, trg_mask)
+
+        # return the k largest elements: value/index (dim=(1,k))
+        probs, ix = out_mol[:, -1].data.topk(self.k)
+        # the log-scale scores (dim=(1,k))
+        log_scores = torch.Tensor([math.log(prob)
+                                for prob in probs.data[0]]).unsqueeze(0)
+        # k outputs
+        outputs = torch.zeros(self.k, self.max_strlen).long().to(device)
+        outputs[:, 0] = init_tok
+        outputs[:, 1] = ix[0]
+
+        # z    (dim=(1,toklen,latent_dim))
+        # z[0] (dim=(toklen,latent_dim))
+        e_outputs = torch.zeros(self.k, z.size(-2), z.size(-1)).to(device)
+        e_outputs[:, :] = z[0]
+
+        return outputs, e_outputs, log_scores
+
+
+    def beam_search(self, conds, predictor, TRG, toklen, z, device):
+        sos_tok = TRG.vocab.stoi['<sos>']
+        eos_tok = TRG.vocab.stoi['<eos>']
+
+        # cond = cond.view(1, -1)
+
+        # 维持三个变量，e_outputs,outputs,log_scores
+        # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
+        outputs, e_outputs, log_scores = self.init_vars(predictor, conds, sos_tok,
+                                                        toklen, z, device)
+
+        if type(conds) == list:
+            conds[0], conds[1] = conds[0].repeat(self.k, 1), conds[1].repeat(self.k, 1)
+        else:
+            conds = conds.repeat(self.k, 1)
+
+        ind = None
+        src_mask = (torch.ones(1, 1, toklen) != 0)
+        src_mask = src_mask.repeat(self.k, 1, 1).to(device)
+
+        for i in range(2, self.max_strlen):
+            trg_mask = nopeak_mask(i, self.cond_dim, self.use_cond2dec)
+            trg_mask = trg_mask.repeat(self.k, 1, 1).to(device)
+
+            out_mol = predictor.predict(outputs[:, :i], e_outputs, conds, src_mask, trg_mask)
+
+            outputs, log_scores = self.k_best_outputs(outputs, out_mol, log_scores, i)
+
+            # Occurrences of end symbols for all input sentences. (index)
+            ones = (outputs == eos_tok).nonzero()
+            # len(outputs) == k
+            sentence_lengths = torch.zeros(len(outputs), dtype=torch.long).to(device)
+
+            for vec in ones:
+                i = vec[0]  # i-th
+                if sentence_lengths[i] == 0:  # First end symbol has not been found yet
+                    sentence_lengths[i] = vec[1]  # Position of first end symbol
+
+            num_finished_sentences = len([s for s in sentence_lengths if s > 0])
+
+            if num_finished_sentences == self.k:
+                alpha = 0.7
+                div = 1/(sentence_lengths.type_as(log_scores)**alpha)
+                _, ind = torch.max(log_scores * div, 1)
+                ind = ind.data[0]
+                break
+        
+        print((outputs[0] == eos_tok).nonzero())
+
+        if ind is None:
+            length = (outputs[0] == eos_tok).nonzero()[0]
+            outs = ' '.join([TRG.vocab.itos[tok] for tok in outputs[0][1:length]])
+            print(outs)
+            return outs
+        else:
+            length = (outputs[ind] == eos_tok).nonzero()[0]
+            return ' '.join([TRG.vocab.itos[tok] for tok in outputs[ind][1:length]])
+
+
+    def sample_molecule(self, conds, toklen_data, predictor, TRG, scaler, device):
+        toklen = int(tokenlen_gen_from_data_distribution(data=toklen_data, nBins=int(
+            toklen_data.max() - toklen_data.min()), size=1)) + 3  # +3 due to cond2enc
+
+        z = torch.Tensor(np.random.normal(size=(1, toklen, self.latent_dim))).to(device)
+
+        dconds = torch.Tensor(scaler.transform(conds)).to(device)
+        rand_conds = torch.normal(mean=0, std=0.2, size=(1, self.cond_dim)).to(device)
+        mconds = torch.cat((dconds - rand_conds, rand_conds), axis=1)
+
+        molecule = []
+
+        for i in range(len(dconds)):
+            molecule.append(self.beam_search([mconds, dconds],
+                            predictor, TRG, toklen, z, device))
+        toklen_gen = molecule[0].count(" ") + 1
+        molecule = ''.join(molecule).replace(" ", "")
+        return molecule, toklen_gen, toklen
+
+
+    def sample_molecule_from_decoder(self, conds, toklen_data, predictor, TRG, scaler, device):
+        toklen = int(tokenlen_gen_from_data_distribution(data=toklen_data, nBins=int(
+            toklen_data.max() - toklen_data.min()), size=1)) + 3  # +3 due to cond2enc
+
+        z = torch.Tensor(np.random.normal(size=(1, toklen, self.latent_dim))).to(device)
+
+        dconds = torch.Tensor(scaler.transform(conds)).to(device)
+
+        molecule = []
+
+        for i in range(len(dconds)):
+            molecule.append(self.beam_search(dconds, predictor, TRG, toklen, z, device))
+        toklen_gen = molecule[0].count(" ") + 1
+        molecule = ''.join(molecule).replace(" ", "")
+        return molecule, toklen_gen, toklen
+
 
 ##########################################################################
 
+def get_model(args, SRC, TRG, model_type):
+    model_path = os.path.join(args.save_directory, f'model_{args.epoch}.pt')
 
-def get_model(opt, SRC, TRG):
-    model = build_transformer(len(SRC.vocab), len(TRG.vocab), opt.N, opt.d_model,
-                              opt.d_ff, opt.H, opt.latent_dim, opt.dropout, opt.nconds,
-                              use_cond2dec=False, use_cond2lat=True, file_path=opt.molgct_model)
-    # model.load_state_dict(torch.load())
-    model = model.to(opt.device)
-    return model
+    if model_type == 'transformer':
+        return build_transformer(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model,
+                                 args.d_ff, args.H, args.latent_dim, args.dropout, args.nconds, 
+                                 args.use_cond2dec, args.use_cond2lat, file_path=model_path)
+    elif model_type == 'mlp_transformer':
+        return build_mlptransformer(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, 
+                                    args.d_ff, args.H, args.latent_dim, args.dropout, args.nconds, 
+                                    args.use_cond2dec, args.use_cond2lat, args.variational, 
+                                    args.molgct_path, file_path=model_path)
+    elif model_type == 'mlp_encoder':
+        return build_mlpencoder(len(SRC.vocab), len(TRG.vocab), args.N, args.d_model, 
+                                args.d_ff, args.H, args.latent_dim, args.dropout, args.nconds, 
+                                args.use_cond2dec, args.use_cond2lat, args.variational, 
+                                args.molgct_path, file_path=model_path)
+    else:
+        exit('ERROR - No Model Type:', model_type)
 
 
 def get_number_list(low, high, num=10):
@@ -257,19 +277,7 @@ def get_mol_prop(mol):
     return logP_v, tPSA_v, QED_v
 
 
-def sample_molecule(opt, toklen_data, model, SRC, TRG, scaler, device):
-    toklen = int(tokenlen_gen_from_data_distribution(data=toklen_data, nBins=int(
-        toklen_data.max() - toklen_data.min()), size=1)) + 3  # +3 due to cond2enc
 
-    z = torch.Tensor(np.random.normal(size=(1, toklen, opt.latent_dim)))
-
-    molecule = []
-    for cond in opt.conds:
-        molecule.append(gen_mol(cond + ',', model, opt,
-                        SRC, TRG, toklen, z, device, scaler))
-    toklen_gen = molecule[0].count(" ") + 1
-    molecule = ''.join(molecule).replace(" ", "")
-    return molecule, toklen_gen, toklen
 
 
 total_num_each = 100  # 100
@@ -299,8 +307,9 @@ def mlptf_test():
     device = allocate_gpu()
     SRC, TRG = smiles_fields(smiles_field_path='molGCT')
 
-    mlptf_path = os.path.join(opt.save_directory, f'model_{opt.starting_epoch-1}.pt')
-    model = build_mlpencoder(len(SRC.vocab), len(TRG.vocab), opt.N, opt.d_model, opt.d_ff, 
+    mlptf_path = os.path.join(
+        opt.save_directory, f'model_{opt.starting_epoch-1}.pt')
+    model = build_mlpencoder(len(SRC.vocab), len(TRG.vocab), opt.N, opt.d_model, opt.d_ff,
                              opt.H, opt.latent_dim, opt.dropout, opt.nconds, opt.use_cond2dec,
                              opt.use_cond2lat, opt.variational, opt.transferring_model_path, mlptf_path)
     model = model.to(device)
@@ -315,42 +324,54 @@ def inference_test():
     """ Options """
     parser = argparse.ArgumentParser()
     parser = options(parser)
-    opt = parser.parse_args()
+    args = parser.parse_args()
 
     device = allocate_gpu()
-    opt.k = 4
-    opt.molgct_model = 'molGCT/molgct.pt'
-    opt.toklen_list = 'Data/moses/toklen_list.csv'
+
+    k = 4 # beam search with k
 
     os.makedirs('molGCT/inference', exist_ok=True)
 
-    robustScaler = joblib.load('molGCT/scaler.pkl')
+    scaler = joblib.load('molGCT/scaler.pkl')
 
     """ Tools """
     print('>>> GET SRC/TRG FEILDS')
     SRC, TRG = smiles_fields(smiles_field_path='molGCT')
 
     print('>>> GET MODEL')
-    model = get_model(opt, SRC, TRG)
-    toklen_data = pd.read_csv(opt.toklen_list)
-
-    # tf_name = [n for n, p in model.named_parameters()]
-    # print("transformer:\n", tf_name)
+    model = get_model(args, SRC, TRG, model_type='mlp_encoder').to(device)
+    toklen_data = pd.read_csv(args.toklen_path)
 
     model.eval()
-    RDLogger.DisableLog('rdApp.*')  # disable error from RDlLo
+    RDLogger.DisableLog('rdApp.*') # disable error from RDlLo
 
     print('>>> SAMPLE MOLECULES')
-    logp = 2
-    tpsa = 20
-    qed = 0.6
+    # logp = float(input('Enter logP:'))
+    # tpsa = float(input('Enter tPSA:'))
+    # qed = float(input('Enter QED:'))
 
-    opt.conds = [f'{logp}, {tpsa}, {qed}']
+    logp = 2.2
+    tpsa = 85.3
+    qed = 0.8
 
-    smiles, _, _ = sample_molecule(opt, toklen_data, model,
-                                   SRC, TRG, robustScaler, device)
+    conds = np.array([[logp, tpsa, qed]])
+
+    # opt.conds = [f'{logp}, {tpsa}, {qed}']
+
+    print('>>> BUILD MODELINFERENCE')
+    inference = ModelInference(k, args.nconds, args.latent_dim,
+                               args.max_strlen, model, args.use_cond2dec)
+
+    print('>>> SAMPLE MOLECULES')
+    predictor = ModelPrediction(model.decode, args.use_cond2dec)
+    smiles, _, _ = inference.sample_molecule_from_decoder(conds, toklen_data, predictor, 
+                                                          TRG, scaler, device)
+    
+    # predictor = ModelPrediction(model.mlp_decode, args.use_cond2dec)
+    # smiles, _, _ = inference.sample_molecule(conds, toklen_data, predictor, 
+    #                                          TRG, scaler, device)
+    print('>>> CONVERT SMILES TO MOL')
     molecule = Chem.MolFromSmiles(smiles)
-
     print(smiles, molecule)
 
 
@@ -575,7 +596,7 @@ def intdiv():
 
 
 if __name__ == "__main__":
-    mlptf_test()
+    # mlptf_test()
     # inference()
     # intdiv()
-    # inference_test()
+    inference_test()

@@ -23,7 +23,9 @@ def nopeak_mask(size, cond_dim, use_cond2dec, device=None):
         lower_mask = np.concatenate([cond_mask_lowerleft, np_mask], axis=2)
         np_mask = np.concatenate([upper_mask, lower_mask], axis=1)
     np_mask = Variable(torch.from_numpy(np_mask) == 0)
-    if device is not None:
+    # if device is not None:
+        # np_mask = np_mask.to(device)
+    if device >= 0:
         np_mask = np_mask.to(device)
     return np_mask
 

@@ -1,8 +1,5 @@
 import argparse
 
-from pkg_resources import require
- 
-
 def options(parser):
     """ GENERAL SETUP """
     # general_parser.add_argument('-nconds', type=int, default=1, help="Number of conditions")
@@ -16,6 +13,8 @@ def options(parser):
     parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
     parser.add_argument('-data_path', type=str, default='.', help="Path of dataset")
     
+    parser.add_argument('-molgct_path', type=str, default='molGCT/molgct.pt')
+    parser.add_argument('-toklen_path', type=str, default='Data/moses/toklen_list.csv')
     parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
     parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")
     parser.add_argument('-load_scaler', action='store_true', help="load the weights of fields")
@@ -102,9 +101,9 @@ def generate_opts(parser):
 
 
 def evaluation_opts(parser):
-    parser.add_argument('-starting_epoch', type=int, default=20)
+    parser.add_argument('-epoch', type=int, default=20)
     parser.add_argument('-save_directory', default='train')
-    parser.add_argument('-transferring_model_path', type=str, default='molGCT/molgct.pt')
+    parser.add_argument('-molgct_path', type=str, default='molGCT/molgct.pt')
 
     parser.add_argument('-logp_lb', type=float, default=0.03)
     parser.add_argument('-logp_ub', type=float, default=4.97)
