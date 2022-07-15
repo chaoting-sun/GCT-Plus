@@ -292,7 +292,7 @@ qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
 
 
 def inference():
-    # fix_random_seed()
+    fix_random_seed(seed=0)
     """ Options """
     parser = argparse.ArgumentParser()
     parser = options(parser)
@@ -315,13 +315,13 @@ def inference():
 
     logp, tpsa, qed = 3.0, 85.3, 0.8
     # logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
-    for i in range(50):
+    for i in range(20):
         opt.conds = [f'{logp}, {tpsa}, {qed}']
         smiles, _, _ = sample_molecule(
             opt, toklen_data, model, SRC, TRG, robustScaler)
         molecule = Chem.MolFromSmiles(smiles)
         if molecule is not None:
-            print('>>>', i, smiles, get_mol_prop(molecule))
+            print(i, smiles, get_mol_prop(molecule))
     exit()
 
 
