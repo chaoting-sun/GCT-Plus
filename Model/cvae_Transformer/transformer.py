@@ -105,9 +105,8 @@ class Decoder(nn.Module):
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
 
-        print('x1:', x[0])
-
         x = self.pe(x)
+        print('x13:', x[0])
 
         exit()
 
