@@ -117,8 +117,11 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
         output_mol = model.out(model.decoder(
             trg_in, z, cond, src_mask, trg_mask))[:, 3:, :]
     else:
-        output_mol = model.out(model.decoder(
-            trg_in, z, cond, src_mask, trg_mask)[0])
+        decode = model.decoder(trg_in, z, cond, src_mask, trg_mask)[0]
+        print('decode:', decode)
+        output_mol = model.out(decode)
+        print('output_mol:', output_mol)
+        exit()
 
     out_mol = F.softmax(output_mol, dim=-1)
 
@@ -320,7 +323,7 @@ def inference():
     #     print(p)
     #     exit()
 
-    logp, tpsa, qed = 3.0, 85.3, 0.8
+    logp, tpsa, qed = 2.2, 85.3, 0.8
     # logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
     for i in range(20):
         opt.conds = [f'{logp}, {tpsa}, {qed}']
