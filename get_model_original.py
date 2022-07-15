@@ -312,6 +312,9 @@ def inference():
     model = get_model(opt, SRC, TRG)
     toklen_data = pd.read_csv(opt.toklen_path)
 
+    # for p in model.parameters():
+    #     print(p)
+    #     exit()
 
     logp, tpsa, qed = 3.0, 85.3, 0.8
     # logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
