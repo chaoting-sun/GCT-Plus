@@ -73,6 +73,7 @@ def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
 
     cond = scaler.transform(cond)
     cond = Variable(torch.Tensor(cond))
+    print('cond:', cond)
 
     sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z)
     return sentence
@@ -121,6 +122,9 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
             trg_in, z, cond, src_mask, trg_mask)[0])
 
     out_mol = F.softmax(output_mol, dim=-1)
+
+    print('out_mol:', out_mol)
+    exit()
 
     probs, ix = out_mol[:, -1].data.topk(opt.k)
     log_scores = torch.Tensor([math.log(prob)
@@ -310,10 +314,6 @@ def inference():
     """ Tools """
     SRC, TRG = smiles_fields(smiles_field_path='molGCT')
     model = get_model(opt, SRC, TRG)
-
-    for p in model.parameters():
-        print(p)
-        exit()
 
     toklen_data = pd.read_csv(opt.toklen_path)
 
