@@ -94,16 +94,7 @@ class Decoder(nn.Module):
         self.norm = Norm(d_model)
 
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
-        print('trg:', trg)
-        print('e_outputs:', e_outputs)
-        print('cond_input:', cond_input)
-        print('src_mask:', src_mask)
-        print('trg_mask:', trg_mask)
-
         x = self.embed(trg)
-
-        print('x:', x[0])
-        exit()
 
         e_outputs = self.fc_z(e_outputs)
 
@@ -114,7 +105,11 @@ class Decoder(nn.Module):
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
 
+        print('x1:', x[0])
+
         x = self.pe(x)
+
+        exit()
 
         for i in range(self.N):
             x, q_k_dec1_tmp, q_k_dec2_tmp = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)

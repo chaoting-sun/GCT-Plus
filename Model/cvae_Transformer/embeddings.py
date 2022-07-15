@@ -39,12 +39,15 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         # make embeddings relatively larger
         x = x * math.sqrt(self.d_model)
+        print('x11:', x[0])
         # add constant to embedding
         seq_len = x.size(1)
         pe = Variable(self.pe[:, :seq_len], requires_grad=False)
+        print('pe:', pe[0])
         if x.is_cuda:
             pe.cuda()
         x = x + pe
+        print('x:', x[0])
         return self.dropout(x)
 
 
