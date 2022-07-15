@@ -45,9 +45,9 @@ class PositionalEncoding(nn.Module):
         if x.is_cuda:
             pe.cuda()
         x = x + pe
-        print('x11:',x)
+        print('x11:',x[0])
         x = self.dropout(x)
-        print('x12:',x)
+        print('x12:',x[0])
         return x
 
 # class PositionalEncoding(nn.Module):
