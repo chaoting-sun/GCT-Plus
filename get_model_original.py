@@ -73,7 +73,7 @@ def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
 
     cond = scaler.transform(cond)
     cond = Variable(torch.Tensor(cond))
-
+    print('cond:', cond)
     sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z)
     return sentence
 
@@ -122,6 +122,8 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
 
     out_mol = F.softmax(output_mol, dim=-1)
 
+    print('out_mol:', out_mol)
+
     probs, ix = out_mol[:, -1].data.topk(opt.k)
     log_scores = torch.Tensor([math.log(prob)
                               for prob in probs.data[0]]).unsqueeze(0)
@@ -163,6 +165,8 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
 
     outputs, e_outputs, log_scores = init_vars(
         cond, model, SRC, TRG, toklen, opt, z)
+
+    exit()
 
     cond = cond.repeat(opt.k, 1)
     src_mask = (torch.ones(1, 1, toklen) != 0)
