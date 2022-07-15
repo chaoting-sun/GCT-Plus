@@ -14,7 +14,7 @@ def options(parser):
     parser.add_argument('-n_jobs', type=int, default=1, help="number of CPU cores")
     parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
     parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
-    parser.add_argument('-data_path', type=str, required=True, help="Path of dataset")
+    parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1/', help="Path of dataset")
     
     parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
     parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")

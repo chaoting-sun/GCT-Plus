@@ -3,6 +3,7 @@ import math
 import numpy as np
 import random
 import pandas as pd
+import argparse
 from sklearn.cluster import mean_shift
 import torch
 import joblib
@@ -17,7 +18,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from Tokenize import moltokenize
-from Configuration.config import options as opts
+from Configuration.config import options
 from Model.cvae_Transformer import transformer
 from Utils.field import smiles_fields
 # import beam
@@ -235,10 +236,10 @@ def fix_random_seed(seed=0):
 
 
 def get_model(opt, SRC, TRG):
-    model = transformer.build_transformer(len(SRC.vocab), len(TRG.vocab),
-                                          opt.N, opt.d_model, opt.d_ff,
-                                          opt.H, opt.latent_dim, opt.dropout,
-                                          opt.nconds, use_cond2dec=False, use_cond2lat=True)
+    model = transformer.Transformer(len(SRC.vocab), len(TRG.vocab),
+                                    opt.N, opt.d_model, opt.d_ff,
+                                    opt.H, opt.latent_dim, opt.dropout,
+                                    opt.nconds, use_cond2dec=False, use_cond2lat=True)
     model.load_state_dict(torch.load(opt.molgct_model))
     model = model.to(opt.device)
     return model
@@ -294,30 +295,40 @@ qed_values = np.linspace(qed_lb, qed_ub, num=num_samples_each)
 def inference():
     # fix_random_seed()
     """ Options """
-    parser = opts.general_opts()
+    parser = argparse.ArgumentParser()
+    parser = options(parser)
     opt = parser.parse_args()
 
     opt.device = 0
     opt.k = 4
     opt.molgct_model = 'molGCT/molgct.pt'
-    opt.toklen_list = 'data/moses/toklen_list.csv'
+    opt.toklen_list = 'Data/moses/toklen_list.csv'
 
     os.makedirs('molGCT/inference', exist_ok=True)
-
 
     robustScaler = joblib.load('molGCT/scaler.pkl')
 
     """ Tools """
-    SRC, TRG = smiles_fields(weights_path='molGCT')
+    SRC, TRG = smiles_fields(smiles_field_path='molGCT')
     model = get_model(opt, SRC, TRG)
     toklen_data = pd.read_csv(opt.toklen_list)
 
     print("successful in getting the model.")
-    tf_name = [n for n, p in model.named_parameters()]
-    print("transformer:\n", tf_name)
 
     model.eval()
     RDLogger.DisableLog('rdApp.*')  # disable error from RDlLo
+
+    ################################
+    logp, tpsa, qed = 2.2, 85.3, 0.8
+    opt.conds = [f'{logp}, {tpsa}, {qed}']
+    for i in range(20):
+        smiles, _, _ = sample_molecule(
+            opt, toklen_data, model, SRC, TRG, robustScaler)
+        molecule = Chem.MolFromSmiles(smiles)
+        if molecule is not None:
+            print(i, smiles)
+    exit()
+    ################################
 
     for logp in logp_values:
         for tpsa in tpsa_values:
@@ -512,5 +523,5 @@ def intdiv():
 
 
 if __name__ == "__main__":
-    # inference()
-    intdiv()
+    inference()
+    # intdiv()
