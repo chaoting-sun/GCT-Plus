@@ -94,7 +94,16 @@ class Decoder(nn.Module):
         self.norm = Norm(d_model)
 
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
+        print('trg:', trg)
+        print('e_outputs:', e_outputs)
+        print('cond_input:', cond_input)
+        print('src_mask:', src_mask)
+        print('trg_mask:', trg_mask)
+
         x = self.embed(trg)
+
+        print('x:', x[0])
+        exit()
 
         e_outputs = self.fc_z(e_outputs)
 
