@@ -1,14 +1,13 @@
-from genericpath import exists
 import os
 import gc
 import time
-from tqdm import tqdm
 from datetime import timedelta
 # import pandas as pd
 # import pickle as pkl
 # from itertools import tee
 
 import torch
+from Tokenize import moltokenize
 # import torch.nn as nn
 
 from Model.mlpcvae_Transformer import decode
@@ -73,19 +72,12 @@ class Trainer(object):
         """
         The following variables records the total values from the dataset
         """
-        verbose = False
-
-        sum_loss, n_tokens, n_samples, n_correct = 0, 0, 0, 0
+        n_samples = 10
+        sum_loss, n_pairs, n_correct = 0, 0, 0
         dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'], device)
 
-        # torch.set_printoptions(threshold=10_000)
-
-        # for i, batch in tqdm(enumerate(dataloader), total=len(data_iter)):
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-
-            if verbose:
-                print(">>> Pass the model")
             trg_z_pred, trg_z_truth = model.forward(batch.src,
                                                     batch.trg_en,
                                                     batch.econds,
@@ -93,11 +85,7 @@ class Trainer(object):
                                                     batch.dconds)
 
             # Compute loss (rec-loss + KL-div) and update
-            if verbose:
-                print(">>> Compute the loss")
             loss = loss_compute(trg_z_pred, trg_z_truth)
-            if verbose:
-                print('>>> Decode the smiles')
             smiles = decode.decode(model, batch.src,
                                    batch.econds,
                                    batch.mconds,
@@ -105,41 +93,34 @@ class Trainer(object):
                                    self.args.sos_idx,
                                    self.args.eos_idx,
                                    self.args.max_strlen, 
-                                   decode_type='greedy', 
+                                   decode_type='greedy',
                                    use_cond2dec=self.args.use_cond2dec)
 
-            if verbose:
-                print(">>> Sum the total loss")
             sum_loss += float(loss)
-            n_samples += batch.trg.size(0)
-            n_tokens += float((batch.trg_y != self.args.src_pad_idx).data.sum())
+            n_pairs += batch.trg.size(0)
 
-            # correctness: all tokens of a SMILES as a unit
-            if verbose:
-                print('>>> Compute the correctness')
-            for b in range(batch.trg.size(0)):
-                if torch.equal(smiles[b, :], batch.trg[b]):
-                    n_correct += 1
-            
-            print('average_accuracy: {:.6f}\taverage_loss_each_token: {:.6f}'.
-                  format(n_correct*1.0/n_samples, sum_loss/n_tokens))
+            print('average_accuracy: {:.6f}\taverage_loss: {:.6f}'.
+                  format(n_correct*1.0/n_pairs, sum_loss/n_pairs))
             
             if i == len(data_iter) - 1:
-                sample = smiles[:6]
+                samples = smiles[:n_samples].cpu().numpy()
+                targets = batch.trg_y[:n_samples].cpu().numpy()
 
-        def printsmiles(smiles):
-            smiles = smiles.cpu().numpy()
-            for i in range(len(smiles)):
-                outs = ''.join([TRG.vocab.itos[tok] for tok in smiles[i]])
-                print(i, outs)
-        print('>>> SAMPLE SMILES:')
-        printsmiles(sample)
+        print(">>> accuracy: {:.6}\tloss: {:.6}".format(n_correct*1.0/n_pairs, 
+                                                        sum_loss/n_pairs))
 
-        print("--- accuracy: {:.6}\tloss: {:.6}".format(
-            n_correct*1.0/n_samples, sum_loss/n_tokens))
+        for i in range(n_samples):
+            target_smiles = moltokenize.untokenizer(targets[i,:], self.args.sos_idx,
+                                                    self.args.eos_idx, TRG.vocab.itos)
+            predicted_smiles = moltokenize.untokenizer(samples[i,:], self.args.sos_idx, 
+                                                    self.args.eos_idx, TRG.vocab.itos)
+            if target_smiles == predicted_smiles:
+                n_correct += 1
+            print("TRG,PRED: {},{}".format(target_smiles, predicted_smiles))
+
 
         # the accuracy in a epoch & average loss of each predicted token
-        return n_correct*1.0/n_samples, sum_loss/n_tokens
+        return n_correct*1.0/n_pairs, sum_loss/n_pairs
 
 
     def train(self, model, train_iter, valid_iter, SRC, TRG, device):
@@ -182,7 +163,7 @@ class Trainer(object):
 
             """ Recording the best """
             if lowest_loss > loss_val:
-                # store lowest-loss new model every time is safer
+                # store lowest-loss new model every time is saferx
                 if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
                     os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
                     

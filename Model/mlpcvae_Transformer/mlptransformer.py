@@ -22,9 +22,9 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
-        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
+        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
         # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
         # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
@@ -131,6 +131,7 @@ class Decoder(nn.Module):
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
         # dim: -> (batch_size, trg_maxstr-1, d_model)
         x = self.embed(trg)
+
         # dim: -> (batch_size, trg_maxstr, d_model)
         e_outputs = self.fc_z(e_outputs)
 
@@ -159,7 +160,7 @@ class Decoder(nn.Module):
     
 
 class MLP_Transformer(nn.Module):
-    def __init__(self, transformer, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
+    def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
         super(MLP_Transformer, self).__init__()
         # settings
@@ -176,48 +177,16 @@ class MLP_Transformer(nn.Module):
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
-
-        self._reset_parameters()
-        self._transfer_parameters(transformer)
-        self._freeze_parameters()
+        self.reset_parameters()
 
         # other layers
         if self.use_cond2dec == True:
             self.prop_fc = nn.Linear(trg_vocab, 1)
 
-    def _reset_parameters(self):
+    def reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
-                nn.init.xavier_uniform_(p)                
-
-    def _freeze_parameters(self):
-        for param in self.encoder.parameters():
-            param.requires_grad = False
-        for param in self.sampler1.parameters():
-            param.requires_grad = False
-        for param in self.out.parameters():
-            param.requires_grad = False
-        for param in self.sampler2.parameters():
-            param.requires_grad = False
-        for param in self.decoder.parameters():
-            param.requires_grad = False
-
-    def _transfer_parameters(self, transformer):
-        for name, param in transformer.named_parameters():
-            name_split = name.split('.')
-            sub_name = '.'.join(name_split[1:])
-
-            if name_split[-2] in ('fc_mu', 'fc_log_var'):
-                self.sampler1.state_dict()[sub_name].copy_(param)
-                self.sampler2.state_dict()[sub_name].copy_(param)
-            elif name_split[-2] == 'out':
-                self.out.state_dict()[sub_name] = param
-            elif name_split[0] == 'encoder':
-                self.encoder.state_dict()[sub_name].copy_(param)
-            elif name_split[0] == 'decoder':
-                self.decoder.state_dict()[sub_name].copy_(param)
-            else:
-                exit("There may be something missing.")
+                nn.init.xavier_uniform_(p)
 
     def encoder_mlp(self, src, econds, mconds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
@@ -252,7 +221,7 @@ class MLP_Transformer(nn.Module):
 
 
 class MLP_Encoder(nn.Module):
-    def __init__(self, transformer, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
+    def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
         super(MLP_Encoder, self).__init__()
         # settings
@@ -270,47 +239,16 @@ class MLP_Encoder(nn.Module):
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
 
-        self._reset_parameters()
-        self._transfer_parameters(transformer)
-        self._freeze_parameters()
+        self.reset_parameters()
 
         # other layers
         if self.use_cond2dec == True:
             self.prop_fc = nn.Linear(trg_vocab, 1)
 
-    def _reset_parameters(self):
+    def reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
-                nn.init.xavier_uniform_(p)                
-
-    def _freeze_parameters(self):
-        for param in self.encoder.parameters():
-            param.requires_grad = False
-        for param in self.sampler1.parameters():
-            param.requires_grad = False
-        for param in self.out.parameters():
-            param.requires_grad = False
-        for param in self.sampler2.parameters():
-            param.requires_grad = False
-        for param in self.decoder.parameters():
-            param.requires_grad = False
-
-    def _transfer_parameters(self, transformer):
-        for name, param in transformer.named_parameters():
-            name_split = name.split('.')
-            sub_name = '.'.join(name_split[1:])
-
-            if name_split[-2] in ('fc_mu', 'fc_log_var'):
-                self.sampler1.state_dict()[sub_name].copy_(param)
-                self.sampler2.state_dict()[sub_name].copy_(param)
-            elif name_split[-2] == 'out':
-                self.out.state_dict()[sub_name] = param
-            elif name_split[0] == 'encoder':
-                self.encoder.state_dict()[sub_name].copy_(param)
-            elif name_split[0] == 'decoder':
-                self.decoder.state_dict()[sub_name].copy_(param)
-            else:
-                exit("There may be something missing.")
+                nn.init.xavier_uniform_(p)
     
     def encode_mlp(self, src, econds, mconds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
@@ -327,8 +265,9 @@ class MLP_Encoder(nn.Module):
                         dconds, src_mask, trg_mask)[0])
 
     def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
-        return self.out(self.decoder(trg, e_outputs,
-                        dconds, src_mask, trg_mask)[0])
+        decoded = self.decoder(trg, e_outputs, dconds, 
+                               src_mask, trg_mask)[0]
+        return self.out(decoded)
 
     def forward(self, src, trg_en, econds, mconds, dconds):
         src_pad_mask = create_source_mask(src, econds)
@@ -343,3 +282,21 @@ class MLP_Encoder(nn.Module):
         trg_z_truth, _, _ = self.sampler2(x)
 
         return trg_z_pred, trg_z_truth
+
+
+def transfer_parameters(transformer, mlptransformer):
+    mlptf_dict = mlptransformer.state_dict()
+    for name, param in transformer.named_parameters():
+        if name in mlptf_dict:
+            mlptf_dict[name].copy_(param)
+        else:
+            print('Layer Not Found:', name)
+            exit()
+
+
+def freeze_parameters(mlptransformer):
+    for name, param in mlptransformer.named_parameters():
+        name_split = name.split('.')
+        if name_split[0] == 'mlp':
+            continue
+        param.requires_grad = False

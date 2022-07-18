@@ -58,7 +58,6 @@ def tokenlen_gen_from_data_distribution(data, nBins, size):
 
 
 def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
-    # model.eval()
     if scaler is None:
         scaler = joblib.load('molGCT/scaler.pkl')
     #robustScaler = pickle.load(open(f'{opt.load_weights}/scaler.pkl', "rb"))
@@ -73,7 +72,6 @@ def gen_mol(cond, model, opt, SRC, TRG, toklen, z, scaler=None):
 
     cond = scaler.transform(cond)
     cond = Variable(torch.Tensor(cond))
-    print('cond:', cond)
     sentence = beam_search(cond, model, SRC, TRG, toklen, opt, z)
     return sentence
 
@@ -115,18 +113,12 @@ def init_vars(cond, model, SRC, TRG, toklen, opt, z):
 
     if opt.use_cond2dec == True:
         output_mol = model.out(model.decoder(
-            trg_in, z, cond, src_mask, trg_mask))[:, 3:, :]
+            trg_in, z, cond, src_mask, trg_mask)[0])[:, 3:, :]
     else:
-        decode = model.decoder(trg_in, z, cond, src_mask, trg_mask)[0]
-        print('decode:', decode)
-        output_mol = model.out(decode)
-        print('output_mol:', output_mol)
-        exit()
+        output_mol = model.out(model.decoder(
+            trg_in, z, cond, src_mask, trg_mask)[0])
 
     out_mol = F.softmax(output_mol, dim=-1)
-
-    print('out_mol:', out_mol)
-
     probs, ix = out_mol[:, -1].data.topk(opt.k)
     log_scores = torch.Tensor([math.log(prob)
                               for prob in probs.data[0]]).unsqueeze(0)
@@ -168,9 +160,7 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
 
     outputs, e_outputs, log_scores = init_vars(
         cond, model, SRC, TRG, toklen, opt, z)
-
-    exit()
-
+    
     cond = cond.repeat(opt.k, 1)
     src_mask = (torch.ones(1, 1, toklen) != 0)
     src_mask = src_mask.repeat(opt.k, 1, 1)
@@ -191,11 +181,11 @@ def beam_search(cond, model, SRC, TRG, toklen, opt, z):
         # print("trg_mask", np.shape(trg_mask), trg_mask[0])
         # print("\n-----------------------------")
         if opt.use_cond2dec == True:
-            output_mol = model.out(model.decoder(
-                outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0])[:, 3:, :]
+            decoded = model.decoder(outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0]
+            output_mol = model.out(decoded)[:, 3:, :]
         else:
-            output_mol = model.out(model.decoder(
-                outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0])
+            decoded = model.decoder(outputs[:, :i], e_outputs, cond, src_mask, trg_mask)[0]
+            output_mol = model.out(decoded)
 
         out_mol = F.softmax(output_mol, dim=-1)
 
@@ -317,12 +307,16 @@ def inference():
     """ Tools """
     SRC, TRG = smiles_fields(smiles_field_path='molGCT')
     model = get_model(opt, SRC, TRG)
+
+    model.eval() # fuck!!
+
     toklen_data = pd.read_csv(opt.toklen_path)
 
     # for p in model.parameters():
     #     print(p)
     #     exit()
 
+    ###############################
     logp, tpsa, qed = 2.2, 85.3, 0.8
     # logp, tpsa, qed = logp_values[2], tpsa_values[2], qed_values[2]
     for i in range(20):
@@ -333,6 +327,7 @@ def inference():
         if molecule is not None:
             print(i, smiles, get_mol_prop(molecule))
     exit()
+    ###############################
 
 
     print("successful in getting the model.")

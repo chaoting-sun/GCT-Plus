@@ -20,9 +20,9 @@
 #         -train_stage 2 \
 #     >train_sim1.out 2>train_sim1.err &
 
-SIMILARITY=1.00
-MLP_STACK=5
-GPU_IDX=0
+SIMILARITY=0.70
+MLP_STACK=6
+GPU_IDX=2
 NUM_EPOCH=40
 
 # train

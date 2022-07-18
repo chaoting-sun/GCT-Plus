@@ -103,11 +103,8 @@ class Decoder(nn.Module):
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
         elif self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
-            e_outputs = torch.cat([cond2lat, e_outputs], dim=1) # cond + lat
-
-
+            e_outputs = torch.cat([cond2lat, e_outputs], dim=1)
         x = self.pe(x)
-        exit()
 
         for i in range(self.N):
             x, q_k_dec1_tmp, q_k_dec2_tmp = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
@@ -119,6 +116,7 @@ class Decoder(nn.Module):
             else:
                 q_k_dec1 = q_k_dec1_tmp
                 q_k_dec2 = q_k_dec2_tmp
+
         return self.norm(x), q_k_dec1, q_k_dec2
     
 

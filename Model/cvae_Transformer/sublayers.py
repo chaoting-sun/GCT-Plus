@@ -70,15 +70,15 @@ class MultiHeadAttention(nn.Module):
         k = k.transpose(1, 2)
         q = q.transpose(1, 2)
         v = v.transpose(1, 2)
-
         # calculate attention using function we will define next
         scores, scores_attn = attention(q, k, v, self.d_k, mask, self.dropout)
 
         # concatenate heads and put through final linear layer
-        concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
-        output = self.out(concat)
-
+        concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model) # 一樣
+        output = self.out(concat) # 不一樣
+        # output = self.out(concat) # 不一樣 >>> 應該是 self.out 在 transfer 時沒用好，明天看QQQ
         concat_attn = scores_attn.transpose(1, 2).contiguous().view(bs, -1, scores_attn.size(-1) * self.h)
+
 
         return output, concat_attn
 

@@ -11,10 +11,10 @@ from Model.mlpcvae_Transformer.mask import create_source_mask, nopeak_mask
 # ref1: https://zhuanlan.zhihu.com/p/339207092
 # ref2: https://towardsdatascience.com/the-three-decoding-methods-for-nlp-23ca59cb1e9d
 
-def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx, 
+def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
            max_strlen, decode_type, use_cond2dec=False):
     src_mask = create_source_mask(src, econds)
-    z = model.encoder_mlp(src, econds, mconds, src_mask)
+    z = model.encode_mlp(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
     break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
