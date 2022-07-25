@@ -1,2 +1,1 @@
-from .cvae_Transformer import transformer
-from .mlpcvae_Transformer import mlptransformer
+from .modules import LabelSmoothing, NoamOpt
