@@ -10,6 +10,10 @@ from Model.build_model import build_transformer, build_mlptransformer, build_mlp
 
 
 def train(args, debug=False):
+    """
+    branch: mlp-only-training
+    """
+
     set_seed(51)
     torch.set_printoptions(threshold=10_000)
 
