@@ -8,7 +8,7 @@ from .mlpcvae_Transformer.mlptransformer import transfer_parameters, freeze_para
 def build_transformer(src_vocab, trg_vocab, N, d_model, d_ff,
                       H, latent_dim, dropout, nconds, use_cond2dec, 
                       use_cond2lat, file_path=None):
-    model = Transformer(src_vocab, trg_vocab, N, d_model, d_ff, H, 
+    model = Transformer(src_vocab, trg_vocab, N, d_model, d_ff, H,
                         latent_dim, dropout, nconds, use_cond2dec, use_cond2lat)
     if file_path is not None:
         model.load_state_dict(torch.load(file_path))

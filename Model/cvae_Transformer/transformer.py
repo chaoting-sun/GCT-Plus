@@ -152,8 +152,8 @@ class Transformer(nn.Module):
     def forward(self, src, trg, conds):
         src_mask, trg_mask = create_masks(src, trg, conds, self.use_cond2dec)
 
-        z, mu, log_var, q_k_enc = self.encode(src, conds, src_mask)
-        d_output, q_k_dec1, q_k_dec2 = self.decode(trg, z, conds, src_mask, trg_mask)
+        z, mu, log_var, q_k_enc = self.encoder(src, conds, src_mask)
+        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z, conds, src_mask, trg_mask)
         
         # output = self.generator(d_output)
         output = self.out(d_output)
@@ -170,6 +170,6 @@ class Transformer(nn.Module):
         return self.encoder(src, conds, src_mask)
 
     def decode(self, trg, z, conds, src_mask, trg_mask):
-        return self.decoder(trg, z, conds, src_mask, trg_mask)
+        return self.out(self.decoder(trg, z, conds, src_mask, trg_mask)[0])
 
 

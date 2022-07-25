@@ -105,6 +105,7 @@ def generate_opts(parser):
 def evaluation_opts(parser):
     # soft constraints
     parser.add_argument('-epoch', type=int, default=20)
+    parser.add_argument('-model_type', type=str, default='mlp_transformer')
     parser.add_argument('-decode_type', type=str, default='mlp_decode')
     parser.add_argument('-model_directory', default='train')
     parser.add_argument('-storage_path', type=str, default='molGCT/inference')

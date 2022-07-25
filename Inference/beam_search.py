@@ -65,6 +65,7 @@ class BeamSearchTool(object):
 
         # 维持三个变量，e_outputs,outputs,log_scores
         # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
+
         outputs, e_outputs, log_scores = self.init_vars(predictor, conds, sos_tok,
                                                         toklen, z, device)
         if type(conds) == list:
