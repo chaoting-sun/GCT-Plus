@@ -6,6 +6,10 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 
+"""
+masks
+"""
+
 def subsequent_mask(size):
     "Mask out subsequent positions."
     attn_shape = (1, size, size)
@@ -68,6 +72,16 @@ def create_masks(source, target, condition, use_cond2dec=True):
     device = source.get_device()
     return source_mask.to(device), target_mask.to(device)
 
+""" 
+Clone Layers 
+"""
+
+def get_clones(layer, N):
+    return nn.ModuleList([copy.deepcopy(layer) for _ in range(N)])
+
+""" 
+Normalize Layers 
+"""
 
 class Norm(nn.Module):
     def __init__(self, d_model, eps=1e-6):
@@ -86,10 +100,11 @@ class Norm(nn.Module):
                / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
 
+"""
+Embddings
+"""
 
 class Embeddings(nn.Module):
-    """ Embddings """
-
     def __init__(self, d_model, vocab):
         super(Embeddings, self).__init__()
         # weight matrix, each row present one word
@@ -100,10 +115,11 @@ class Embeddings(nn.Module):
         embed = self.embed(x)
         return embed # * math.sqrt(self.d_model)
 
+"""
+Positional Encoding
+"""
 
 class PositionalEncoding(nn.Module):
-    """ Positional Encoding """
-
     def __init__(self, d_model, max_seq_len=200, dropout=0.1):
         super().__init__()
         self.d_model = d_model
@@ -133,11 +149,11 @@ class PositionalEncoding(nn.Module):
         x = self.dropout(x)
         return x
 
-
+"""
+Label Smoothing
+"""
 
 class LabelSmoothing(nn.Module):
-    """ Label Smoothing """
-
     def __init__(self, size, padding_idx, smoothing=0.00):
         super(LabelSmoothing, self).__init__()
         self.criterion = nn.KLDivLoss(size_average=False)
@@ -172,10 +188,11 @@ class LabelSmoothing(nn.Module):
         self.true_dist = true_dist
         return self.criterion(x, Variable(true_dist, requires_grad=False))
 
+"""
+Optim wrapper that implements rate.
+"""
 
 class NoamOpt:
-    "Optim wrapper that implements rate."
-
     def __init__(self, model_size, factor, warmup, optimizer):
         self.optimizer = optimizer
         self._step = 0

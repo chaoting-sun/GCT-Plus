@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from .sublayers import Sampler
 from .layers import EncoderLayer, DecoderLayer
 from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, nopeak_mask, create_source_mask, get_clones
+from .modules import Norm, nopeak_mask, create_masks, create_source_mask, get_clones
 
 
 class MLP(nn.Module):
@@ -140,10 +140,10 @@ class Decoder(nn.Module):
         return self.norm(x), q_k_dec1, q_k_dec2
     
 
-class MLPEncoder(nn.Module):
+class MLPTransformer(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPEncoder, self).__init__()
+        super(MLPTransformer, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -158,7 +158,6 @@ class MLPEncoder(nn.Module):
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
-
         self.reset_parameters()
 
         # other layers
@@ -169,40 +168,36 @@ class MLPEncoder(nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
-    
-    def encode_mlp(self, src, econds, mconds, src_mask):
+
+    def encoder_mlp(self, src, econds, mconds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z1, _, _ = self.sampler1(x)
         x = self.mlp(z1, mconds)
         z2, _, _ = self.sampler2(x)
         return z2
 
-    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
-        mconds, dconds = conds[0], conds[1]
-        x = self.mlp(e_outputs, mconds)
-        e_outputs, _, _ = self.sampler2(x)
-        return self.out(self.decoder(trg, e_outputs,
-                        dconds, src_mask, trg_mask)[0])
+    def forward(self, src, trg, econds, mconds, dconds):
+        src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
+        x, q_k_enc = self.encoder(src, econds, src_mask)
+        z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
+        x = self.mlp(z1, mconds)
+        z2, mu2, log_var2 = self.sampler2(x)
+        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
+        output = self.out(d_output)
+        
+        if self.use_cond2dec == True:
+            output_prop = self.prop_fc(output[:, :self.nconds, :])
+            output_mol = output[:, self.nconds:, :]
+        elif self.use_cond2lat == True:
+            output_prop = torch.zeros(output.size(0), self.nconds, 1)
+            output_mol = output
 
-    def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
-        decoded = self.decoder(trg, e_outputs, dconds, 
-                               src_mask, trg_mask)[0]
-        return self.out(decoded)
+        output_mol = F.log_softmax(output_mol, dim=-1)
 
-    def forward(self, src, trg_en, econds, mconds, dconds):
-        src_pad_mask = create_source_mask(src, econds)
-        x, _ = self.encoder(src, econds, src_pad_mask)
-
-        z, _, _ = self.sampler1(x)
-        x = self.mlp(z, mconds)
-        trg_z_pred, _, _ = self.sampler2(x) # output of mlp
-        trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
-
-        trg_pad_mask = create_source_mask(trg_en, dconds)
-        x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
-        trg_z_truth, _, _ = self.sampler2(x)
-
-        return trg_z_pred, trg_z_truth
+        return (output_prop, output_mol,
+                (mu1, log_var1, z1),
+                (mu2, log_var2, z2),
+                (q_k_enc, q_k_dec1, q_k_dec2))
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

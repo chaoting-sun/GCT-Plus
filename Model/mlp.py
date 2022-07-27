@@ -20,9 +20,9 @@ from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, nopeak_mask, create_source_mask, get_clones
 
 
-class MLP(nn.Module):
+class MLPLayers(nn.Module):
     def __init__(self, vocab_size, latent_dim, mcond_dim, d_model):
-        super(MLP, self).__init__()
+        super(MLPLayers, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
         mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
@@ -35,7 +35,7 @@ class MLP(nn.Module):
         self.norm = Norm(d_model)
 
     def build_mlp(self, stacks):
-        layers = []        
+        layers = []
         for i in range(len(stacks) - 1):
             layers.extend([nn.Linear(stacks[i], stacks[i + 1]), nn.PReLU()])
         return nn.ModuleList(layers)
@@ -72,7 +72,6 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds, d_model)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
         # dim: -> (batch_size, src_maxstr, d_model)
-
         x = self.embed_sentence(src)
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
@@ -140,10 +139,10 @@ class Decoder(nn.Module):
         return self.norm(x), q_k_dec1, q_k_dec2
     
 
-class MLPEncoder(nn.Module):
+class MLP(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPEncoder, self).__init__()
+        super(MLP, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -152,9 +151,8 @@ class MLPEncoder(nn.Module):
         # model architecture
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
-        self.sampler1 = Sampler(d_model, latent_dim, variational)
+        self.sampler = Sampler(d_model, latent_dim, variational)
         self.mlp = MLP(src_vocab, latent_dim, 2*nconds, d_model)
-        self.sampler2 = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
@@ -170,39 +168,27 @@ class MLPEncoder(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
     
-    def encode_mlp(self, src, econds, mconds, src_mask):
-        x, _ = self.encoder(src, econds, src_mask)
-        z1, _, _ = self.sampler1(x)
-        x = self.mlp(z1, mconds)
-        z2, _, _ = self.sampler2(x)
-        return z2
-
-    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
-        mconds, dconds = conds[0], conds[1]
-        x = self.mlp(e_outputs, mconds)
-        e_outputs, _, _ = self.sampler2(x)
-        return self.out(self.decoder(trg, e_outputs,
-                        dconds, src_mask, trg_mask)[0])
+    def encode(self, src, conds, mask):
+        return self.encoder(src, conds, mask)
 
     def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
+        # dim. of input: (batch size, max length, d_model)
         decoded = self.decoder(trg, e_outputs, dconds, 
                                src_mask, trg_mask)[0]
         return self.out(decoded)
 
-    def forward(self, src, trg_en, econds, mconds, dconds):
-        src_pad_mask = create_source_mask(src, econds)
-        x, _ = self.encoder(src, econds, src_pad_mask)
+    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+        mconds, dconds = conds[0], conds[1]
+        x = self.mlp(e_outputs, mconds)
+        e_outputs, _, _ = self.sampler(x)
+        return self.out(self.decoder(trg, e_outputs,
+                        dconds, src_mask, trg_mask)[0])
 
-        z, _, _ = self.sampler1(x)
+    def forward(self, x, mconds):
+        z, _, _ = self.sampler(x)
         x = self.mlp(z, mconds)
-        trg_z_pred, _, _ = self.sampler2(x) # output of mlp
-        trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
-
-        trg_pad_mask = create_source_mask(trg_en, dconds)
-        x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
-        trg_z_truth, _, _ = self.sampler2(x)
-
-        return trg_z_pred, trg_z_truth
+        z, _, _ = self.sampler(x)
+        return z
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

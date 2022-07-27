@@ -10,6 +10,8 @@ import torch
 from Tokenize import moltokenize
 # import torch.nn as nn
 
+from Model.loss import LossCompute, Criterion
+
 from Model.mlpcvae_Transformer import decode
 from Model.mlpcvae_Transformer.noam_opt import NoamOpt as moptim
 from Model.mlpcvae_Transformer.loss import LossCompute, Criterion
@@ -23,15 +25,17 @@ N_SAMPLES = 80 if DEBUG is True else None
 
 
 class Trainer(object):
-    def __init__(self, args):
+    def __init__(self, args, start_epoch, save_directory):
         # parameters for training
         self.args = args
+        self.start_epoch = start_epoch
+        self.save_directory = save_directory
         os.makedirs(args.save_directory, exist_ok=True)
         self.LOG = get_logger(name="train_model", 
                               log_path=os.path.join(args.save_directory, 'train_model.log'))
         self.LOG.info(args)
 
-
+    
     def get_optimization(self, trainable_parameters):
         if self.args.starting_epoch == 1:
             optimizer = torch.optim.Adam(trainable_parameters, lr=0,
@@ -52,8 +56,8 @@ class Trainer(object):
 
     def save_checkpoint(self, model, optim, model_name, src_vocab_size, trg_vocab_size):
         # save optimizer and hyperparametdecodeers
-        os.makedirs(self.args.save_directory, exist_ok=True)
-        file_name = os.path.join(self.args.save_directory, model_name)
+        os.makedirs(self.save_directory, exist_ok=True)
+        file_name = os.path.join(self.save_directory, model_name)
         model_params = { 
             'N': self.args.N, 'H': self.args.H, 'd_ff': self.args.d_ff, 'nconds': self.args.nconds, 
             'd_model': self.args.d_model, 'dropout': self.args.dropout, 'latent_dim': self.args.latent_dim, 
@@ -123,19 +127,15 @@ class Trainer(object):
         return n_correct*1.0/n_pairs, sum_loss/n_pairs
 
 
-    def train(self, model, train_iter, valid_iter, SRC, TRG, device):
-        print(">>> PREPARING OPTIMIZER")
-        optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
-
-        print(">>> PREPARING LOSS FUNCTION")
+    def train(self, args, model, train_iter, valid_iter, SRC, TRG, device):
         criterion = Criterion()
+        optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
-        lowest_loss = 1000000
+        lowest_loss = 1000
         early_stop, stop_cnt = 10, 0
-        epoch = epoch_best = self.args.starting_epoch
+        epoch_best = args.starting_epoch
 
-        print('>>> TRAINING THE MODEL')
-        while epoch <= self.args.num_epoch:
+        for epoch in range(self.start_epoch, args.num_epoch+1):
             print(f"{epoch} EPOCH: ")
 
             self.LOG.info("Starting EPOCH #%d", epoch)
@@ -161,7 +161,7 @@ class Trainer(object):
             self.LOG.info("Train:Acc/loss {:.6},{:.6}\tValidation:Acc/loss {:.6},{:.6}".
                           format(acc_train, loss_train, acc_val, loss_val))
 
-            """ Recording the best """
+            """ Recording the best model """
             if lowest_loss > loss_val:
                 # store lowest-loss new model every time is saferx
                 if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):

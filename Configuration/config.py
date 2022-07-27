@@ -33,6 +33,7 @@ def options(parser):
     parser.add_argument('-use_cond2lat', type=bool, default=True)
     parser.add_argument('--label_smoothing', type=float, default=0.0, help="see: https://arxiv.org/abs/1512.00567")
     # soft constraints
+    parser.add_argument('-model_type', type=str, default='mlp_transformer')
     parser.add_argument('-variational', action='store_true', help="if using variational")
 
     subparsers = parser.add_subparsers(help='Choose to train or test')
@@ -78,7 +79,7 @@ def train_opts(parser):
     train2_parser.add_argument('-train_stage', type=int, default=2)
     train2_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train2_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
-    train2_parser.add_argument('-transferring_model_path', type=str, default='molGCT/molgct.pt')
+    train2_parser.add_argument('-transfer_path', type=str, default='molGCT/molgct.pt')
     train2_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
     # train2_parser.add_argument('-save_path', type=str, required=True)
 
@@ -105,7 +106,6 @@ def generate_opts(parser):
 def evaluation_opts(parser):
     # soft constraints
     parser.add_argument('-epoch', type=int, default=20)
-    parser.add_argument('-model_type', type=str, default='mlp_transformer')
     parser.add_argument('-decode_type', type=str, default='mlp_decode')
     parser.add_argument('-model_directory', default='train')
     parser.add_argument('-storage_path', type=str, default='molGCT/inference')

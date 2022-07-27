@@ -8,6 +8,7 @@ import os
 import argparse
 
 from Train.preprocess import preprocess
+from Preprocess import mlp_preprocess
 from Configuration.config import options
 
 
@@ -23,5 +24,8 @@ if __name__ == "__main__":
     options(parser)
     args = parser.parse_args()
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
- 
-    preprocess(args, debug=DEBUG)
+    
+    if args.model_type == 'mlp':
+        mlp_preprocess(args, 'train')
+    else:
+        preprocess(args, debug=DEBUG)

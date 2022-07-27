@@ -67,8 +67,8 @@ def to_tokenlist(dataset, data_path):
 
 class Batch:
     "Object for holding a batch of data with mask during training."
-    def __init__(self, src, trg_en, trg, pad_idx, 
-                 src_cond=None, dif_cond=None, trg_cond=None, device=None):
+    def __init__(self, src, trg_en, trg, pad_idx, device, 
+                 src_cond=None, dif_cond=None, trg_cond=None):
         self.src = src.to(device)
         self.trg_en = trg_en.to(device)    # the encoder input
         self.trg_y = trg[:, 1:].to(device) # the expected output of the decoder
@@ -86,6 +86,7 @@ class Batch:
             self.mconds = torch.cat([src_cond, dif_cond], dim=1).to(device)
             self.dconds = trg_cond.to(device)
 
+
 def rebatch(batch, conditions, pad_idx, device):
     src = batch.src.transpose(0, 1)
     trg_en = batch.trg_en.transpose(0, 1)
@@ -93,7 +94,7 @@ def rebatch(batch, conditions, pad_idx, device):
 
     src_len, trg_len = src.size(1), trg_en.size(1)
     pad = torch.ones((src.size(0), abs(src_len - trg_len)), 
-                    dtype=torch.long) * pad_idx
+                     dtype=torch.long) * pad_idx
     
     if src_len > trg_len:
         trg_en = torch.cat([trg_en, pad], dim=1)
@@ -111,9 +112,10 @@ def rebatch(batch, conditions, pad_idx, device):
         dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
     else:
         src_cond_t = trg_cond_t = dif_cond_t = None    
-    return Batch(src, trg_en, trg, pad_idx, src_cond_t,
-                 trg_cond_t, dif_cond_t, device)
+    return Batch(src, trg_en, trg, pad_idx, device,
+                 src_cond_t, trg_cond_t, dif_cond_t)
 
 
 def to_dataloader(data_iter, conditions, pad_idx, device):
     return (rebatch(batch, conditions, pad_idx, device) for batch in data_iter)
+
