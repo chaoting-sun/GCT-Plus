@@ -10,8 +10,8 @@ from multiprocessing import Pool
 import moses
 import torch
 from torchtext import data
-from sklearn.preprocessing import RobustScaler, StandardScaler
 
+from Utils.scaler import scaler_transform
 from Utils.field import smiles_fields, condition_fields
 from Utils import allocate_gpu
 from Utils.property import tanimoto_similarity
@@ -19,37 +19,6 @@ from Utils.dataset import get_condition
 from Model import create_source_mask
 from Model.build_model import build_model
 from fp2sim2 import get_similar_molecular_pairs
-
-
-def get_scaler(condition, scaler_path=None):
-    if scaler_path is not None:
-        try:
-            scaler = joblib.load(scaler_path)
-            print("- load scaler from", scaler_path)
-        except:
-            exit(f"error: {scaler_path} file not found")
-    else:
-        if os.path.exists(scaler_path):
-            exit(f"Scaler already existed: {scaler_path}")
-        scaler = RobustScaler(quantile_range=(0.1, 0.9))
-        scaler.fit(condition.copy(), len(condition.columns))
-        joblib.dump(scaler, open(scaler_path), 'wb')
-
-    return scaler
-
-
-def scaler_transform(condition, scaler_path=None):
-    """ 
-    scaler transformation
-    return a DataFrame of rescaled properties
-    
-    Parameters:
-        condition: DataFrame, the properties
-        scaler: a property transformer
-    """
-    scaler = get_scaler(condition, scaler_path)
-    return pd.DataFrame(scaler.transform(condition),
-                        columns=condition.columns)
 
 
 def data_augmentation(dataset, save_path, similarity, n_jobs):
@@ -105,15 +74,14 @@ def dataset_preparation(datatype, conditions, max_strlen):
     dataset = pd.DataFrame({'smiles': dataset,
                             'no': [i+1 for i in range(len(dataset))]})
     dataset = dataset.loc[(dataset['smiles'].str.len()
-                          + len(conditions) < max_strlen)]
+                          + len(conditions) <= max_strlen)]
     return dataset
 
 
 def condition_preparation(data_path, conditions, scaler_path):
     cond = pd.read_csv(data_path)
-    cond = scaler_transform(cond[conditions], scaler_path)
-    return pd.concat([cond[['no']], cond], axis=1)
-
+    tf_cond = scaler_transform(cond[conditions], scaler_path)
+    return pd.concat([cond[['no']], tf_cond], axis=1)
 
 
 def data_preparation(dataset, conditions, condition_path, 
@@ -164,15 +132,16 @@ def obtain_dataset_conditions(dataset, conditions, save_path, n_jobs):
 
 
 class Batch:
-    def __init__(self, smiles, conds, device):
+    def __init__(self, smiles, no, conds, device):
         self.smiles = smiles.to(device)
+        self.smi_no = no
         if conds is not None:
             self.conds = conds.to(device)
 
 
 def rebatch(batch, conditions, pad_idx, max_strlen, device):
     smiles = batch.smiles.transpose(0, 1)
-    pad = torch.ones((smiles.size(0), max_strlen-smiles.size(1)),
+    pad = torch.ones((smiles.size(0), max_strlen-smiles.size(1)-len(conditions)),
                      dtype=torch.long) * pad_idx
     smiles = torch.cat([smiles, pad], dim=1)
     if len(conditions) > 0:
@@ -182,11 +151,12 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
         cond_t = torch.cat(conds, dim=1)
     else:
         cond_t = None
-    return Batch(smiles, cond_t, device)
+    return Batch(smiles, batch.no, cond_t, device)
 
 
-def to_dataloader(dataiter, conditions, pad_idx, device):
-    return (rebatch(batch, conditions, pad_idx, device) for batch in dataiter)
+def to_dataloader(dataiter, conditions, pad_idx, max_strlen, device):
+    return (rebatch(batch, conditions, pad_idx, max_strlen, device) 
+            for batch in dataiter)
 
 
 def mlp_preprocess(args, datatype, n_samples=None):
@@ -203,49 +173,68 @@ def mlp_preprocess(args, datatype, n_samples=None):
 
     raw_folder = os.path.join(args.data_path, 'raw', datatype)
     aug_folder = os.path.join(args.data_path, 'aug', datatype)
+
     os.makedirs(aug_folder, exist_ok=True)
+    os.makedirs(os.path.join(raw_folder, 'tensor'), exist_ok=True)
+
+    if os.path.exists(os.path.join(raw_folder, 'tensor/1.pt')):
+        return
 
     print('Obtain transformed conditions...')
-    df_conds = condition_preparation(args.conditions,
-                                     args.data_name,
-                                     args.data_path,
-                                     args.scaler_path)
+    df_conds = condition_preparation(os.path.join(raw_folder, 'prop_serial.csv'),
+                                     args.conditions, args.scaler_path)
+    print('df_conds:\n', df_conds)
 
     print('Obtain SMILES from dataset...')
-    if os.path.exists(os.path.join(raw_folder, 'smiles_serial.csv')):
-        df_smiles = pd.read_csv(os.path.join(raw_folder, 'smiles_serial.csv'))
+    if os.path.exists(os.path.join(raw_folder, 'smiles_serial.smi')):
+        df_smiles = pd.read_csv(os.path.join(raw_folder, 'smiles_serial.smi'),
+                                sep=' ', header=None, names=['smiles', 'no'])
     else:
         df_smiles = dataset_preparation(datatype, args.conditions, args.max_strlen)
+    print('df_smiles:\n', df_smiles)
 
     print('Obtain encoder inputs...')
-    exist_no = df_smiles['no'].tolist() # the no. that meets the length constraint
-    df_conds = df_conds.set_index('no').loc[exist_no].reset_index(inplace=False)
-    results = pd.concat([df_smiles['smiles'], df_conds], dim=1)
-    results.to_csv(os.path.join(raw_folder, 'predata.csv'))
+    if not os.path.exists(os.path.join(raw_folder, 'predata.csv')):
+        exist_no = df_smiles['no'].tolist() # the no. that meets the length constraint
+        df_conds = df_conds.set_index('no').loc[exist_no].reset_index(inplace=False)
+        results = pd.concat([df_smiles['smiles'], df_conds], axis=1)
+        results.to_csv(os.path.join(raw_folder, 'predata.csv'), index=False)
 
     print('Obtain encoder outputs...')
     device = allocate_gpu()
     COND = condition_fields(args.conditions)
     SRC, TRG = smiles_fields(args.field_path)
-    fields = [('smiles', SRC)].extend([(f'{args.conditions[i]}', COND[i]) 
-                                        for i in range(len(args.conditions))])
-    model = build_model(args, len(SRC.vocab), len(TRG.vocab), 
-                        args.molgct_path).to(device)
 
+    fields = [('smiles', SRC), ('no', data.Field(use_vocab=False, sequential=False, 
+                                                 batch_first=True, dtype=torch.long))]
+    fields.extend([(f'{args.conditions[i]}', COND[i]) 
+                    for i in range(len(args.conditions))])
+    print('Obtain fields:', fields)
+
+    print('Obtain model...')
+    model = build_model(args, len(SRC.vocab), len(TRG.vocab), 
+                        model_path=None).to(device)
+    model.eval()
+    
+    print('Obtain dataloader...')
     dataset = data.TabularDataset(path=os.path.join(raw_folder, 'predata.csv'),
                                   format='csv', fields=fields, skip_header=True)
-    dataiter = data.BucketIterator(dataset, batch_sizes=128)
+    print('Number in the dataset', len(dataset))
+    dataiter = data.BucketIterator(dataset, batch_size=128,
+                                   shuffle=False, sort=False)
     dataloader = to_dataloader(dataiter, args.conditions, 
-                               SRC.vocab.stoi['<pad>'], device)
+                               SRC.vocab.stoi['<pad>'], args.max_strlen, device)
 
-    os.makedirs(os.path.join(raw_folder, 'tensor'), exist_ok=True)
     for i, batch in enumerate(dataloader):
-        src_mask = create_source_mask(batch.src, args.conditions)
-        x = model.encode(batch.src.to(device), args.conditions, src_mask)[0]
+        print(f'{128*i} / {len(dataset)}')
+        src_mask = create_source_mask(batch.smiles, batch.conds)
+        x = model.encode(batch.smiles, batch.conds, src_mask)[0]
         for b in range(x.size(0)):
-            torch.save(x, os.path.join(raw_folder, 'tensor', f'{batch.src_no[b]}.pt'))
+            torch.save(x[b].clone().detach(),
+                       os.path.join(raw_folder, 'tensor', f'{batch.smi_no[b]}.pt'))
 
-
+    return
+    
     print('Get similar molecular pairs...')
     if not os.path.exists(os.path.join(aug_folder, f'pair_serial_{args.similarity:.2f}.csv')):
         get_similar_molecular_pairs(data_folder=raw_folder,

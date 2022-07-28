@@ -80,7 +80,7 @@ def train_opts(parser):
     train2_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train2_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
     train2_parser.add_argument('-transfer_path', type=str, default='molGCT/molgct.pt')
-    train2_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
+    train2_parser.add_argument('-start_epoch', type=int, default=1, help="Starting epoch for training")
     # train2_parser.add_argument('-save_path', type=str, required=True)
 
 

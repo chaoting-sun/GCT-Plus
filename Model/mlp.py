@@ -43,9 +43,10 @@ class MLPLayers(nn.Module):
     def forward(self, x, mconds):
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([x, mconds], dim=2)
-
         for i in range(len(self.mlp_layers)):
+            print(i, x.size())
             x = self.mlp_layers[i](x)
+        print(x.size())
         return self.norm(x) # should add to avoid inf
 
 
@@ -152,11 +153,10 @@ class MLP(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
-        self.mlp = MLP(src_vocab, latent_dim, 2*nconds, d_model)
+        self.mlp = MLPLayers(src_vocab, latent_dim, 2*nconds, d_model)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
-
         self.reset_parameters()
 
         # other layers

@@ -27,10 +27,10 @@ def smiles_fields(smiles_field_path=None):
 
     return (SRC, TRG)
 
-
+# torch.float32 is equal to torch.float
 def condition_fields(conditions):
     return [data.Field(use_vocab=False, sequential=False,
-            batch_first=True, dtype=torch.float) for _ in conditions]
+            batch_first=True, dtype=torch.float32) for _ in conditions]
 
 
 # def get_fields(conditions, smiles_field_path=None):

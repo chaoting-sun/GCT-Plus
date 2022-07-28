@@ -15,7 +15,7 @@ branch: mlp-only-training
 
 def train(args, debug=False):
     set_seed(51)
-    torch.set_printoptions(threshold=10_000)
+    torch.set_printoptions(profile="full")
     device = allocate_gpu()
 
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)

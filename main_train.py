@@ -8,11 +8,10 @@ import os
 import argparse
 
 from Train.train import train
+from Train.mlp_train import mlp_train
 from Configuration.config import options
 
-
 DEBUG = True
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -20,10 +19,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
 
-    if not os.path.exists(os.path.join(args.data_path, 'train.csv')):
-        exit('File not found: train.csv')
+    if args.model_type == 'mlp':
+        mlp_train(args, debug=DEBUG)
 
-    if not os.path.exists(os.path.join(args.data_path, 'validation.csv')):
-        exit('File not found: validation.csv')
+    elif args.model_type == 'mlp_encoder':
+        if not os.path.exists(os.path.join(args.data_path, 'train.csv')):
+            exit('File not found: train.csv')
 
-    train(args, debug=DEBUG)
+        if not os.path.exists(os.path.join(args.data_path, 'validation.csv')):
+            exit('File not found: validation.csv')
+
+        train(args, debug=DEBUG)

@@ -79,7 +79,6 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
                           use_cond2lat, transfer_path)
     mlp = MLP(src_vocab, trg_vocab, N, d_model, d_ff, H, latent_dim,
               dropout, nconds, use_cond2dec, use_cond2lat, variational)
-
     if model_path is not None:
         mlp.load_state_dict(torch.load(model_path)['model_state_dict'])
     else:
@@ -88,7 +87,7 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
     return mlp
 
 
-def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path):
+def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None):
     if args.model_type == "transformer":
         # training phase I
         model = build_transformer(SRC_vocab_len, TRG_vocab_len,
@@ -103,7 +102,7 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path):
                                      args.H, args.latent_dim, args.dropout,
                                      args.nconds, args.use_cond2dec,
                                      args.use_cond2lat, args.variational,
-                                     args.transfer_path, model_path)
+                                     args.molgct_path, model_path)
     elif args.model_type == "mlp_encoder":
         # training phase II
         model = build_mlpencoder(SRC_vocab_len, TRG_vocab_len,
@@ -111,13 +110,13 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path):
                                  args.H, args.latent_dim, args.dropout,
                                  args.nconds, args.use_cond2dec,
                                  args.use_cond2lat, args.variational,
-                                 args.transfer_path, model_path)
+                                 args.molgct_path, model_path)
     elif args.model_type == "mlp":
         # training phase II
-        model = build_mlp("mlp", SRC_vocab_len, TRG_vocab_len,
+        model = build_mlp(SRC_vocab_len, TRG_vocab_len,
                           args.N, args.d_model, args.d_ff, 
                           args.H, args.latent_dim, args.dropout,
                           args.nconds, args.use_cond2dec,
                           args.use_cond2lat, args.variational,
-                          args.transfer_path, model_path)
+                          args.molgct_path, model_path)
     return model
