@@ -25,8 +25,8 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
-        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
-        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
+        mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
         # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
