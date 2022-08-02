@@ -1,7 +1,8 @@
 import os
 import gc
-import time
+from timeit import default_timer as timer
 from datetime import timedelta
+from line_profiler import LineProfiler
 # import pandas as pd
 # import pickle as pkl
 # from itertools import tee
@@ -15,6 +16,7 @@ from Model.modules import NoamOpt as moptim
 from Model.loss import LossCompute, Criterion
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
+from Utils.dataset import torch_load
 # import Process.data_preparation as pdp
 # import Process.vocabulary as mv
 
@@ -28,8 +30,10 @@ class Trainer(object):
         self.args = args
         os.makedirs(args.save_directory, exist_ok=True)
         self.LOG = get_logger(name="train_model", 
-                              log_path=os.path.join(args.save_directory, 'train_model.log'))
+                   log_path=os.path.join(args.save_directory, 'train_model.log'))
         self.LOG.info(args)
+        self.LOG_details = get_logger(name="train_details", 
+                           log_path=os.path.join(args.save_directory, 'train_details.log'))
 
     
     def get_optimization(self, trainable_parameters):
@@ -73,24 +77,38 @@ class Trainer(object):
         The following variables records the total values from the dataset
         """
         sum_loss, n_pairs = 0, 0
-
+        start = timer()
+        
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-            trg_z_pred = model.forward(batch['src'], batch['mconds'])
-            trg_z_truth = model.sampler(batch['trg'])[0]
+            trg_z_pred, trg_z_truth = model.forward(batch['src'],
+                                                    batch['trg'],
+                                                    batch['mconds'])
             # Compute loss (rec-loss + KL-div) and update
             loss = loss_compute(trg_z_pred, trg_z_truth)
-    
+            dist = (trg_z_pred.view(-1) - trg_z_truth.view(-1)).pow(2).mean().sqrt().item()
+
             sum_loss += float(loss)
             n_pairs += batch['src'].size(0)
-            print(f">>> loss: {float(loss):.6}")
 
+            end = timer()
+            fcn_cnt, fcn_time = torch_load.important_stats
+            
+            details = f'{i+1}/{len(dataloader):<10}\t' \
+                      f'Time: {timedelta(seconds=end - start)}\t' \
+                      f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
+                      f'Dist: {dist:.6f}\t' \
+                      f'IO_tensor(count/time): {fcn_time:.4f}, {fcn_cnt}'
+
+            self.LOG_details.info(details)
+            print(details)
+            
         print(f'average_loss: {sum_loss / n_pairs:.6f}')
             
         return sum_loss / n_pairs
 
 
-    def train(self, model, dataloader, SRC, TRG):
+    def train(self, model, train_dl, valid_dl, SRC, TRG):
         criterion = Criterion()
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
@@ -107,7 +125,7 @@ class Trainer(object):
             model.train()
 
             self.LOG.info("Training start")
-            acc_train, loss_train = self.run_epoch(dataloader, model,
+            acc_train, loss_train = self.run_epoch(train_dl, model,
                                     LossCompute(criterion, optim), TRG)
             self.LOG.info("Training end")
 
@@ -116,7 +134,7 @@ class Trainer(object):
 
             self.LOG.info("Validation start")
             with torch.no_grad():
-                acc_val, loss_val = self.run_epoch(dataloader, model,
+                acc_val, loss_val = self.run_epoch(valid_dl, model,
                                     LossCompute(criterion, None), TRG)
             self.LOG.info("Validation end")
 

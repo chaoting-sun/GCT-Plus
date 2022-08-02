@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
+
 
 
 class Criterion(nn.Module):
@@ -12,9 +14,9 @@ class Criterion(nn.Module):
     def __init__(self):
         super(Criterion, self).__init__()
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
-
+        # self.kl_loss = F.kl_div
     def forward(self, predict, target):
-        return self.kl_loss(predict, target)
+        return self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
 
 
 def tfRecLoss(x, target, size, smoothing, confidence, padding_idx):

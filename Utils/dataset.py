@@ -1,5 +1,6 @@
 # general modules
 import os
+import time
 import joblib
 import pandas as pd
 from multiprocessing import Pool
@@ -13,6 +14,18 @@ from torch.utils.data import Dataset
 
 # other packages
 from .property import to_mol, property_prediction
+from Utils.chrono import Chrono
+
+
+def measure_time(f):
+    def timed(*args, **kw):
+        global io_elapsed_time
+        ts = time.time()
+        result = f(*args, **kw)
+        te = time.time()
+        io_elapsed_time += te-ts
+        return result
+    return timed
 
 
 def get_benchmarking_dataset(data_name, data_type='train') -> pd.DataFrame:
@@ -123,6 +136,11 @@ def to_dataloader(data_iter, conditions, pad_idx, device):
     return (rebatch(batch, conditions, pad_idx, device) for batch in data_iter)
 
 
+@Chrono
+def torch_load(file_path):
+    return torch.load(file_path)
+
+
 class mlpDataset(Dataset):
     def __init__(self, conditions, tensor_folder, pair_path,
                  prop_path, device, transform=None):
@@ -138,10 +156,8 @@ class mlpDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.pair_data.iloc[idx]
-        src_t = torch.load(os.path.join(
-            self.tensor_folder, f'{row["no1"]}.pt'))
-        trg_t = torch.load(os.path.join(
-            self.tensor_folder, f'{row["no2"]}.pt'))
+        src_t = torch_load(os.path.join(self.tensor_folder, f'{row["no1"]}.pt'))
+        trg_t = torch_load(os.path.join(self.tensor_folder, f'{row["no2"]}.pt'))
 
         src_conds = self.prop_data[self.conditions].loc[self.prop_data['no']
                                                         == row["no1"]].to_numpy()
@@ -157,7 +173,7 @@ class mlpDataset(Dataset):
 
         src_conds = torch.from_numpy(src_conds).view(-1)
         trg_conds = torch.from_numpy(trg_conds).view(-1)
-        dif_conds = torch.sub(src_conds, trg_conds)
+        dif_conds = torch.sub(trg_conds, src_conds)
         mconds = torch.cat([src_conds, dif_conds]).clone().detach()
 
         sample = {

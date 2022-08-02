@@ -44,9 +44,7 @@ class MLPLayers(nn.Module):
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([x, mconds], dim=2)
         for i in range(len(self.mlp_layers)):
-            print(i, x.size())
             x = self.mlp_layers[i](x)
-        print(x.size())
         return self.norm(x) # should add to avoid inf
 
 
@@ -184,11 +182,12 @@ class MLP(nn.Module):
         return self.out(self.decoder(trg, e_outputs,
                         dconds, src_mask, trg_mask)[0])
 
-    def forward(self, x, mconds):
-        z, _, _ = self.sampler(x)
-        x = self.mlp(z, mconds)
-        z, _, _ = self.sampler(x)
-        return z
+    def forward(self, src, trg, mconds):
+        z1, _, _ = self.sampler(src)
+        x = self.mlp(z1, mconds)
+        z1, _, _ = self.sampler(x)
+        z2, _, _ = self.sampler(trg)
+        return z1, z2
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

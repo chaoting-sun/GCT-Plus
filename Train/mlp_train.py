@@ -22,15 +22,27 @@ def mlp_train(args, debug=False):
     device = allocate_gpu()
 
     scaler = joblib.load(args.scaler_path)
-    raw_folder = os.path.join(args.data_path, 'raw', 'train')
-    aug_folder = os.path.join(args.data_path, 'aug', 'train')
+
+    train_raw_folder = os.path.join(args.data_path, 'raw', 'train')
+    train_aug_folder = os.path.join(args.data_path, 'aug', 'train')
     dataset = mlpDataset(conditions=args.conditions,
-                         tensor_folder=os.path.join(raw_folder, 'tensor'),
-                         pair_path=os.path.join(aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
-                         prop_path=os.path.join(raw_folder, 'prop_serial.csv'),
+                         tensor_folder=os.path.join(train_raw_folder, 'tensor'),
+                         pair_path=os.path.join(train_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
+                         prop_path=os.path.join(train_raw_folder, 'prop_serial.csv'),
                          device=device,
                          transform=scaler.transform)
-    dataloader = DataLoader(dataset, batch_size=args.batch_size)
+    train_dl = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
+    valid_raw_folder = os.path.join(args.data_path, 'raw', 'validation')
+    valid_aug_folder = os.path.join(args.data_path, 'aug', 'validation')
+    dataset = mlpDataset(conditions=args.conditions,
+                         tensor_folder=os.path.join(valid_raw_folder, 'tensor'),
+                         pair_path=os.path.join(valid_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
+                         prop_path=os.path.join(valid_raw_folder, 'prop_serial.csv'),
+                         device=device,
+                         transform=scaler.transform)
+    valid_dl = DataLoader(dataset, batch_size=args.batch_size)
+
 
     # for i, batch in enumerate(dataloader):
     #     print(batch['src'].size(), batch['trg'].size(), batch['mconds'].size())
@@ -55,9 +67,8 @@ def mlp_train(args, debug=False):
         model_path = None
     model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path).to(device)
 
-
     print('Parameters:', f'{sum(p.numel() for p in model.parameters()):<40}\t')
     print('Trainable Parameters:', f'{sum(p.numel() for p in model.parameters() if p.requires_grad):<40}')
     
     trainer = Trainer(args)
-    trainer.train(model, dataloader, SRC, TRG)
+    trainer.train(model, train_dl, valid_dl, SRC, TRG)
