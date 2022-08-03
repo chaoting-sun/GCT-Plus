@@ -18,6 +18,7 @@ from .sublayers import Sampler
 from .layers import EncoderLayer, DecoderLayer
 from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, nopeak_mask, create_source_mask, get_clones
+from Utils.chrono import Chrono, Timer
 
 
 class MLPLayers(nn.Module):

@@ -30,7 +30,6 @@ class Trainer(object):
         # parameters for training
         self.args = args
         self.start_epoch = start_epoch
-        self.save_directory = save_directory
         os.makedirs(args.save_directory, exist_ok=True)
         self.LOG = get_logger(name="train_model", 
                               log_path=os.path.join(args.save_directory, 'train_model.log'))

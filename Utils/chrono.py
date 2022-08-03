@@ -47,8 +47,53 @@
 # 5.2319 5000! : 16326
 
 from time import time
+
+
+def Timer(func):
+    def wrapper(*args, **kwargs):
+        t1 = time()
+        result = func(*args, **kwargs)
+        end = time()-t1
+        return result, end
+    return wrapper
+
+
+# class Chrono:
+#     def __init__(self,func):
+#         self.func      = func
+#         self.clear()
+
+#     def clear(self):
+#         self.first_time = True
+#         self.count     = 0
+#         self.totalTime = 0
+#         self.start     = None
+
+#     def __call__(self,*args,**kwargs):
+#         if self.first_time:
+#             self.start = time()
+#         self.first_time = False
+#         self.count += 1
+#         result = self.func(*args,**kwargs)
+#         self.totalTime = time() - self.start
+#         return result
+    
+#     def methodCaller(self,obj):
+#         def withObject(*args,**kwargs):       
+#             return self(obj,*args,**kwargs)  # inject object instance
+#         return withObject
+
+#     def __get__(self,obj,objtype=None):   # return method call or CallCounter
+#         return self.methodCaller(obj) if obj else self
+
+#     @property
+#     def cummulative_time(self):
+#         return self.totalTime
+
+
+# https://stackoverflow.com/questions/69408275/decorator-with-parameter-and-counting-how-many-times-func-called
+
 class Chrono:
-     
     def __init__(self,func):
         self.func      = func
         self._name     = None
@@ -113,8 +158,8 @@ class Chrono:
         print(f"    Max. Depth:   {self.maxDepth}")
 
     @property
-    def important_stats(self):
-        return self.count, self.totalTime
+    def cummulative_time(self):
+        return self.totalTime
 
     @property
     def time(self):
@@ -144,11 +189,14 @@ if __name__ == '__main__':
 
     @Chrono
     def myFunction(a,b,c,r=3):
-        for _ in range(100000*a): pass
-        if r>0: myFunction(1,b,c,r-1)
+        for _ in range(100000*a):
+            pass
+        if r > 0:
+            myFunction(1,b,c,r-1)
         return a+b+c
 
-    for i in range(13): myFunction(1,2,3)
+    for i in range(13):
+        myFunction(1,2,3)
 
     myFunction.stats
 

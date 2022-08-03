@@ -4,6 +4,8 @@ import time
 import joblib
 import pandas as pd
 from multiprocessing import Pool
+from collections import OrderedDict
+import numpy as np
 
 # ml modules
 import moses
@@ -146,39 +148,52 @@ class mlpDataset(Dataset):
                  prop_path, device, transform=None):
         self.conditions = conditions
         self.tensor_folder = tensor_folder
-        self.pair_data = pd.read_csv(pair_path)
-        self.prop_data = pd.read_csv(prop_path)
         self.transform = transform
         self.device = device
+
+        self.pair_data = pd.read_csv(pair_path)
+        self.prop_data = pd.read_csv(prop_path)
+        # self.prop_data = self.prop_data.set_index('no')
+        self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
+
+        self.cache = OrderedDict()
+        self.cacacity = 50000
+
+    def get_tensor(self, no):
+        if no in self.cache:
+            return self.cache
+        else:
+            value = torch_load(os.path.join(self.tensor_folder, f'{no}.pt'))
+            self.put_tensor(no, value)
+            return value
+
+    def put_tensor(self, key, value):
+        if len(self.cache) > self.cacacity:
+            self.cache = OrderedDict()
+        self.cache[key] = value
 
     def __len__(self):
         return len(self.pair_data)
 
     def __getitem__(self, idx):
         row = self.pair_data.iloc[idx]
-        src_t = torch_load(os.path.join(self.tensor_folder, f'{row["no1"]}.pt'))
-        trg_t = torch_load(os.path.join(self.tensor_folder, f'{row["no2"]}.pt'))
+        no1, no2 = row['no1'], row['no2']
 
-        src_conds = self.prop_data[self.conditions].loc[self.prop_data['no']
-                                                        == row["no1"]].to_numpy()
-        trg_conds = self.prop_data[self.conditions].loc[self.prop_data['no']
-                                                        == row["no2"]].to_numpy()
+        # src_t = torch_load(os.path.join(self.tensor_folder, f'{no1}.pt'))
+        # trg_t = torch_load(os.path.join(self.tensor_folder, f'{no2}.pt'))
 
-        if self.transform is not None:
-            src_conds = self.transform(src_conds.reshape(1, len(self.conditions)))
-            trg_conds = self.transform(trg_conds.reshape(1, len(self.conditions)))
+        src_t = self.get_tensor(no1)
+        trg_t = self.get_tensor(no2)
 
-        # print('src_conds:', src_conds.size(), src_conds)
-        # print('trg_conds:', trg_conds.size(), trg_conds)
-
-        src_conds = torch.from_numpy(src_conds).view(-1)
-        trg_conds = torch.from_numpy(trg_conds).view(-1)
+        src_conds = torch.FloatTensor(self.prop_data[no1])
+        trg_conds = torch.FloatTensor(self.prop_data[no2])
         dif_conds = torch.sub(trg_conds, src_conds)
+
         mconds = torch.cat([src_conds, dif_conds]).clone().detach()
 
         sample = {
             'src': src_t.to(device=self.device),
             'trg': trg_t.to(device=self.device),
-            'mconds': mconds.to(self.device, dtype=torch.float32)
+            'mconds': mconds.to(self.device)
         }
         return sample

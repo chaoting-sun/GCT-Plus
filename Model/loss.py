@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
-
+from Utils.chrono import Chrono, Timer
 
 
 class Criterion(nn.Module):
@@ -15,6 +15,7 @@ class Criterion(nn.Module):
         super(Criterion, self).__init__()
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
         # self.kl_loss = F.kl_div
+    
     def forward(self, predict, target):
         return self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
 
@@ -84,26 +85,25 @@ class KLAnnealer:
         return beta
 
 
-class LossCompute:
-    """ 
-    update model parameters
-    """
-    def __init__(self, loss_function, optim):
-        self.loss_function = loss_function
-        self.optim = optim
+# class LossCompute:
+#     """ 
+#     update model parameters
+#     """
+#     def __init__(self, loss_function, optim):
+#         self.loss_function = loss_function
+#         self.optim = optim
 
-    def __call__(self, x, y, norm, mu, logvar, beta):
-        rec_loss, KL_div = self.loss_function(x.contiguous().view(-1, x.size(-1)),
-                                              y.contiguous().view(-1), mu, logvar, beta)
-        loss = rec_loss + KL_div
+#     def __call__(self, x, y, norm, mu, logvar, beta):
+#         rec_loss, KL_div = self.loss_function(x.contiguous().view(-1, x.size(-1)),
+#                                               y.contiguous().view(-1), mu, logvar, beta)
+#         loss = rec_loss + KL_div
 
-        if self.optim is not None: # training section
-            loss.backward()
-            self.optim.step()
-            self.optim.optimizer.zero_grad()
+#         if self.optim is not None: # training section
+#             loss.backward()
+#             self.optim.step()
+#             self.optim.optimizer.zero_grad()
 
-        return rec_loss.data, KL_div
-
+#         return rec_loss.data, KL_div
 
 class LossCompute:
     """ 
@@ -113,7 +113,7 @@ class LossCompute:
     def __init__(self, loss_function, optim):
         self.loss_function = loss_function
         self.optim = optim
-
+    
     def __call__(self, x, y):
         loss = self.loss_function(x.contiguous().view(-1),
                                   y.contiguous().view(-1))

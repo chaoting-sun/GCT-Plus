@@ -1,6 +1,7 @@
 import os
 import gc
 from timeit import default_timer as timer
+# from time import time
 from datetime import timedelta
 from line_profiler import LineProfiler
 # import pandas as pd
@@ -34,6 +35,10 @@ class Trainer(object):
         self.LOG.info(args)
         self.LOG_details = get_logger(name="train_details", 
                            log_path=os.path.join(args.save_directory, 'train_details.log'))
+        self.LOG_loss = get_logger(name="train_loss", 
+                        log_path=os.path.join(args.save_directory, 'train_loss.log'))
+        self.LOG_time = get_logger(name="train_time", 
+                        log_path=os.path.join(args.save_directory, 'train_time.log'))
 
     
     def get_optimization(self, trainable_parameters):
@@ -77,31 +82,57 @@ class Trainer(object):
         The following variables records the total values from the dataset
         """
         sum_loss, n_pairs = 0, 0
-        start = timer()
+        total_model_time = total_update_time = 0
+
+        start_epoch_time = timer()
         
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
+            
+            start_model_time = timer()
             trg_z_pred, trg_z_truth = model.forward(batch['src'],
                                                     batch['trg'],
                                                     batch['mconds'])
+            total_model_time += timer() - start_model_time
+
             # Compute loss (rec-loss + KL-div) and update
+            start_update_time = timer()
             loss = loss_compute(trg_z_pred, trg_z_truth)
+            total_update_time += timer() - start_update_time
+
             dist = (trg_z_pred.view(-1) - trg_z_truth.view(-1)).pow(2).mean().sqrt().item()
 
             sum_loss += float(loss)
-            n_pairs += batch['src'].size(0)
+            
+            # loss_details = f'{i+1} / {len(dataloader):<10}\t' \
+            #                f'Time: {timedelta(seconds=end - start)}\t' \
+            #                f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
+            #                f'RMSE: {dist:.6f}'
 
             end = timer()
-            fcn_cnt, fcn_time = torch_load.important_stats
-            
-            details = f'{i+1}/{len(dataloader):<10}\t' \
-                      f'Time: {timedelta(seconds=end - start)}\t' \
-                      f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
-                      f'Dist: {dist:.6f}\t' \
-                      f'IO_tensor(count/time): {fcn_time:.4f}, {fcn_cnt}'
+            time_details = f'{i+1}/{len(dataloader):<10}\t' \
+                           f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
+                           f'ModelTime: {timedelta(seconds=total_model_time)}\t' \
+                           f'UpdateTime: {timedelta(seconds=total_update_time)}\t' \
+                           f'IOTime: {timedelta(seconds=torch_load.cummulative_time)}' \
 
-            self.LOG_details.info(details)
-            print(details)
+
+
+            print(time_details)
+
+            # self.LOG_loss.info(loss_details)
+            # self.LOG_time.info(time_details)
+
+
+
+            # details = f'{i+1} / {len(dataloader):<10}\t' \
+            #           f'Time: {timedelta(seconds=end - start)}\t' \
+            #           f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
+            #           f'Dist: {dist:.6f}\t' \
+            #           f'IO_tensor(time_count): {load_time:.4f}, {load_cnt}'
+
+            # self.LOG_details.info(details)
+            # print(details)
             
         print(f'average_loss: {sum_loss / n_pairs:.6f}')
             

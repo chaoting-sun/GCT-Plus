@@ -1,6 +1,8 @@
 import os
 import gc
 import joblib
+import pandas as pd
+import numpy as np
 
 import torch
 from torchtext import data
@@ -23,24 +25,50 @@ def mlp_train(args, debug=False):
 
     scaler = joblib.load(args.scaler_path)
 
+    """ training data """
+
     train_raw_folder = os.path.join(args.data_path, 'raw', 'train')
     train_aug_folder = os.path.join(args.data_path, 'aug', 'train')
+
+    if not os.path.exists(os.path.join(train_raw_folder, 'prop_serial_tf.csv')):
+        prop_data = pd.read_csv(os.path.join(train_raw_folder, 'prop_serial.csv'))
+        prop_data = prop_data.set_index('no').T.to_dict('list')
+        for key, value in prop_data.items():
+            prop_data[key] = scaler.transform(np.array([value])).tolist()[0]
+            print(key)
+        prop_data = pd.DataFrame.from_dict(prop_data, orient='index', columns=args.conditions)
+        prop_data['no'] = prop_data.index
+        prop_data.to_csv(os.path.join(train_raw_folder, 'prop_serial_tf.csv'), index=False)
+
     dataset = mlpDataset(conditions=args.conditions,
                          tensor_folder=os.path.join(train_raw_folder, 'tensor'),
                          pair_path=os.path.join(train_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
-                         prop_path=os.path.join(train_raw_folder, 'prop_serial.csv'),
-                         device=device,
-                         transform=scaler.transform)
+                         prop_path=os.path.join(train_raw_folder, 'prop_serial_tf.csv'),
+                         device=device)
+
     train_dl = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
+    """ validation data """
 
     valid_raw_folder = os.path.join(args.data_path, 'raw', 'validation')
     valid_aug_folder = os.path.join(args.data_path, 'aug', 'validation')
+
+    if not os.path.exists(os.path.join(valid_raw_folder, 'prop_serial_tf.csv')):
+        prop_data = pd.read_csv(os.path.join(valid_raw_folder, 'prop_serial.csv'))
+        prop_data = prop_data.set_index('no').T.to_dict('list')
+        for key, value in prop_data.items():
+            prop_data[key] = scaler.transform(np.array([value])).tolist()[0]
+            print(key)
+        prop_data = pd.DataFrame.from_dict(prop_data, orient='index', columns=args.conditions)
+        prop_data['no'] = prop_data.index
+        prop_data.to_csv(os.path.join(valid_raw_folder, 'prop_serial_tf.csv'), index=False)
+
     dataset = mlpDataset(conditions=args.conditions,
                          tensor_folder=os.path.join(valid_raw_folder, 'tensor'),
                          pair_path=os.path.join(valid_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
-                         prop_path=os.path.join(valid_raw_folder, 'prop_serial.csv'),
-                         device=device,
-                         transform=scaler.transform)
+                         prop_path=os.path.join(valid_raw_folder, 'prop_serial_tf.csv'),
+                         device=device)
+
     valid_dl = DataLoader(dataset, batch_size=args.batch_size)
 
 
