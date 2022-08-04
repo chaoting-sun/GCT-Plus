@@ -17,7 +17,7 @@ from Model.modules import NoamOpt as moptim
 from Model.loss import LossCompute, Criterion
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
-from Utils.dataset import torch_load
+from Utils.dataset import pickle_load, tensor_load
 # import Process.data_preparation as pdp
 # import Process.vocabulary as mv
 
@@ -115,7 +115,7 @@ class Trainer(object):
                            f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
                            f'ModelTime: {timedelta(seconds=total_model_time)}\t' \
                            f'UpdateTime: {timedelta(seconds=total_update_time)}\t' \
-                           f'IOTime: {timedelta(seconds=torch_load.cummulative_time)}' \
+                           f'IOTime: {timedelta(seconds=pickle_load.cummulative_time)}' \
 
             print(loss_details)
 

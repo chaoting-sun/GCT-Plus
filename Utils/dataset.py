@@ -140,8 +140,16 @@ def to_dataloader(data_iter, conditions, pad_idx, device):
 
 
 @Chrono
-def torch_load(file_path):
-    return torch.load(file_path)
+def tensor_load(file_path, device):
+    tensor = torch.load(file_path)
+    return tensor.to(device)
+
+
+@Chrono
+def pickle_load(file_path, device):
+    mat = pickle.load(open(file_path, 'rb'))
+    return mat
+    # return torch.from_numpy(mat).to(device)
 
 
 class mlpDataset(Dataset):
@@ -157,10 +165,6 @@ class mlpDataset(Dataset):
         # self.prop_data = self.prop_data.set_index('no')
         self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
 
-    @Chrono
-    def pickle_load(self, path):
-        mat = pickle.load(open(path, 'rb'))
-        return torch.from_numpy(mat).to(self.device)
 
     def __len__(self):
         return len(self.pair_data)
@@ -169,8 +173,14 @@ class mlpDataset(Dataset):
         row = self.pair_data.iloc[idx]
         no1, no2 = row['no1'], row['no2']
 
-        src_t = self.pickle_load(os.path.join(self.mat_folder, f'{no1}.pkl'))
-        trg_t = self.pickle_load(os.path.join(self.mat_folder, f'{no2}.pkl'))
+        src_t = pickle_load(os.path.join(self.mat_folder, f'{no1}.pt'), self.device)
+        trg_t = pickle_load(os.path.join(self.mat_folder, f'{no2}.pt'), self.device)
+
+        src_t = torch.from_numpy(src_t).to(self.device)
+        trg_t = torch.from_numpy(trg_t).to(self.device)
+
+        # src_t = tensor_load(os.path.join(self.mat_folder, f'{no1}.pt'), self.device)
+        # trg_t = tensor_load(os.path.join(self.mat_folder, f'{no2}.pt'), self.device)
 
         src_conds = torch.as_tensor(self.prop_data[no1],
                                     dtype=torch.float32,
@@ -186,54 +196,54 @@ class mlpDataset(Dataset):
         return sample
 
 
-class mlpDataset(Dataset):
-    def __init__(self, conditions, tensor_folder, pair_path,
-                 prop_path, device, transform=None):
-        self.conditions = conditions
-        self.tensor_folder = tensor_folder
-        self.transform = transform
-        self.device = device
+# class mlpDataset(Dataset):
+#     def __init__(self, conditions, tensor_folder, pair_path,
+#                  prop_path, device, transform=None):
+#         self.conditions = conditions
+#         self.tensor_folder = tensor_folder
+#         self.transform = transform
+#         self.device = device
 
-        self.pair_data = pd.read_csv(pair_path)
-        self.prop_data = pd.read_csv(prop_path)
-        # self.prop_data = self.prop_data.set_index('no')
-        self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
+#         self.pair_data = pd.read_csv(pair_path)
+#         self.prop_data = pd.read_csv(prop_path)
+#         # self.prop_data = self.prop_data.set_index('no')
+#         self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
 
-        self.cache = OrderedDict()
-        self.cacacity = 50000
+#         self.cache = OrderedDict()
+#         self.cacacity = 50000
 
-    def get_tensor(self, no):
-        if no in self.cache:
-            return self.cache[no]
-        else:
-            value = torch_load(os.path.join(self.tensor_folder, f'{no}.pt'))
-            self.put_tensor(no, value)
-            return value
+#     def get_tensor(self, no):
+#         if no in self.cache:
+#             return self.cache[no]
+#         else:
+#             value = torch_load(os.path.join(self.tensor_folder, f'{no}.pt'))
+#             self.put_tensor(no, value)
+#             return value
 
-    def put_tensor(self, key, value):
-        if len(self.cache) > self.cacacity:
-            self.cache = OrderedDict()
-        self.cache[key] = value
+#     def put_tensor(self, key, value):
+#         if len(self.cache) > self.cacacity:
+#             self.cache = OrderedDict()
+#         self.cache[key] = value
 
-    def __len__(self):
-        return len(self.pair_data)
+#     def __len__(self):
+#         return len(self.pair_data)
 
-    def __getitem__(self, idx):
-        row = self.pair_data.iloc[idx]
-        no1, no2 = row['no1'], row['no2']
+#     def __getitem__(self, idx):
+#         row = self.pair_data.iloc[idx]
+#         no1, no2 = row['no1'], row['no2']
 
-        src_t = self.get_tensor(no1)
-        trg_t = self.get_tensor(no2)
+#         src_t = self.get_tensor(no1)
+#         trg_t = self.get_tensor(no2)
 
-        src_conds = torch.FloatTensor(self.prop_data[no1])
-        trg_conds = torch.FloatTensor(self.prop_data[no2])
-        dif_conds = torch.sub(trg_conds, src_conds)
+#         src_conds = torch.FloatTensor(self.prop_data[no1])
+#         trg_conds = torch.FloatTensor(self.prop_data[no2])
+#         dif_conds = torch.sub(trg_conds, src_conds)
 
-        mconds = torch.cat([src_conds, dif_conds]).clone().detach()
+#         mconds = torch.cat([src_conds, dif_conds]).clone().detach()
 
-        sample = {
-            'src': src_t.to(device=self.device),
-            'trg': trg_t.to(device=self.device),
-            'mconds': mconds.to(self.device)
-        }
-        return sample
+#         sample = {
+#             'src': src_t.to(device=self.device),
+#             'trg': trg_t.to(device=self.device),
+#             'mconds': mconds.to(self.device)
+#         }
+#         return sample
