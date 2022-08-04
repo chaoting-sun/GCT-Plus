@@ -3,7 +3,7 @@
 MODEL_TYPE='mlp'
 SIMILARITY=0.70
 MLP_STACK=1
-GPU_IDX=2
+GPU_IDX=0
 NUM_EPOCH=40
 
 # train
@@ -27,5 +27,5 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -start_epoch 1 \
         -train_verbose \
         -train_stage 2 \
-        >fuck.out 2>fuck.err &
+    >fuck.out 2>fuck.err &
     # >mlp_train_sim${SIMILARITY}_${MLP_STACK}.out 2>mlp_train_sim${SIMILARITY}_${MLP_STACK}.err &

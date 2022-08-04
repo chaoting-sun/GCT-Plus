@@ -33,7 +33,11 @@ def tPSA(mol: Mol) -> float:
 
 def QED(mol: Mol) -> float:
     """ RDKit's Quantitative Estimates of Drug-likeness """
-    return Descriptors.qed(mol)
+    try:
+        return Descriptors.qed(mol)
+    except:
+        print('QED - invalid smiles:', MolToSmiles(mol))
+        exit(1)
 
 
 def SA(mol) -> float:

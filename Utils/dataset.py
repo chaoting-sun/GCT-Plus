@@ -3,6 +3,7 @@ import os
 import time
 import joblib
 import pandas as pd
+import dill as pickle
 from multiprocessing import Pool
 from collections import OrderedDict
 import numpy as np
@@ -144,6 +145,48 @@ def torch_load(file_path):
 
 
 class mlpDataset(Dataset):
+    def __init__(self, conditions, mat_folder, pair_path,
+                 prop_path, device, transform=None):
+        self.conditions = conditions
+        self.mat_folder = mat_folder
+        self.transform = transform
+        self.device = device
+
+        self.pair_data = pd.read_csv(pair_path)
+        self.prop_data = pd.read_csv(prop_path)
+        # self.prop_data = self.prop_data.set_index('no')
+        self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
+
+    @Chrono
+    def pickle_load(self, path):
+        mat = pickle.load(open(path, 'rb'))
+        return torch.from_numpy(mat).to(self.device)
+
+    def __len__(self):
+        return len(self.pair_data)
+
+    def __getitem__(self, idx):
+        row = self.pair_data.iloc[idx]
+        no1, no2 = row['no1'], row['no2']
+
+        src_t = self.pickle_load(os.path.join(self.mat_folder, f'{no1}.pkl'))
+        trg_t = self.pickle_load(os.path.join(self.mat_folder, f'{no2}.pkl'))
+
+        src_conds = torch.as_tensor(self.prop_data[no1],
+                                    dtype=torch.float32,
+                                    device=self.device)
+        trg_conds = torch.as_tensor(self.prop_data[no2],
+                                    dtype=torch.float32,
+                                    device=self.device)
+        dif_conds = torch.sub(trg_conds, src_conds)
+
+        mconds = torch.cat([src_conds, dif_conds]).clone().detach()
+
+        sample = { 'src': src_t, 'trg': trg_t, 'mconds': mconds }
+        return sample
+
+
+class mlpDataset(Dataset):
     def __init__(self, conditions, tensor_folder, pair_path,
                  prop_path, device, transform=None):
         self.conditions = conditions
@@ -161,7 +204,7 @@ class mlpDataset(Dataset):
 
     def get_tensor(self, no):
         if no in self.cache:
-            return self.cache
+            return self.cache[no]
         else:
             value = torch_load(os.path.join(self.tensor_folder, f'{no}.pt'))
             self.put_tensor(no, value)
@@ -178,9 +221,6 @@ class mlpDataset(Dataset):
     def __getitem__(self, idx):
         row = self.pair_data.iloc[idx]
         no1, no2 = row['no1'], row['no2']
-
-        # src_t = torch_load(os.path.join(self.tensor_folder, f'{no1}.pt'))
-        # trg_t = torch_load(os.path.join(self.tensor_folder, f'{no2}.pt'))
 
         src_t = self.get_tensor(no1)
         trg_t = self.get_tensor(no2)

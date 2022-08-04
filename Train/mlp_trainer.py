@@ -104,35 +104,23 @@ class Trainer(object):
 
             sum_loss += float(loss)
             
-            # loss_details = f'{i+1} / {len(dataloader):<10}\t' \
-            #                f'Time: {timedelta(seconds=end - start)}\t' \
-            #                f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
-            #                f'RMSE: {dist:.6f}'
-
             end = timer()
+
+            loss_details = f'{i+1}/{len(dataloader):<10}\t' \
+                           f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
+                           f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
+                           f'RMSE: {dist:.6f}'
+
             time_details = f'{i+1}/{len(dataloader):<10}\t' \
                            f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
                            f'ModelTime: {timedelta(seconds=total_model_time)}\t' \
                            f'UpdateTime: {timedelta(seconds=total_update_time)}\t' \
                            f'IOTime: {timedelta(seconds=torch_load.cummulative_time)}' \
 
+            print(loss_details)
 
-
-            print(time_details)
-
-            # self.LOG_loss.info(loss_details)
-            # self.LOG_time.info(time_details)
-
-
-
-            # details = f'{i+1} / {len(dataloader):<10}\t' \
-            #           f'Time: {timedelta(seconds=end - start)}\t' \
-            #           f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
-            #           f'Dist: {dist:.6f}\t' \
-            #           f'IO_tensor(time_count): {load_time:.4f}, {load_cnt}'
-
-            # self.LOG_details.info(details)
-            # print(details)
+            self.LOG_loss.info(loss_details)
+            self.LOG_time.info(time_details)
             
         print(f'average_loss: {sum_loss / n_pairs:.6f}')
             

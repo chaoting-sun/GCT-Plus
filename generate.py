@@ -130,6 +130,7 @@ def predict_molecules(args, model, target_properties, TRG, scaler, toklen_data,
                       f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
         if os.path.exists(smiles_path):
             continue # filter the files already run
+        
         print(f"\n>>> Desirable Properties (logP, tPSA, QED): "
               f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
 
@@ -235,7 +236,7 @@ if __name__ == "__main__":
                 exit('Bye~ Bye~')
             else:
                 print('Please enter Y/N !!!!')
-f
+
             generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
                           toklen_data, num_samplings=40, device=device)
     else:

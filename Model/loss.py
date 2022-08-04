@@ -120,5 +120,6 @@ class LossCompute:
         if self.optim is not None: # training section
             loss.backward()
             self.optim.step()
-            self.optim.optimizer.zero_grad()
+            # initialization is faster than setting all to 0
+            self.optim.optimizer.zero_grad(set_to_none=True)
         return loss.data

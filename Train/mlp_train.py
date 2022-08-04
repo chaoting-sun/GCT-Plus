@@ -46,7 +46,8 @@ def mlp_train(args, debug=False):
                          prop_path=os.path.join(train_raw_folder, 'prop_serial_tf.csv'),
                          device=device)
 
-    train_dl = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    train_dl = DataLoader(dataset, batch_size=args.batch_size, shuffle=True,
+                          num_workers=args.n_jobs, pin_memory=True)
 
     """ validation data """
 
@@ -64,12 +65,13 @@ def mlp_train(args, debug=False):
         prop_data.to_csv(os.path.join(valid_raw_folder, 'prop_serial_tf.csv'), index=False)
 
     dataset = mlpDataset(conditions=args.conditions,
-                         tensor_folder=os.path.join(valid_raw_folder, 'tensor'),
+                         mat_folder=os.path.join(valid_raw_folder, 'encoder_outputs'),
                          pair_path=os.path.join(valid_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
                          prop_path=os.path.join(valid_raw_folder, 'prop_serial_tf.csv'),
                          device=device)
 
-    valid_dl = DataLoader(dataset, batch_size=args.batch_size)
+    valid_dl = DataLoader(dataset, batch_size=args.batch_size, 
+                          num_workers=args.n_jobs, pin_memory=True)
 
 
     # for i, batch in enumerate(dataloader):

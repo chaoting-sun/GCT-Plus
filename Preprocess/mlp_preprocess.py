@@ -3,6 +3,7 @@ import time
 import joblib
 import argparse
 import pandas as pd
+import dill as pickle
 from functools import partial
 from datetime import timedelta
 from multiprocessing import Pool
@@ -229,10 +230,13 @@ def mlp_preprocess(args, datatype, n_samples=None):
         print(f'{128*i} / {len(dataset)}')
         src_mask = create_source_mask(batch.smiles, batch.conds)
         x = model.encode(batch.smiles, batch.conds, src_mask)[0]
+        # for b in range(x.size(0)):
+        #     torch.save(x[b].clone().detach(),
+        #                os.path.join(raw_folder, 'tensor', f'{batch.smi_no[b]}.pt'))
         for b in range(x.size(0)):
-            torch.save(x[b].clone().detach(),
-                       os.path.join(raw_folder, 'tensor', f'{batch.smi_no[b]}.pt'))
-
+            pickle.dump(x[b].cpu().detach().numpy(),
+                        open(os.path.join(raw_folder, 'encoder_outputs',
+                                          f'{batch.smi_no[b]}.pkl')))
     return
     
     print('Get similar molecular pairs...')
