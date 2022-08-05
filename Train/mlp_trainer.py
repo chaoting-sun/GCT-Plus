@@ -118,6 +118,7 @@ class Trainer(object):
                            f'IOTime: {timedelta(seconds=pickle_load.cummulative_time)}' \
 
             print(loss_details)
+            n_pairs += len(batch['src'])
 
             self.LOG_loss.info(loss_details)
             self.LOG_time.info(time_details)
