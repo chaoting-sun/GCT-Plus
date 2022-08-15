@@ -139,49 +139,70 @@ class Decoder(nn.Module):
         return self.norm(x), q_k_dec1, q_k_dec2
     
 
-class MLP(nn.Module):
-    def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
-                 dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLP, self).__init__()
+# class MLP(nn.Module):
+#     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
+#                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
+#         super(MLP, self).__init__()
+#         # settings
+#         self.nconds = nconds
+#         self.use_cond2dec = use_cond2dec
+#         self.use_cond2lat = use_cond2lat
+
+#         # model architecture
+#         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
+#                                nconds, dropout, variational)
+#         self.sampler = Sampler(d_model, latent_dim, variational)
+#         self.mlp = MLPLayers(src_vocab, latent_dim, 2*nconds, d_model)
+#         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
+#                                nconds, dropout, use_cond2dec, use_cond2lat)
+#         self.out = nn.Linear(d_model, trg_vocab)
+#         self.reset_parameters()
+
+#         # other layers
+#         if self.use_cond2dec == True:
+#             self.prop_fc = nn.Linear(trg_vocab, 1)
+
+#     def reset_parameters(self):
+#         for p in self.parameters():
+#             if p.dim() > 1:
+#                 nn.init.xavier_uniform_(p)
+    
+#     def encode(self, src, conds, mask):
+#         return self.encoder(src, conds, mask)
+
+#     def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
+#         # dim. of input: (batch size, max length, d_model)
+#         decoded = self.decoder(trg, e_outputs, dconds, 
+#                                src_mask, trg_mask)[0]
+#         return self.out(decoded)
+
+#     def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+#         mconds, dconds = conds[0], conds[1]
+#         x = self.mlp(e_outputs, mconds)
+#         e_outputs, _, _ = self.sampler(x)
+#         return self.out(self.decoder(trg, e_outputs,
+#                         dconds, src_mask, trg_mask)[0])
+
+#     def forward(self, src, trg, mconds):
+#         z1, _, _ = self.sampler(src)
+#         x = self.mlp(z1, mconds)
+#         z1, _, _ = self.sampler(x)
+#         z2, _, _ = self.sampler(trg)
+#         return z1, z2
+
+
+class MLP_Train(nn.Module):
+    def __init__(self, src_vocab, trg_vocab, d_model=256, latent_dim=64, 
+                 dropout=0.1, nconds=3, variational=True):
+        super(MLP_Train, self).__init__()
         # settings
         self.nconds = nconds
-        self.use_cond2dec = use_cond2dec
-        self.use_cond2lat = use_cond2lat
 
         # model architecture
-        self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
-                               nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
         self.mlp = MLPLayers(src_vocab, latent_dim, 2*nconds, d_model)
-        self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
-                               nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
-        self.reset_parameters()
 
-        # other layers
-        if self.use_cond2dec == True:
-            self.prop_fc = nn.Linear(trg_vocab, 1)
-
-    def reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-    
-    def encode(self, src, conds, mask):
-        return self.encoder(src, conds, mask)
-
-    def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
-        # dim. of input: (batch size, max length, d_model)
-        decoded = self.decoder(trg, e_outputs, dconds, 
-                               src_mask, trg_mask)[0]
-        return self.out(decoded)
-
-    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
-        mconds, dconds = conds[0], conds[1]
-        x = self.mlp(e_outputs, mconds)
-        e_outputs, _, _ = self.sampler(x)
-        return self.out(self.decoder(trg, e_outputs,
-                        dconds, src_mask, trg_mask)[0])
 
     def forward(self, src, trg, mconds):
         z1, _, _ = self.sampler(src)

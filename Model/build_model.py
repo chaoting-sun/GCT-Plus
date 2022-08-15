@@ -4,7 +4,7 @@ import torch
 from .transformer import Transformer
 from .mlp_encoder import MLPEncoder
 from .mlp_transformer import MLPTransformer
-from .mlp import MLP
+from .mlp import MLP_Train #, MLP
 
 
 def transfer_parameters(transformer, mlptransformer):
@@ -70,6 +70,15 @@ def build_mlpencoder(src_vocab, trg_vocab, N, d_model, d_ff,
     return mlptf
 
 
+def build_mlptrain(src_vocab, trg_vocab, d_model, latent_dim, 
+                   dropout, nconds, variational, model_path):
+    mlptrain = MLP_Train(src_vocab, trg_vocab, d_model, latent_dim, 
+                         dropout, nconds, variational)
+    if model_path is not None:
+        mlptrain.load_state_dict(torch.load(model_path)['model_state_dict'])
+    return mlptrain
+
+
 def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff, 
               H, latent_dim, dropout, nconds, use_cond2dec, 
               use_cond2lat, variational, transfer_path,
@@ -87,7 +96,7 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
     return mlp
 
 
-def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None):
+def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, train=False):
     if args.model_type == "transformer":
         # training phase I
         model = build_transformer(SRC_vocab_len, TRG_vocab_len,
@@ -113,10 +122,15 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None):
                                  args.molgct_path, model_path)
     elif args.model_type == "mlp":
         # training phase II
-        model = build_mlp(SRC_vocab_len, TRG_vocab_len,
-                          args.N, args.d_model, args.d_ff, 
-                          args.H, args.latent_dim, args.dropout,
-                          args.nconds, args.use_cond2dec,
-                          args.use_cond2lat, args.variational,
-                          args.molgct_path, model_path)
+        if train is True:
+            model = build_mlptrain(SRC_vocab_len, TRG_vocab_len, args.d_model,
+                                   args.latent_dim, args.dropout, args.nconds,
+                                   args.variational, model_path)
+        else:
+            model = build_mlp(SRC_vocab_len, TRG_vocab_len,
+                            args.N, args.d_model, args.d_ff, 
+                            args.H, args.latent_dim, args.dropout,
+                            args.nconds, args.use_cond2dec,
+                            args.use_cond2lat, args.variational,
+                            args.molgct_path, model_path)
     return model

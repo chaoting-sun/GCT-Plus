@@ -5,6 +5,15 @@ import torch.nn.functional as F
 from Utils.chrono import Chrono, Timer
 
 
+class MSELoss(nn.Module):
+    def __init__(self):
+        super(MSELoss, self).__init__()
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, predict, target):
+        return self.mse_loss(predict, target)
+
+
 class Criterion(nn.Module):
     """ 
     - function: compute reconstruction loss (contain label smoothing) and KL divergence

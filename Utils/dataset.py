@@ -1,7 +1,10 @@
 # general modules
+import io
 import os
 import time
+import gc
 import joblib
+import sqlite3
 import pandas as pd
 import dill as pickle
 from multiprocessing import Pool
@@ -139,60 +142,232 @@ def to_dataloader(data_iter, conditions, pad_idx, device):
     return (rebatch(batch, conditions, pad_idx, device) for batch in data_iter)
 
 
+def adapter(python_type):
+    # adapt the Python type into an SQLite type
+    out = io.BytesIO()
+    np.save(out, python_type)
+    return sqlite3.Binary(out.getvalue())
+
+
+def converter(sqlite_object):
+    # convert SQLite objects into a Python object
+    return np.load(io.BytesIO(sqlite_object))
+
+
+def sqlite_initialize(db_filepath):
+    sqlite3.register_adapter(np.ndarray, adapter)
+    sqlite3.register_converter("array", converter)
+    con = sqlite3.connect(db_filepath, detect_types=sqlite3.PARSE_DECLTYPES)
+    cur = con.cursor()
+    # cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+    # cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx integer, arr array)")
+    cur.execute("PRAGMA cache_size = -163840") # kb
+    # cur.execute("PRAGMA journal_mode = OFF")
+    # cur.execute("PRAGMA synchronous = 0")
+    # cur.execute("PRAGMA locking_mode = EXCLUSIVE")
+    return con, cur
+
+
 @Chrono
-def tensor_load(file_path, device):
+def torch_load(file_path):
     tensor = torch.load(file_path)
-    return tensor.to(device)
+    return tensor
 
 
 @Chrono
-def pickle_load(file_path, device):
+def pickle_load(file_path):
     mat = pickle.load(open(file_path, 'rb'))
     return mat
     # return torch.from_numpy(mat).to(device)
 
 
+@Chrono
+def np_load(file_path, device):
+    # mat = np.memmap(file_path, dtype='float32', mode='c', shape=(80,512))
+    mat = np.load(file_path, mmap_mode="c", allow_pickle=True)
+    return mat
+
+
+@Chrono
+def memmap_tp_torch(memmap):
+    return torch.from_numpy(memmap)
+
+
+@Chrono
+def to_device(tensor, device):
+    return tensor.to(device)
+
+
+@Chrono
+def sqlite_select(cursor, no1, no2):
+    table_name = "nparray"
+    cursor.execute(f"SELECT arr FROM {table_name} "
+                   f"WHERE idx IN (?, ?)", (no1, no2))
+    records = cursor.fetchall()
+    if no1 == no2:
+        return records[0][0], records[0][0]
+    return records[0][0], records[1][0]
+
+
+# class mlpDataset(Dataset):
+#     def __init__(self, conditions, encoder_outputs, pair_path,
+#                  prop_path, device, transform=None):
+#         self.conditions = conditions
+#         self.encoder_outputs = encoder_outputs
+#         self.transform = transform
+#         self.device = device
+
+#         self.pair_data = pd.read_csv(pair_path)
+#         self.prop_data = pd.read_csv(prop_path)
+#         # self.prop_data = self.prop_data.set_index('no')
+#         self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
+
+
+#     def __len__(self):
+#         return len(self.pair_data)
+
+#     def __getitem__(self, idx):
+#         row = self.pair_data.iloc[idx]
+#         no1, no2 = row['no1'], row['no2']
+
+#         src = memmap_tp_torch(self.encoder_outputs[no1-1])
+#         trg = memmap_tp_torch(self.encoder_outputs[no2-1])
+#         src = to_device(src, self.device)
+#         trg = to_device(trg, self.device)
+
+#         src_conds = torch.as_tensor(self.prop_data[no1],
+#                                     dtype=torch.float32,
+#                                     device=self.device)
+#         trg_conds = torch.as_tensor(self.prop_data[no2],
+#                                     dtype=torch.float32,
+#                                     device=self.device)
+#         dif_conds = torch.sub(trg_conds, src_conds)
+
+#         mconds = torch.cat([src_conds, dif_conds]).clone().detach()
+
+#         sample = { 'src': src, 'trg': trg, 'mconds': mconds }
+#         return sample
+
+
+
 class mlpDataset(Dataset):
-    def __init__(self, conditions, mat_folder, pair_path,
-                 prop_path, device, transform=None):
+    def __init__(self, conditions, mat_folder, pair_path, 
+                 prop_path, device, batch_size, last_batch=1):
         self.conditions = conditions
         self.mat_folder = mat_folder
-        self.transform = transform
         self.device = device
+        self.dtype = torch.float32
 
         self.pair_data = pd.read_csv(pair_path)
-        self.prop_data = pd.read_csv(prop_path)
+        self.prop_data = pickle.load(open(prop_path, "rb"))
+        self.tensor_dict = OrderedDict()
         # self.prop_data = self.prop_data.set_index('no')
-        self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
+        # self.prop_data = self.prop_data.set_index('no').T.to_dict('list')
 
+        self.batch_size = batch_size
+        self.last_batch = last_batch
+        self.num_samples = 0
 
     def __len__(self):
         return len(self.pair_data)
 
     def __getitem__(self, idx):
+        if self.num_samples // self.batch_size < self.last_batch:
+            self.num_samples += 1
+            return { 'src': torch.empty(1), 'trg': torch.empty(1), 'mconds': torch.empty(1) }
+
         row = self.pair_data.iloc[idx]
         no1, no2 = row['no1'], row['no2']
+        
+        """
+        method1
+        1. preprocess: 將個別資料存成 torch array
+        2. train: 讀檔案 -> 給模型使用
+        """
 
-        src_t = pickle_load(os.path.join(self.mat_folder, f'{no1}.pt'), self.device)
-        trg_t = pickle_load(os.path.join(self.mat_folder, f'{no2}.pt'), self.device)
+        src = torch_load(os.path.join(self.mat_folder, f'{no1}.pt'))
+        trg = torch_load(os.path.join(self.mat_folder, f'{no2}.pt'))
+        src = src.to(self.device)
+        trg = trg.to(self.device)
 
-        src_t = torch.from_numpy(src_t).to(self.device)
-        trg_t = torch.from_numpy(trg_t).to(self.device)
+        # if no1 in self.tensor_dict:
+        #     src = self.tensor_dict[no1]
+        # else:
+        #     src = torch_load(os.path.join(self.mat_folder, f'{no1}.pt'))
+        #     # self.tensor_dict[no1] = src
 
-        # src_t = tensor_load(os.path.join(self.mat_folder, f'{no1}.pt'), self.device)
-        # trg_t = tensor_load(os.path.join(self.mat_folder, f'{no2}.pt'), self.device)
+        # if no2 in self.tensor_dict:
+        #     trg = self.tensor_dict[no2]
+        # else:
+        #     trg = torch_load(os.path.join(self.mat_folder, f'{no2}.pt'))
+        #     self.tensor_dict[no2] = trg
+
+        # if len(self.tensor_dict) > 20000:
+        #     del self.tensor_dict
+        #     self.tensor_dict = OrderedDict()
+        #     self.tensor_dict.popitem(last=False)
+        #     self.tensor_dict.popitem(last=False)
+
+        """
+        method2
+        1. preprocess: 將個別資料存成 numpy array
+        2. train: 讀檔案 -> 轉成 tensor -> 給模型使用
+        comment: 一開始比 method1 快很多，後來平均會比 method1 慢一點
+        """
+
+        # if no1 in self.tensor_dict:
+        #     src = self.tensor_dict[no1]
+        # else:
+        #     src = pickle_load(os.path.join(self.mat_folder, f'{no1}.pt'))
+        #     # self.tensor_dict[no1] = src
+
+        # if no2 in self.tensor_dict:
+        #     trg = self.tensor_dict[no2]
+        # else:
+        #     trg = pickle_load(os.path.join(self.mat_folder, f'{no2}.pt'))
+        #     self.tensor_dict[no2] = trg
+
+        # if len(self.tensor_dict) > 20000:
+        #     del self.tensor_dict
+        #     self.tensor_dict = OrderedDict()
+
+        # src = pickle_load(os.path.join(self.mat_folder, f'{no1}.pt'))
+        # trg = pickle_load(os.path.join(self.mat_folder, f'{no2}.pt'))
+        # src = torch.from_numpy(src).to(self.device, torch.float32)
+        # trg = torch.from_numpy(trg).to(self.device, torch.float32)
+
+        """
+        method3
+        1. preprocess: 將個別資料存成 numpy array
+        2. train: 用 memory-mapped file 方式讀檔案 -> 轉成 tensor -> 給模型使用
+        comment: 聽說比較快（省去很多system call），但沒比較快，還變慢
+        """
+        # src = np_load(os.path.join(self.mat_folder, f'{no1}.pt'), self.device)
+        # trg = np_load(os.path.join(self.mat_folder, f'{no2}.pt'), self.device)
+        # src = memmap_tp_torch(src).to(self.device)
+        # trg = memmap_tp_torch(trg).to(self.device)
+        
+        """
+        method4
+        1. preprocess: 將個別資料用 numpy array 的型別存到 sqlite3
+        2. train: 找檔案 -> 轉成 tensor -> 給模型使用
+        comment: 後來發現找檔案要 O(lg n)，結果更慢...
+        """
+        # src, trg = sqlite_select(self.sqlite_cursor, int(no1), int(no2))
+        # src = torch.from_numpy(src).to(self.device)
+        # trg = torch.from_numpy(trg).to(self.device)
 
         src_conds = torch.as_tensor(self.prop_data[no1],
-                                    dtype=torch.float32,
-                                    device=self.device)
+                                    dtype=torch.float32)
         trg_conds = torch.as_tensor(self.prop_data[no2],
-                                    dtype=torch.float32,
-                                    device=self.device)
+                                    dtype=torch.float32)
         dif_conds = torch.sub(trg_conds, src_conds)
+        mconds = torch.cat([src_conds, dif_conds]).detach()
+        # mconds = torch.cat([src_conds, dif_conds]).clone().detach()
 
-        mconds = torch.cat([src_conds, dif_conds]).clone().detach()
+        sample = { 'src': src, 'trg': trg, 'mconds': mconds }
+        del src, trg, mconds, src_conds, trg_conds, dif_conds
 
-        sample = { 'src': src_t, 'trg': trg_t, 'mconds': mconds }
         return sample
 
 

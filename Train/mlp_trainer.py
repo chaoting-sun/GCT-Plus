@@ -2,6 +2,7 @@ import os
 import gc
 from timeit import default_timer as timer
 # from time import time
+import glob
 from datetime import timedelta
 from line_profiler import LineProfiler
 # import pandas as pd
@@ -9,15 +10,17 @@ from line_profiler import LineProfiler
 # from itertools import tee
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from Tokenize import moltokenize
 
 
 from Model.mlp import decode
 from Model.modules import NoamOpt as moptim
-from Model.loss import LossCompute, Criterion
+from Model.loss import LossCompute, Criterion, MSELoss
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
-from Utils.dataset import pickle_load, tensor_load
+from Utils.dataset import pickle_load, torch_load, np_load, memmap_tp_torch, sqlite_select, to_device
 # import Process.data_preparation as pdp
 # import Process.vocabulary as mv
 
@@ -25,20 +28,28 @@ DEBUG = True
 N_SAMPLES = 80 if DEBUG is True else None
 
 
+# from pynvml import *
+# def gpu_utilization():
+#     nvmlInit()
+#     handle = nvmlDeviceGetHandleByIndex(0)
+#     info = nvmlDeviceGetMemoryInfo(handle)
+#     return info.used//1024**2 # MB
+
+
 class Trainer(object):
-    def __init__(self, args):
+    def __init__(self, args, SRC, TRG):
         # parameters for training
         self.args = args
-        os.makedirs(args.save_directory, exist_ok=True)
-        self.LOG = get_logger(name="train_model", 
-                   log_path=os.path.join(args.save_directory, 'train_model.log'))
-        self.LOG.info(args)
+        self.SRC = SRC
+        self.TRG = TRG
+        
+        self.save_directory = args.save_directory
+        os.makedirs(self.save_directory, exist_ok=True)
+        self.LOG_progress = get_logger(name="train_progress", 
+                   log_path=os.path.join(self.save_directory, 'train_progress.log'))
+        self.LOG_progress.info(args)
         self.LOG_details = get_logger(name="train_details", 
-                           log_path=os.path.join(args.save_directory, 'train_details.log'))
-        self.LOG_loss = get_logger(name="train_loss", 
-                        log_path=os.path.join(args.save_directory, 'train_loss.log'))
-        self.LOG_time = get_logger(name="train_time", 
-                        log_path=os.path.join(args.save_directory, 'train_time.log'))
+                           log_path=os.path.join(self.save_directory, 'train_details.log'))
 
     
     def get_optimization(self, trainable_parameters):
@@ -59,15 +70,17 @@ class Trainer(object):
         return optim
 
 
-    def save_checkpoint(self, model, optim, model_name, src_vocab_size, trg_vocab_size):
+    def save_checkpoint(self, optim, model, model_name):
         # save optimizer and hyperparametdecodeers
         os.makedirs(self.save_directory, exist_ok=True)
         file_name = os.path.join(self.save_directory, model_name)
         model_params = { 
-            'N': self.args.N, 'H': self.args.H, 'd_ff': self.args.d_ff, 'nconds': self.args.nconds, 
-            'd_model': self.args.d_model, 'dropout': self.args.dropout, 'latent_dim': self.args.latent_dim, 
+            'N': self.args.N, 'H': self.args.H, 'd_ff': self.args.d_ff,
+            'nconds': self.args.nconds, 'd_model': self.args.d_model,
+            'dropout': self.args.dropout, 'latent_dim': self.args.latent_dim, 
             'variational': self.args.variational, 'use_cond2dec': self.args.use_cond2dec, 
-            'use_cond2lat': self.args.use_cond2lat, 'src_vocab_size': src_vocab_size, 'trg_vocab_size': trg_vocab_size
+            'use_cond2lat': self.args.use_cond2lat, 'src_vocab_size': len(self.SRC.vocab), 
+            'trg_vocab_size': len(self.TRG.vocab)
         }
         save_dict = {
             'model_state_dict': model.state_dict(),
@@ -77,106 +90,133 @@ class Trainer(object):
         torch.save(save_dict, file_name)
 
 
-    def run_epoch(self, dataloader, model, loss_compute, TRG):
+    def remove_checkpoint(self, model_name):
+        checkpoint_path = os.path.join(self.save_directory, model_name)
+        os.remove(checkpoint_path)
+
+
+    def run_epoch(self, dataloader, model, loss_compute, device):
         """
         The following variables records the total values from the dataset
         """
-        sum_loss, n_pairs = 0, 0
-        total_model_time = total_update_time = 0
+        total_model_time = total_update_time = total_clear_time = 0
+        clear_time_last = load_time_last = 0
 
-        start_epoch_time = timer()
-        
+        time_tolerance = 2
+        save_interval = 100
+
+        start_time = timer()
+        kl_loss_fcn = nn.KLDivLoss(reduction='batchmean')
+    
         for i, batch in enumerate(dataloader):
+            nb = i+1 # nb-th batch
+            if nb <= self.last_batch:
+                del batch
+                start_time = timer() 
+                continue
+            
+            batch['src'] = batch['src'].to(device)
+            batch['trg'] = batch['trg'].to(device)
+            batch['mconds'] = batch['mconds'].to(device)
+    
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
             
-            start_model_time = timer()
+            total_model_time -= timer()
             trg_z_pred, trg_z_truth = model.forward(batch['src'],
                                                     batch['trg'],
                                                     batch['mconds'])
-            total_model_time += timer() - start_model_time
+            total_model_time += timer()
 
             # Compute loss (rec-loss + KL-div) and update
-            start_update_time = timer()
+            total_update_time -= timer()
             loss = loss_compute(trg_z_pred, trg_z_truth)
-            total_update_time += timer() - start_update_time
-
-            dist = (trg_z_pred.view(-1) - trg_z_truth.view(-1)).pow(2).mean().sqrt().item()
-
-            sum_loss += float(loss)
+            kl_loss = kl_loss_fcn(F.log_softmax(trg_z_pred.contiguous().view(-1), dim=-1), 
+                                  F.softmax(trg_z_truth.contiguous().view(-1), dim=-1))
+            total_update_time += timer()
             
-            end = timer()
+            total_clear_time -= timer()
+            torch.cuda.empty_cache()
+            del trg_z_pred, trg_z_truth, batch
+            gc.collect()
+            total_clear_time += timer()
 
-            loss_details = f'{i+1}/{len(dataloader):<10}\t' \
-                           f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
-                           f'Loss(*10^5): {float(loss)*10**5:.4f}\t' \
-                           f'RMSE: {dist:.6f}'
+            total_time = timer() - start_time
+            details = f'{i+1}/{len(dataloader):<10}\t' \
+                      f'KLdiv(*10^): {float(kl_loss)*10**7:.3f}\t' \
+                      f'RMSE: {float(loss):.3f}\t' \
+                      f'TotalT(s): {total_time:.2f}\t' \
+                      f'ModelT(s): {total_model_time:.2f}\t' \
+                      f'UpdateT(s): {total_update_time:.2f}\t' \
+                      f'ClearT(s): {total_clear_time:.2f}\t' \
+                      f'IOT(s): {torch_load.cummulative_time:.2f}\t' \
+                    #   f'IOT(s): {pickle_load.cummulative_time:.2f}\t' \
 
-            time_details = f'{i+1}/{len(dataloader):<10}\t' \
-                           f'TotalTime: {timedelta(seconds=end - start_epoch_time)}\t' \
-                           f'ModelTime: {timedelta(seconds=total_model_time)}\t' \
-                           f'UpdateTime: {timedelta(seconds=total_update_time)}\t' \
-                           f'IOTime: {timedelta(seconds=pickle_load.cummulative_time)}' \
+            self.LOG_details.info(details)
+            print(details)
 
-            print(loss_details)
-            n_pairs += len(batch['src'])
+            if nb % save_interval == 0:
+                self.save_checkpoint(loss_compute.optim, model, f"model_{self.last_epoch}_{nb}.pt")
+                if self.last_batch > -1:
+                    self.remove_checkpoint(f"model_{self.last_epoch}_{self.last_batch}.pt")
+                self.last_batch = nb
+            if (total_clear_time-clear_time_last) + \
+               (torch_load.cummulative_time-load_time_last) > time_tolerance:
+                self.save_checkpoint(loss_compute.optim, model, f"model_{self.last_epoch}_{nb}.pt")
+                if self.last_batch > -1:
+                    self.remove_checkpoint(f"model_{self.last_epoch}_{self.last_batch}.pt")
+                self.last_batch = nb
+                raise Exception('Training too slow!')
 
-            self.LOG_loss.info(loss_details)
-            self.LOG_time.info(time_details)
+            clear_time_last = total_clear_time
+            load_time_last = torch_load.cummulative_time
             
-        print(f'average_loss: {sum_loss / n_pairs:.6f}')
-            
-        return sum_loss / n_pairs
 
-
-    def train(self, model, train_dl, valid_dl, SRC, TRG):
-        criterion = Criterion()
+    def train(self, model, train_dl, valid_dl, last_batch, device):
+        criterion = MSELoss()
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
-        lowest_loss = 1000
-        early_stop, stop_cnt = 10, 0
-        epoch_best = self.args.start_epoch
+        # lowest_loss = 1000
+        # early_stop, stop_cnt = 10, 0
+        # epoch_best = self.args.start_epoch
 
         for epoch in range(self.args.start_epoch, self.args.num_epoch+1):
-            print(f"{epoch} EPOCH: ")
-
-            self.LOG.info("Starting EPOCH #%d", epoch)
-
+            self.last_epoch = epoch
+            self.last_batch = last_batch
+            self.LOG_progress.info(f"Start EPOCH {epoch}")
+            
             """ Train """
             model.train()
-
-            self.LOG.info("Training start")
-            acc_train, loss_train = self.run_epoch(train_dl, model,
-                                    LossCompute(criterion, optim), TRG)
-            self.LOG.info("Training end")
+            if last_batch == len(train_dl.dataset):
+                self.LOG_details.info(f"TrainingStart EPOCH: {epoch}")
+            self.run_epoch(train_dl, model, LossCompute(criterion, optim), device)
+            self.LOG_details.info(f"TrainingEnd")
 
             """ Validation """
             model.eval()
-
-            self.LOG.info("Validation start")
+            if last_batch == len(valid_dl.dataset):
+                self.LOG_details.info(f"ValidationStart EPOCH: {epoch}")
             with torch.no_grad():
-                acc_val, loss_val = self.run_epoch(valid_dl, model,
-                                    LossCompute(criterion, None), TRG)
-            self.LOG.info("Validation end")
+                self.run_epoch(valid_dl, model, LossCompute(criterion, None), device)
+            self.LOG_details.info(f"ValidationEnd")
 
-            """ Recording """
-            self.LOG.info("Train:Acc/loss {:.6},{:.6}\tValidation:Acc/loss {:.6},{:.6}".
-                          format(acc_train, loss_train, acc_val, loss_val))
+            # """ Recording """
+            # self.LOG_progress.info(f"TrainLoss {loss_train:.4f}\tValidationLoss {loss_val:.4f}")
 
-            """ Recording the best model """
-            if lowest_loss > loss_val:
-                # store lowest-loss new model every time is saferx
-                if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
-                    os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
+            # """ Recording the best model """
+            # if lowest_loss > loss_val:
+            #     # store lowest-loss new model every time is saferx
+            #     if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
+            #         os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
                     
-                self.save_checkpoint(model, optim, f"best_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
-                lowest_loss = loss_val
-                epoch_best = epoch
-                stop_cnt = 0
-            else:
-                stop_cnt += 1
+            #     self.save_checkpoint(optim, model, f"best_{epoch}.pt")
+            #     lowest_loss = loss_val
+            #     epoch_best = epoch
+            #     stop_cnt = 0
+            # else:
+            #     stop_cnt += 1
 
-            self.save_checkpoint(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
+            # self.save_checkpoint(optim, model, f"model_{epoch}.pt")
             
-            epoch += 1
-            if stop_cnt >= early_stop:
-                break
+            # epoch += 1
+            # if stop_cnt >= early_stop:
+            #     break
