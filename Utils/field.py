@@ -48,7 +48,7 @@ def get_fields(conditions, smiles_field_path=None):
     SRC, TRG = smiles_fields(smiles_field_path)
     COND = condition_fields(conditions)
     total_fields = [('src', SRC), ('trg_en', SRC), ('trg', TRG)]
-    total_fields.extend([('src_no', None)] + 
+    total_fields.extend([('src_no', None)] +
                         [(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
     total_fields.extend([('trg_no', None)] +
                         [(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])

@@ -2,8 +2,8 @@
 
 MLP_STACK=1
 SIMILARITY=1.00
-EPOCH=20
-GPU_IDX=0
+EPOCH=1
+GPU_IDX=3
 
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
 #     generate.py \
@@ -20,21 +20,21 @@ GPU_IDX=0
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
     generate.py \
         -variational \
-        -model_type mlp_transformer \
+        -model_type mlp_encoder \
     testing \
         -epoch ${EPOCH} \
         -decode_type mlp_decode \
-        -model_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/mlptf_train_stage2_sim${SIMILARITY}_${MLP_STACK} \
+        -model_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/mlptf_train_stage2_sim${SIMILARITY}_${MLP_STACK}_1st \
         -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/mlptf_sim${SIMILARITY}_${MLP_STACK} \
-    >mlptf_generate_sim${SIMILARITY}_${MLP_STACK}.out 2>mlptf_generate_sim${SIMILARITY}_${MLP_STACK}.err &
+    >mlptf_generate_sim${SIMILARITY}_${MLP_STACK}_1st.out 2>mlptf_generate_sim${SIMILARITY}_${MLP_STACK}_1st.err &
 
 # transformer - decoder
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
 #     generate.py \
 #         -variational \
 #         -model_type transformer \
 #     testing \
 #         -decode_type decode \
 #         -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/tf_sim1.00 \
-    # >tf_generate.out 2>tf_generate.err &
+#     >tf_generate.out 2>tf_generate.err &

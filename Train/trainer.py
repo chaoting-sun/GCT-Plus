@@ -1,20 +1,23 @@
 import os
 import gc
+import numpy as np
 import time
+from timeit import default_timer as timer
 from datetime import timedelta
 # import pandas as pd
 # import pickle as pkl
 # from itertools import tee
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from Tokenize import moltokenize
 # import torch.nn as nn
 
-from Model.loss import LossCompute, Criterion
 
 # from Model.mlp_transformer import decode
 from Model.mlp_encoder import decode
-from Model.loss import LossCompute, Criterion 
+from Model.loss import LossCompute, Criterion, MSELoss
 from Model.modules import NoamOpt as moptim
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
@@ -26,18 +29,28 @@ N_SAMPLES = 80 if DEBUG is True else None
 
 
 class Trainer(object):
-    def __init__(self, args, start_epoch):
+    def __init__(self, args):
         # parameters for training
         self.args = args
-        self.start_epoch = start_epoch
         os.makedirs(args.save_directory, exist_ok=True)
-        self.LOG = get_logger(name="train_model", 
-                              log_path=os.path.join(args.save_directory, 'train_model.log'))
-        self.LOG.info(args)
 
+        results_path = os.path.join(args.save_directory, 'train_results.log')
+        details_path = os.path.join(args.save_directory, 'train_details.log')
+
+        if args.start_epoch == 1:
+            if os.path.exists(results_path):
+                os.remove(results_path)
+            if os.path.exists(details_path):
+                os.remove(details_path)
+
+        self.LOG_results = get_logger(name="train_results", 
+                                      log_path=results_path)
+        self.LOG_results.info(args)
+        self.LOG_details = get_logger(name="train_details", 
+                                      log_path=details_path)
     
     def get_optimization(self, trainable_parameters):
-        if self.args.starting_epoch == 1:
+        if self.args.start_epoch == 1:
             optimizer = torch.optim.Adam(trainable_parameters, lr=0,
                                          betas=(self.args.adam_beta1, 
                                                 self.args.adam_beta2), 
@@ -46,7 +59,7 @@ class Trainer(object):
                            self.args.warmup_steps, optimizer)           
         else:
             checkpoint = torch.load(os.path.join(self.args.save_directory, 
-                                    f'model_{self.args.starting_epoch-1}.pt'), map_location='cuda:0')
+                                    f'model_{self.args.start_epoch-1}.pt'), map_location='cuda:0')
             optim_dict = checkpoint['optimizer_state_dict']
             optim = moptim(optim_dict['model_size'], optim_dict['factor'], 
                            optim_dict['warmup'], torch.optim.Adam(trainable_parameters, lr=0))
@@ -72,103 +85,102 @@ class Trainer(object):
         torch.save(save_dict, file_name)
 
 
-    def run_epoch(self, data_iter, model, loss_compute, device, TRG):
+    def run_epoch(self, data_iter, nbatches, model, loss_compute, device, TRG):
         """
         The following variables records the total values from the dataset
         """
-        n_samples = 10
-        sum_loss, n_pairs, n_correct = 0, 0, 0
-        dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'], device)
+        n_samples = 0
+        sum_rmse = sum_kldiv = 0
+        total_model_time = total_update_time = total_clear_time = 0
+
+        start_time = timer()
+        kl_loss_fcn = nn.KLDivLoss(reduction='batchmean')
+        
+        dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'],
+                                   self.args.max_strlen, device)
 
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
+            total_model_time -= timer()
             trg_z_pred, trg_z_truth = model.forward(batch.src,
                                                     batch.trg_en,
                                                     batch.econds,
                                                     batch.mconds,
                                                     batch.dconds)
+            total_model_time += timer()
 
             # Compute loss (rec-loss + KL-div) and update
+            total_update_time -= timer()
             loss = loss_compute(trg_z_pred, trg_z_truth)
-            smiles = decode.decode(model, batch.src,
-                                   batch.econds,
-                                   batch.mconds,
-                                   batch.dconds,
-                                   self.args.sos_idx,
-                                   self.args.eos_idx,
-                                   self.args.max_strlen, 
-                                   decode_type='greedy',
-                                   use_cond2dec=self.args.use_cond2dec)
+            kl_loss = kl_loss_fcn(F.log_softmax(trg_z_pred.contiguous().view(-1), dim=-1), 
+                                  F.softmax(trg_z_truth.contiguous().view(-1), dim=-1))
+            total_update_time += timer()
 
-            sum_loss += float(loss)
-            n_pairs += batch.trg.size(0)
+            total_clear_time -= timer()
+            torch.cuda.empty_cache()
+            total_clear_time += timer()
 
-            print('average_accuracy: {:.6f}\taverage_loss: {:.6f}'.
-                  format(n_correct*1.0/n_pairs, sum_loss/n_pairs))
-            
-            if i == len(data_iter) - 1:
-                samples = smiles[:n_samples].cpu().numpy()
-                targets = batch.trg_y[:n_samples].cpu().numpy()
+            sum_rmse += float(loss)
+            sum_kldiv += float(kl_loss)
+            n_samples += len(batch.src)
 
-        print(">>> accuracy: {:.6}\tloss: {:.6}".format(n_correct*1.0/n_pairs, 
-                                                        sum_loss/n_pairs))
+            end_time = timer()
 
-        for i in range(n_samples):
-            target_smiles = moltokenize.untokenizer(targets[i,:], self.args.sos_idx,
-                                                    self.args.eos_idx, TRG.vocab.itos)
-            predicted_smiles = moltokenize.untokenizer(samples[i,:], self.args.sos_idx, 
-                                                    self.args.eos_idx, TRG.vocab.itos)
-            if target_smiles == predicted_smiles:
-                n_correct += 1
-            print("TRG,PRED: {},{}".format(target_smiles, predicted_smiles))
+            details = f'{i+1}/{nbatches:<10}\t' \
+                      f'RMSE: {float(loss)/len(batch.src):.3f}\t' \
+                      f'KLDiv(*10^7): {float(kl_loss)*10**7/len(batch.src):.3f}\t' \
+                      f'TotalT(s): {end_time-start_time:.1f}\t' \
+                      f'ModelT(s): {total_model_time:.1f}\t' \
+                      f'UpdateT(s): {total_update_time:.1f}\t' \
+                      f'ClearT(s): {total_clear_time:.1f}\t'
+
+            self.LOG_details.info(details)
+            print(details)
+
+        return sum_rmse/n_samples, sum_kldiv/n_samples
 
 
-        # the accuracy in a epoch & average loss of each predicted token
-        return n_correct*1.0/n_pairs, sum_loss/n_pairs
-
-
-    def train(self, args, model, train_iter, valid_iter, SRC, TRG, device):
-        criterion = Criterion()
+    def train(self, model, train_iter, valid_iter, SRC, TRG, device):
+        # criterion = MSELoss()
+        criterion = MSELoss()
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
-        lowest_loss = 1000
-        early_stop, stop_cnt = 10, 0
-        epoch_best = args.starting_epoch
+        lowest_rmse = 1000
+        early_stop, stop_cnt = 4, 0
+        epoch_best = self.args.start_epoch
 
-        for epoch in range(self.start_epoch, args.num_epoch+1):
-            print(f"{epoch} EPOCH: ")
-
-            self.LOG.info("Starting EPOCH #%d", epoch)
+        for epoch in range(self.args.start_epoch, self.args.num_epoch+1):
+            self.LOG_results.info(f"Start EPOCH {epoch}")
 
             """ Train """
             model.train()
 
-            self.LOG.info("Training start")
-            acc_train, loss_train = self.run_epoch(train_iter, model,
-                                    LossCompute(criterion, optim), device, TRG)
-            self.LOG.info("Training end")
+            self.LOG_details.info(f"Training Start EPOCH: {epoch}")
+            train_rmse, train_kldiv = self.run_epoch(train_iter, self.args.train_nbatches, model, 
+                                                     LossCompute(criterion, optim), device, TRG)
+            self.LOG_details.info("Training End")
 
             """ Validation """
             model.eval()
 
-            self.LOG.info("Validation start")
+            self.LOG_details.info(f"Validation Start EPOCH: {epoch}")
             with torch.no_grad():
-                acc_val, loss_val = self.run_epoch(valid_iter, model,
-                                    LossCompute(criterion, None), device, TRG)
-            self.LOG.info("Validation end")
+                valid_rmse, valid_kldiv = self.run_epoch(valid_iter, self.args.valid_nbatches, model,
+                                                          LossCompute(criterion, None), device, TRG)
+            self.LOG_details.info("Validation End")
 
             """ Recording """
-            self.LOG.info("Train:Acc/loss {:.6},{:.6}\tValidation:Acc/loss {:.6},{:.6}".
-                          format(acc_train, loss_train, acc_val, loss_val))
+            self.LOG_results.info(f"Train:RMSE/KLDiv(10^6) {train_rmse:.3f}/{train_kldiv*10**6:.3f}\t"
+                                   f"Valid:RMSE/KLDiv(10^6) {valid_rmse:.3f}/{valid_kldiv*10**6:.3f}")
 
             """ Recording the best model """
-            if lowest_loss > loss_val:
+            if lowest_rmse > valid_rmse:
                 # store lowest-loss new model every time is saferx
                 if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
                     os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
                     
                 self.save_checkpoint(model, optim, f"best_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
-                lowest_loss = loss_val
+                lowest_rmse = valid_rmse
                 epoch_best = epoch
                 stop_cnt = 0
             else:
@@ -176,6 +188,5 @@ class Trainer(object):
 
             self.save_checkpoint(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
             
-            epoch += 1
             if stop_cnt >= early_stop:
                 break

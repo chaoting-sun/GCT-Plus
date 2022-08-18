@@ -7,7 +7,7 @@
 import os
 import argparse
 
-from Train.preprocess import preprocess
+from Preprocess.preprocess import preprocess
 from Preprocess.mlp_preprocess import mlp_preprocess
 from Configuration.config import options
 
@@ -29,5 +29,6 @@ if __name__ == "__main__":
         mlp_preprocess(args, 'train')
         mlp_preprocess(args, 'validation')
         mlp_preprocess(args, 'test')
-    else:
-        preprocess(args, debug=DEBUG)
+    elif args.model_type == 'mlp_encoder':
+        preprocess(args, 'validation')
+        preprocess(args, 'train')

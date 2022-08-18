@@ -19,7 +19,7 @@ from Utils.property import tanimoto_similarity
 from Utils.dataset import get_condition
 from Model import create_source_mask
 from Model.build_model import build_model
-from fp2sim2 import get_similar_molecular_pairs
+from Preprocess.augmentation import get_similar_molecular_pairs
 
 
 def data_augmentation(dataset, save_path, similarity, n_jobs):
@@ -177,9 +177,6 @@ def mlp_preprocess(args, datatype, n_samples=None):
 
     os.makedirs(aug_folder, exist_ok=True)
     os.makedirs(os.path.join(raw_folder, 'tensor'), exist_ok=True)
-
-    if os.path.exists(os.path.join(raw_folder, 'tensor/1.pt')):
-        return
 
     print('Obtain transformed conditions...')
     df_conds = condition_preparation(os.path.join(raw_folder, 'prop_serial.csv'),

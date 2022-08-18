@@ -1,4 +1,3 @@
-from imp import source_from_cache
 import os
 import time
 import numpy as np
@@ -251,6 +250,77 @@ def tensor_to_numpy():
         print(i)
 
 
+import csv
+import linecache
+from torchtext import data
+from time import time
+from collections import OrderedDict
+
+class LazyTextDataset(data.Dataset):
+    def __init__(self, filename):
+        self._filename = filename
+        self._total_data = 0
+        with open(filename, "r") as f:
+            self._total_data = len(f.readlines()) - 1
+        
+        line = linecache.getline(self._filename, 1)
+        # list of header names
+        self.header = list(csv.reader([line], delimiter=','))[0]
+
+    def __getitem__(self, idx):
+        # the line with index 0 is always empty
+        line = linecache.getline(self._filename, idx + 2)
+        csv_line = list(csv.reader([line], delimiter=','))[0]
+
+        sample = OrderedDict()
+        for i, val in enumerate(csv_line):
+            sample[self.header[i]] = val
+
+        print(sample)
+        return sample
+
+    def __len__(self):
+        return self._total_data
+
+import pandas as pd
+
+class customDataset(data.Dataset):
+    def __init__(self, file_path, transform=None):
+        self.transform = transform
+        self.file = pd.read_csv(file_path, engine="pyarrow")
+
+    def __getitem__(self, idx):
+        samples = self.file.iloc[idx]
+        print(samples)
+        return samples
+
+    def __len__(self):
+        return len(self.file)
+    
+
+def create_a_dataset():
+    file_name = "validation"
+    file_path = f"/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim0.70/{file_name}.csv"
+    
+    import sys
+    sys.setrecursionlimit(10000)
+    
+    construct_time = -time()
+    
+    construct_time += time()
+    f = customDataset(file_path)
+    enumerate_time = -time()
+    print(f[0])
+    for i, d in enumerate(f):
+        print(d)
+        if i == 10:
+            break
+    enumerate_time += time()
+    
+    print(f"time1: {construct_time}"
+          f"time2: {enumerate_time}")
+
+
 if __name__ == '__main__':
     # test_intdiv()
     # test_speed_of_open_binaryfiles()
@@ -259,4 +329,5 @@ if __name__ == '__main__':
     # test_float16()
     # file_float32_to_float16()
     # test_if_restart_is_possible()
-    tensor_to_numpy()
+    # tensor_to_numpy()
+    create_a_dataset()

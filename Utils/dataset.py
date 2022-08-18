@@ -109,19 +109,21 @@ class Batch:
             self.dconds = trg_cond.to(device)
 
 
-def rebatch(batch, conditions, pad_idx, device):
+def rebatch(batch, conditions, pad_idx, max_strlen, device):
     src = batch.src.transpose(0, 1)
     trg_en = batch.trg_en.transpose(0, 1)
     trg = batch.trg.transpose(0, 1)
 
-    src_len, trg_len = src.size(1), trg_en.size(1)
-    pad = torch.ones((src.size(0), abs(src_len - trg_len)),
+    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1))),
+                         dtype=torch.long) * pad_idx
+    trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1))),
+                            dtype=torch.long) * pad_idx
+    trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1))),
                      dtype=torch.long) * pad_idx
-
-    if src_len > trg_len:
-        trg_en = torch.cat([trg_en, pad], dim=1)
-    elif src_len < trg_len:
-        src = torch.cat([src, pad], dim=1)
+    
+    src = torch.cat([src, src_pad], dim=1)
+    trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
+    trg = torch.cat([trg, trg_pad], dim=1)
 
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:
@@ -138,8 +140,9 @@ def rebatch(batch, conditions, pad_idx, device):
                  src_cond_t, trg_cond_t, dif_cond_t)
 
 
-def to_dataloader(data_iter, conditions, pad_idx, device):
-    return (rebatch(batch, conditions, pad_idx, device) for batch in data_iter)
+def to_dataloader(data_iter, conditions, pad_idx, max_strlen, device):
+    return (rebatch(batch, conditions, pad_idx, max_strlen, device) 
+            for batch in data_iter)
 
 
 def adapter(python_type):
@@ -287,26 +290,24 @@ class mlpDataset(Dataset):
 
         src = torch_load(os.path.join(self.mat_folder, f'{no1}.pt'))
         trg = torch_load(os.path.join(self.mat_folder, f'{no2}.pt'))
-        src = src.to(self.device)
-        trg = trg.to(self.device)
 
         # if no1 in self.tensor_dict:
         #     src = self.tensor_dict[no1]
         # else:
         #     src = torch_load(os.path.join(self.mat_folder, f'{no1}.pt'))
-        #     # self.tensor_dict[no1] = src
 
         # if no2 in self.tensor_dict:
         #     trg = self.tensor_dict[no2]
         # else:
         #     trg = torch_load(os.path.join(self.mat_folder, f'{no2}.pt'))
-        #     self.tensor_dict[no2] = trg
 
-        # if len(self.tensor_dict) > 20000:
-        #     del self.tensor_dict
-        #     self.tensor_dict = OrderedDict()
-        #     self.tensor_dict.popitem(last=False)
-        #     self.tensor_dict.popitem(last=False)
+        # if len(self.tensor_dict) < 1000:
+        #     self.tensor_dict[no1] = src
+        #     self.tensor_dict[no2] = trg
+            # del self.tensor_dict
+            # self.tensor_dict = OrderedDict()
+            # self.tensor_dict.popitem(last=False)
+            # self.tensor_dict.popitem(last=False)
 
         """
         method2
@@ -366,7 +367,7 @@ class mlpDataset(Dataset):
         # mconds = torch.cat([src_conds, dif_conds]).clone().detach()
 
         sample = { 'src': src, 'trg': trg, 'mconds': mconds }
-        del src, trg, mconds, src_conds, trg_conds, dif_conds
+        # del src, trg, mconds, src_conds, trg_conds, dif_conds
 
         return sample
 

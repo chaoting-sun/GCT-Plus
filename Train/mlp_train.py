@@ -33,8 +33,8 @@ def mlp_train(args, debug=False):
         "validation": 176074
     }
 
+    """ Tools: scaler and fields """
     scaler = joblib.load(args.scaler_path)
-
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
 
     args.sos_idx = TRG.vocab.stoi['<sos>']
@@ -60,7 +60,7 @@ def mlp_train(args, debug=False):
 
     """ training data """
 
-    data_type = "validation"
+    data_type = "train"
     # data_num = dataset_dict[data_type]
     train_raw_folder = os.path.join(args.data_path, 'raw', data_type)
     train_aug_folder = os.path.join(args.data_path, 'aug', data_type)
@@ -83,6 +83,7 @@ def mlp_train(args, debug=False):
     # train_con, train_cur = sqlite_initialize(db_filepath=os.path.join(train_raw_folder, "encoder_outputs.db"))
 
     dataset = mlpDataset(conditions=args.conditions,
+                        #  mat_folder=os.path.join(args.data_path, f"raw/{data_type}/tensor"),
                          mat_folder=f"/fileserver2/chaoting/dataset/moses/raw/{data_type}/tensor",
                          pair_path=os.path.join(train_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
                          prop_path=os.path.join(train_raw_folder, 'prop_serial_tf.pt'),
@@ -123,6 +124,7 @@ def mlp_train(args, debug=False):
     # valid_con, valid_cur = sqlite_initialize(db_filepath=os.path.join(valid_raw_folder, "encoder_outputs.db"))
 
     dataset = mlpDataset(conditions=args.conditions,
+                        #  mat_folder=os.path.join(args.data_path, f"raw/{data_type}/tensor"),
                          mat_folder=f"/fileserver2/chaoting/dataset/moses/raw/{data_type}/tensor",
                          pair_path=os.path.join(valid_aug_folder, f'pair_serial_{args.similarity:.2f}.csv'),
                          prop_path=os.path.join(valid_raw_folder, 'prop_serial_tf.pt'),

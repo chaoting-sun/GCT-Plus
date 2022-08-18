@@ -102,7 +102,7 @@ class Trainer(object):
         total_model_time = total_update_time = total_clear_time = 0
         clear_time_last = load_time_last = 0
 
-        time_tolerance = 2
+        time_tolerance = 25
         save_interval = 100
 
         start_time = timer()
@@ -114,7 +114,7 @@ class Trainer(object):
                 del batch
                 start_time = timer() 
                 continue
-            
+
             batch['src'] = batch['src'].to(device)
             batch['trg'] = batch['trg'].to(device)
             batch['mconds'] = batch['mconds'].to(device)
@@ -136,13 +136,13 @@ class Trainer(object):
             
             total_clear_time -= timer()
             torch.cuda.empty_cache()
-            del trg_z_pred, trg_z_truth, batch
-            gc.collect()
+            # del trg_z_pred, trg_z_truth, batch
+            # gc.collect()
             total_clear_time += timer()
 
             total_time = timer() - start_time
             details = f'{i+1}/{len(dataloader):<10}\t' \
-                      f'KLdiv(*10^): {float(kl_loss)*10**7:.3f}\t' \
+                      f'KLdiv(*10^7): {float(kl_loss)*10**7:.3f}\t' \
                       f'RMSE: {float(loss):.3f}\t' \
                       f'TotalT(s): {total_time:.2f}\t' \
                       f'ModelT(s): {total_model_time:.2f}\t' \
@@ -150,19 +150,19 @@ class Trainer(object):
                       f'ClearT(s): {total_clear_time:.2f}\t' \
                       f'IOT(s): {torch_load.cummulative_time:.2f}\t' \
                     #   f'IOT(s): {pickle_load.cummulative_time:.2f}\t' \
+                    #   f'IOT(s): {pickle_load.cummulative_time:.2f}\t' \
 
             self.LOG_details.info(details)
-            print(details)
 
             if nb % save_interval == 0:
                 self.save_checkpoint(loss_compute.optim, model, f"model_{self.last_epoch}_{nb}.pt")
-                if self.last_batch > -1:
+                if self.last_batch > 0:
                     self.remove_checkpoint(f"model_{self.last_epoch}_{self.last_batch}.pt")
                 self.last_batch = nb
             if (total_clear_time-clear_time_last) + \
                (torch_load.cummulative_time-load_time_last) > time_tolerance:
                 self.save_checkpoint(loss_compute.optim, model, f"model_{self.last_epoch}_{nb}.pt")
-                if self.last_batch > -1:
+                if self.last_batch > 0:
                     self.remove_checkpoint(f"model_{self.last_epoch}_{self.last_batch}.pt")
                 self.last_batch = nb
                 raise Exception('Training too slow!')

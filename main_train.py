@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     options(parser)
     args = parser.parse_args()
-    print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
+    # print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
 
     if args.model_type == 'mlp':
         mlp_train(args, debug=DEBUG)
