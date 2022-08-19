@@ -321,6 +321,20 @@ def create_a_dataset():
           f"time2: {enumerate_time}")
 
 
+def a():
+    num_points = 5
+    target_properties = np.array(np.meshgrid(np.linspace(0.03, 4.97, num=num_points),
+                                            np.linspace(17.92, 112.83, num=num_points),
+                                            np.linspace(0.58, 0.95, num=num_points))) \
+                        .T.reshape(-1, 3)
+
+    for i, (p1, p2, p3) in enumerate(target_properties):
+        print(i)
+        if abs(p1-1.26)<0.01 and abs(p2-17.92)<0.01 and abs(p3-0.86)<0.01:
+            print(p1, p2, p3)
+            break
+
+
 if __name__ == '__main__':
     # test_intdiv()
     # test_speed_of_open_binaryfiles()
@@ -330,4 +344,5 @@ if __name__ == '__main__':
     # file_float32_to_float16()
     # test_if_restart_is_possible()
     # tensor_to_numpy()
-    create_a_dataset()
+    # create_a_dataset()
+    a()

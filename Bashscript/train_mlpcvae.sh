@@ -21,9 +21,9 @@
 #     >train_sim1.out 2>train_sim1.err &
 
 MODEL_TYPE='mlp_encoder'
-SIMILARITY=0.70
+SIMILARITY=0.80
 MLP_STACK=1
-GPU_IDX=1
+GPU_IDX=0
 NUM_EPOCH=40
 
 # train
