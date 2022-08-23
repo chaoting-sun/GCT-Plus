@@ -34,24 +34,24 @@ def measure_time(f):
     return timed
 
 
-def get_benchmarking_dataset(data_name, data_type='train') -> pd.DataFrame:
-    """
-    Get the benchmarking dataset represented as strings
-    Returns a DataFrame with columns ['src_no', 'trg_no', 'src', 'trg']
+# def get_benchmarking_dataset(data_name, data_type='train') -> pd.DataFrame:
+#     """
+#     Get the benchmarking dataset represented as strings
+#     Returns a DataFrame with columns ['src_no', 'trg_no', 'src', 'trg']
 
-    Arguments:
-        data_name: 'moses' or 'guacamol'
-        data_type: 'train' or 'test'
-    """
-    if data_name == 'moses':
-        dataset = moses.get_dataset(data_type)
-    elif data_name == 'guacamol':
-        pass
-    dataset = pd.DataFrame.from_dict({
-        'no': [i+1 for i in range(len(dataset))],
-        'molecule': dataset,
-    })
-    return dataset
+#     Arguments:
+#         data_name: 'moses' or 'guacamol'
+#         data_type: 'train' or 'test'
+#     """
+#     if data_name == 'moses':
+#         dataset = moses.get_dataset(data_type)
+#     elif data_name == 'guacamol':
+#         pass
+#     dataset = pd.DataFrame.from_dict({
+#         'no': [i+1 for i in range(len(dataset))],
+#         'molecule': dataset,
+#     })
+#     return dataset
 
 
 def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:

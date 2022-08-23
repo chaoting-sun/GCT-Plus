@@ -5,28 +5,57 @@ import torch.nn.functional as F
 from Utils.chrono import Chrono, Timer
 
 
-class MSELoss(nn.Module):
+class MSE(nn.Module):
     def __init__(self):
-        super(MSELoss, self).__init__()
+        super(MSE, self).__init__()
         self.mse_loss = nn.MSELoss()
 
     def forward(self, predict, target):
         return self.mse_loss(predict, target)
 
 
-class Criterion(nn.Module):
+class KLDiv(nn.Module):
     """ 
     - function: compute reconstruction loss (contain label smoothing) and KL divergence
         - dependency 1: RecLoss
         - dependency 2: KLDivergence
     """
     def __init__(self):
-        super(Criterion, self).__init__()
+        super(KLDiv, self).__init__()
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
         # self.kl_loss = F.kl_div
     
     def forward(self, predict, target):
+        predict = predict.view(-1, predict.size()[-1])
+        target = target.view(-1, target.size()[-1])
         return self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
+
+
+class MSE_KLDiv(nn.Module):
+    def __init__(self):
+        super(MSE_KLDiv, self).__init__()
+        self.mse_loss = nn.MSELoss(reduction='mean') # default: mean
+        self.kl_loss = nn.KLDivLoss(reduction='batchmean')
+        self.beta = 10
+
+    def forward(self, predict, target):
+        predict = predict.view(-1, predict.size()[-1])
+        target = target.view(-1, target.size()[-1])
+        self.mse_loss = self.mse_loss(predict, target)
+        self.kl_loss = self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
+        return self.mse_loss + self.beta*self.kl_loss
+
+
+# https://discuss.pytorch.org/t/jensen-shannon-divergence/2626/10
+class JSD(nn.Module):
+    def __init__(self):
+        super(JSD, self).__init__()
+        self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
+
+    def forward(self, p: torch.tensor, q: torch.tensor):
+        p, q = p.view(-1, p.size(-1)), q.view(-1, q.size(-1))
+        m = (0.5 * (p + q)).log()
+        return 0.5 * (self.kl(m, p.log()) + self.kl(m, q.log()))
 
 
 def tfRecLoss(x, target, size, smoothing, confidence, padding_idx):
@@ -49,9 +78,9 @@ def tfRecLoss(x, target, size, smoothing, confidence, padding_idx):
     return nn.KLDivLoss(reduction='batchmean')(x, Variable(true_dist, requires_grad=False))
 
 
-# ref: https://github.com/oriondollar/TransVAE/tree/578cb2b015e205da362332336d8f4815bd373edc
-def KLDiv(logvar, mu, beta):
-    return -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()) * beta
+# # ref: https://github.com/oriondollar/TransVAE/tree/578cb2b015e205da362332336d8f4815bd373edc
+# def KLDiv(logvar, mu, beta):
+#     return -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()) * beta
 
 
 class tfCriterion(nn.Module):
@@ -59,7 +88,7 @@ class tfCriterion(nn.Module):
     compute loss reconstruction loss and KL divergence for cvae-transformer
     """
     def __init__(self, size, padding_idx, smoothing=0.00, kldiv=False):
-        super(Criterion, self).__init__()
+        super(tfCriterion, self).__init__()
         self.padding_idx = padding_idx
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
@@ -124,8 +153,8 @@ class LossCompute:
         self.optim = optim
     
     def __call__(self, x, y):
-        loss = self.loss_function(x.contiguous().view(-1),
-                                  y.contiguous().view(-1))
+        loss = self.loss_function(x.contiguous(), y.contiguous())
+        # loss = self.loss_function(x.contiguous().view(-1), y.contiguous().view(-1))
         if self.optim is not None: # training section
             loss.backward()
             self.optim.step()

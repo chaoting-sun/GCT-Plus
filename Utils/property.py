@@ -1,7 +1,9 @@
+import numpy as np
 import rdkit.rdBase as rkrb
 import rdkit.RDLogger as rkl
 from rdkit.DataStructs import TanimotoSimilarity
 from rdkit.Chem import MolFromSmiles, MolToSmiles, Descriptors, Mol, AllChem
+from rdkit.Chem.rdchem import AtomValenceException
 
 from moses.metrics.SA_Score import sascorer
 from moses.metrics.NP_Score import npscorer
@@ -35,9 +37,9 @@ def QED(mol: Mol) -> float:
     """ RDKit's Quantitative Estimates of Drug-likeness """
     try:
         return Descriptors.qed(mol)
-    except:
+    except AtomValenceException:
         print('QED - invalid smiles:', MolToSmiles(mol))
-        exit(1)
+        return np.nan
 
 
 def SA(mol) -> float:

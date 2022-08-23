@@ -17,7 +17,7 @@ from Tokenize import moltokenize
 
 from Model.mlp import decode
 from Model.modules import NoamOpt as moptim
-from Model.loss import LossCompute, Criterion, MSELoss
+from Model.loss import LossCompute, MSE
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
 from Utils.dataset import pickle_load, torch_load, np_load, memmap_tp_torch, sqlite_select, to_device
@@ -172,7 +172,7 @@ class Trainer(object):
             
 
     def train(self, model, train_dl, valid_dl, last_batch, device):
-        criterion = MSELoss()
+        criterion = MSE()
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
         # lowest_loss = 1000

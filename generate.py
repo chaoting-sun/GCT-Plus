@@ -83,9 +83,11 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
     if model_type == 'transformer':
         model_path = 'molGCT/molgct.pt'
     elif args.epoch > 0:
-        model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
+        model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
+        # model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
     else:
         model_path = None
+    print("Model path:", model_path)
     return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path)
 
 
@@ -148,7 +150,8 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
                           f"logp_t\ttpsa_t\tqed_t\t"
                           f"logp_p\ttpsa_p\tqed_p\n")
 
-        for i in range(num_samplings):
+        for i in range(len(generated_smiles)):
+            print(f'{i:>5} Compute properties:', generated_smiles[i])
             mol = Chem.MolFromSmiles(generated_smiles[i])
             if mol is not None:
                 valid = 1
@@ -162,7 +165,7 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
                    f"{logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}"
 
             sample_file.write(line+'\n')
-            print(f"SMILES {i+1}:", line)
+            print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
 
 
 # def generate_smiles_from_properties(predictor, bsTool, conditions, TRG, scaler,
@@ -202,6 +205,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
+
+    print('-------------------------- Settings --------------------------')
+    print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
+    print('-------------------------- Settings --------------------------')
 
     device = allocate_gpu()
     scaler = joblib.load(args.scaler_path)
@@ -259,37 +266,44 @@ if __name__ == "__main__":
 
         # for logp, tpsa, qed in target_properties:
         for i, (logp, tpsa, qed) in enumerate(target_properties):    
-            print(f"\nDesirable Properties (logP, tPSA, QED): "
+            properties = (logp, tpsa, qed)
+
+            print(f"\n({i}) Desirable Properties (logP, tPSA, QED): "
                   f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
 
-            properties = (logp, tpsa, qed)
             smiles_path = os.path.join(args.storage_path,
-                          f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
-            
-            if os.path.exists(smiles_path):
-                continue # filter the files already run
+                          f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_pre.txt')
+            smiles_property_path = os.path.join(args.storage_path,
+                                   f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
+
+            # if os.path.exists(smiles_property_path):
+            #     continue # filter the files already run
             
             generate_smiles_time -= time()
             generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties, TRG,
                                                                scaler, toklen_data, device, num_samplings)
             generate_smiles_time += time()
-            
+
+            with open(smiles_path, 'w') as sample_file:
+                sample_file.write(f"number\tsmiles\n")
+                for i in range(len(generated_smiles)):
+                    sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")            
+
             store_properties_time -= time()
             store_properties_from_predicted_smiles(args, properties, property_prediction, 
-                                                   generated_smiles, smiles_path)
+                                                   generated_smiles, smiles_property_path)
             store_properties_time += time()
 
-            print(f"totalT: {time() - total_time:.2f}\t"
-                  f"generateT: {generate_smiles_time}\t"
-                  f"propertyT: {store_properties_time}")
+            print(f"generateT(s): {generate_smiles_time}\t"
+                  f"storepropT(s): {store_properties_time}\t"
+                  f"totalT(s): {time() - total_time}")
+            os.remove(smiles_path)
 
         print("Compute metrics for generated smiles of each desirable properties")
         
         for logp, tpsa, qed in target_properties:
             mean_file_path = os.path.join(args.storage_path, 
                              f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
-            if os.path.exists(mean_file_path):
-                continue
 
             with open(mean_file_path, 'w') as metrics_writer:
                 preds = pd.read_csv(os.path.join(args.storage_path, 
@@ -319,34 +333,34 @@ if __name__ == "__main__":
         
         print("Compute metrics for smiles of all property combinations")
 
-        if not os.path.exists(os.path.join(args.storage_path, 'output.txt')):
-            all_preds = None
-            for logp, tpsa, qed in target_properties:
-                preds = pd.read_csv(os.path.join(args.storage_path,
-                                    f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
-                all_preds = pd.concat([all_preds, preds], axis=0)
-            all_preds = all_preds.reset_index()
+        # if not os.path.exists(os.path.join(args.storage_path, 'output.txt')):
+        all_preds = None
+        for logp, tpsa, qed in target_properties:
+            preds = pd.read_csv(os.path.join(args.storage_path,
+                                f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+            all_preds = pd.concat([all_preds, preds], axis=0)
+        all_preds = all_preds.reset_index()
 
-            with open(os.path.join(args.storage_path, 'output.txt'), 'w') as all_metrics_writer:
-                head, line = generate_metrics_line(all_preds)
-                all_metrics_writer.write(head+'\n')
-                all_metrics_writer.write(line+'\n')
+        with open(os.path.join(args.storage_path, 'output.txt'), 'w') as all_metrics_writer:
+            head, line = generate_metrics_line(all_preds)
+            all_metrics_writer.write(head+'\n')
+            all_metrics_writer.write(line+'\n')
 
         print("Compute metrics for smiles of all property combinations except for logP=0.03")
 
-        if not os.path.exists(os.path.join(args.storage_path, 'output-logp0.03.txt')):
-            all_preds = None
-            for logp, tpsa, qed in target_properties:
-                if logp == 0.03:
-                    continue
-                preds = pd.read_csv(os.path.join(args.storage_path,
-                                    f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
-                all_preds = pd.concat([all_preds, preds], axis=0)
-            all_preds = all_preds.reset_index()
+        # if not os.path.exists(os.path.join(args.storage_path, 'output-logp0.03.txt')):
+        all_preds = None
+        for logp, tpsa, qed in target_properties:
+            if logp == 0.03:
+                continue
+            preds = pd.read_csv(os.path.join(args.storage_path,
+                                f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+            all_preds = pd.concat([all_preds, preds], axis=0)
+        all_preds = all_preds.reset_index()
 
-            with open(os.path.join(args.storage_path, 'output-logp0.03.txt'), 'w') as all_metrics_writer:
-                head, line = generate_metrics_line(all_preds)
-                all_metrics_writer.write(head+'\n')
-                all_metrics_writer.write(line+'\n')
+        with open(os.path.join(args.storage_path, 'output-logp0.03.txt'), 'w') as all_metrics_writer:
+            head, line = generate_metrics_line(all_preds)
+            all_metrics_writer.write(head+'\n')
+            all_metrics_writer.write(line+'\n')
         
         print("Work Finished")

@@ -64,9 +64,8 @@ def build_mlpencoder(src_vocab, trg_vocab, N, d_model, d_ff,
 
     if model_path is not None:
         mlptf.load_state_dict(torch.load(model_path)['model_state_dict'])
-    else:
-        transfer_parameters(tf, mlptf)
-        freeze_parameters(mlptf)
+    transfer_parameters(tf, mlptf)
+    freeze_parameters(mlptf)
     return mlptf
 
 
@@ -90,9 +89,8 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
               dropout, nconds, use_cond2dec, use_cond2lat, variational)
     if model_path is not None:
         mlp.load_state_dict(torch.load(model_path)['model_state_dict'])
-    else:
-        transfer_parameters(tf, mlp)
-        freeze_parameters(mlp)
+    transfer_parameters(tf, mlp)
+    freeze_parameters(mlp)
     return mlp
 
 

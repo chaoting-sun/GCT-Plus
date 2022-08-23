@@ -249,78 +249,6 @@ def tensor_to_numpy():
         pickle.dump(t, open(outpath, "wb"))
         print(i)
 
-
-import csv
-import linecache
-from torchtext import data
-from time import time
-from collections import OrderedDict
-
-class LazyTextDataset(data.Dataset):
-    def __init__(self, filename):
-        self._filename = filename
-        self._total_data = 0
-        with open(filename, "r") as f:
-            self._total_data = len(f.readlines()) - 1
-        
-        line = linecache.getline(self._filename, 1)
-        # list of header names
-        self.header = list(csv.reader([line], delimiter=','))[0]
-
-    def __getitem__(self, idx):
-        # the line with index 0 is always empty
-        line = linecache.getline(self._filename, idx + 2)
-        csv_line = list(csv.reader([line], delimiter=','))[0]
-
-        sample = OrderedDict()
-        for i, val in enumerate(csv_line):
-            sample[self.header[i]] = val
-
-        print(sample)
-        return sample
-
-    def __len__(self):
-        return self._total_data
-
-import pandas as pd
-
-class customDataset(data.Dataset):
-    def __init__(self, file_path, transform=None):
-        self.transform = transform
-        self.file = pd.read_csv(file_path, engine="pyarrow")
-
-    def __getitem__(self, idx):
-        samples = self.file.iloc[idx]
-        print(samples)
-        return samples
-
-    def __len__(self):
-        return len(self.file)
-    
-
-def create_a_dataset():
-    file_name = "validation"
-    file_path = f"/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim0.70/{file_name}.csv"
-    
-    import sys
-    sys.setrecursionlimit(10000)
-    
-    construct_time = -time()
-    
-    construct_time += time()
-    f = customDataset(file_path)
-    enumerate_time = -time()
-    print(f[0])
-    for i, d in enumerate(f):
-        print(d)
-        if i == 10:
-            break
-    enumerate_time += time()
-    
-    print(f"time1: {construct_time}"
-          f"time2: {enumerate_time}")
-
-
 def a():
     num_points = 5
     target_properties = np.array(np.meshgrid(np.linspace(0.03, 4.97, num=num_points),
@@ -335,6 +263,25 @@ def a():
             break
 
 
+def test_rdkit():
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors
+    from rdkit.Chem.rdchem import AtomValenceException
+    import numpy as np
+    
+    bad_smiles = "Cc1nnc(-c2c(C#N)c(N)n(-c3ccccc3)c2C=c1=O)N(C)C"
+    bad_mol1 = Chem.MolFromSmiles(bad_smiles, sanitize=True)
+    bad_mol2 = Chem.MolFromSmiles(bad_smiles, sanitize=False)    
+
+    print("logP:", Descriptors.MolLogP(bad_mol1))
+    print("tPSA:", Descriptors.TPSA(bad_mol1))
+    
+    try:
+        print("QED:", Descriptors.qed(bad_mol1))
+    except AtomValenceException:
+        print("QED:", np.nan)
+    print('end program')
+
 if __name__ == '__main__':
     # test_intdiv()
     # test_speed_of_open_binaryfiles()
@@ -345,4 +292,4 @@ if __name__ == '__main__':
     # test_if_restart_is_possible()
     # tensor_to_numpy()
     # create_a_dataset()
-    a()
+    test_rdkit()

@@ -231,5 +231,5 @@ class NoamOpt:
     def load_state_dict(self, state_dict):
         self._rate = state_dict['rate']
         self._step = state_dict['step']
+        # print(state_dict['inner_optimizer_state_dict'])
         self.optimizer.load_state_dict(state_dict['inner_optimizer_state_dict'])
-
