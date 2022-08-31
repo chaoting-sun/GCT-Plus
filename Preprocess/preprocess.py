@@ -157,6 +157,7 @@ def preprocess(args, data_type):
                                     pair_path=pair_path,
                                     similarity=args.similarity,
                                     n_workers=args.n_jobs)
+    return
 
     if not os.path.exists(processed_path):
         print("Prepare", processed_path)

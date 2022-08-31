@@ -8,8 +8,6 @@
 #         -similarity 0.7 \
 #         -n_jobs 8 \
 #         -load_field \
-#         -data_name moses \
-#         -data_path /fileserver-gamma/chaoting/ML/dataset/moses/ \
 #         -field_path ./molGCT \
 #         -load_scaler \
 #         -variational \
@@ -21,8 +19,6 @@
 #         -similarity 0.7 \
 #         -n_jobs 8 \
 #         -load_field \
-#         -data_name moses \
-#         -data_path /fileserver-gamma/chaoting/ML/dataset/moses/ \
 #         -field_path ./molGCT \
 #         -load_scaler \
 #         -model_type 'mlp' \
@@ -30,15 +26,13 @@
 #         # >preprocess.out 2>preprocess.err&
 
 MODEL_TYPE='mlp_encoder'
-SIMILARITY=0.90
+SIMILARITY=0.5
 
-python3 -u \
+nohup python3 -u \
     main_preprocess.py \
         -similarity ${SIMILARITY} \
         -n_jobs 4 \
         -load_field \
-        -data_name moses \
-        -data_path /fileserver-gamma/chaoting/ML/dataset/moses/ \
         -field_path ./molGCT \
         -load_scaler \
         -model_type ${MODEL_TYPE} \

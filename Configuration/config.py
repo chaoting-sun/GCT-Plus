@@ -4,8 +4,8 @@ def options(parser):
     """ GENERAL SETUP """
     # soft constraints
     parser.add_argument('-similarity', type=float, default=1, help="lowerbound of similarity between source and target")
-    parser.add_argument('-data_path', type=str, default='.', help="Path of dataset")
     # hard constraints
+    parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/', help="Path of dataset")
     parser.add_argument('-nconds', type=int, default=3, help="Number of conditions")
     parser.add_argument('-conditions', nargs='+', default=['logP', 'tPSA', 'QED'], help="Conditions")
     parser.add_argument('-max_strlen', type=int, default=80, help="max strin length")
@@ -87,7 +87,6 @@ def train_opts(parser):
 def generate_opts(parser):
     """ INPUT/OUTPUT """
     group = parser.add_argument_group('Input-Output')
-    group.add_argument('--data_path', required=True, help="Input data path")
     group.add_argument('--test_file-name', required=True, help="test file name without .csv")
     group.add_argument('--save-directory', default='evaluation', help="Result save directory")
 
@@ -110,7 +109,8 @@ def evaluation_opts(parser):
     parser.add_argument('-model_directory', default='train')
     parser.add_argument('-storage_path', type=str, default='molGCT/inference')
     parser.add_argument('-demo', action='store_true')
-    
+    parser.add_argument('-test_random', action='store_true')
+
     # hard constraints
     parser.add_argument('-logp_lb', type=float, default=0.03)
     parser.add_argument('-logp_ub', type=float, default=4.97)

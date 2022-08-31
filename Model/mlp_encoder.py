@@ -177,6 +177,11 @@ class MLPEncoder(nn.Module):
         z2, _, _ = self.sampler2(x)
         return z2
 
+    def encode_sample(self, src, econds, src_mask):
+        x, _ = self.encoder(src, econds, src_mask)
+        z, mu, log_var = self.sampler1(x)
+        return z, mu, log_var
+
     def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
         mconds, dconds = conds[0], conds[1]
         x = self.mlp(e_outputs, mconds)

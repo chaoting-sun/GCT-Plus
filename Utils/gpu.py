@@ -4,19 +4,15 @@ import torch.distributed as dist
 
 
 def allocate_gpu(id=None):
-    '''
-    choose the free gpu in the node
-    '''
     v = torch.empty(1)
     if id is not None:
         return torch.device("cuda:{}".format(str(id)))
     else:
-        for i in range(8):
+        for i in range(4):
             try:
                 dev_name = "cuda:{}".format(str(i))
                 v = v.to(dev_name)
                 print("Allocating cuda:{}.".format(i))
-
                 return v.device
             except Exception as e:
                 pass

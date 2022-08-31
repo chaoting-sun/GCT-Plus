@@ -15,15 +15,9 @@ class MSE(nn.Module):
 
 
 class KLDiv(nn.Module):
-    """ 
-    - function: compute reconstruction loss (contain label smoothing) and KL divergence
-        - dependency 1: RecLoss
-        - dependency 2: KLDivergence
-    """
     def __init__(self):
         super(KLDiv, self).__init__()
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
-        # self.kl_loss = F.kl_div
     
     def forward(self, predict, target):
         predict = predict.view(-1, predict.size()[-1])
@@ -145,7 +139,7 @@ class KLAnnealer:
 
 class LossCompute:
     """ 
-    - function: compute loss and train model
+    - function: compute loss and update the model parameters
         - dependence: loss function
     """
     def __init__(self, loss_function, optim):

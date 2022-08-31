@@ -58,7 +58,7 @@ class Trainer(object):
             optim = moptim(self.args.d_model, self.args.factor,
                            self.args.warmup_steps, optimizer)
         else:
-            checkpoint = torch.load(os.path.join(self.args.save_directory, 
+            checkpoint = torch.load(os.path.join(self.args.save_directory,
                                     f'model_{self.args.start_epoch-1}.pt'), map_location='cuda:0')
             optim_dict = checkpoint['optimizer_state_dict']
             optim = moptim(optim_dict['model_size'], optim_dict['factor'], 
@@ -94,12 +94,13 @@ class Trainer(object):
         total_model_time = total_update_time = total_clear_time = 0
 
         start_time = timer()
-        
-        # mse_kld = MSE_KLDiv()
         mse = MSE()
 
-        dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'],
-                                   self.args.max_strlen, device)
+        dataloader = to_dataloader(data_iter,
+                                   self.args.conditions,
+                                   TRG.vocab.stoi['<pad>'],
+                                   self.args.max_strlen,
+                                   device)
 
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)

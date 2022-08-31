@@ -1,9 +1,10 @@
 import numpy as np
-import rdkit.rdBase as rkrb
-import rdkit.RDLogger as rkl
+
+from rdkit import RDLogger, rdBase
 from rdkit.DataStructs import TanimotoSimilarity
-from rdkit.Chem import MolFromSmiles, MolToSmiles, Descriptors, Mol, AllChem
 from rdkit.Chem.rdchem import AtomValenceException
+from rdkit.Chem import MolFromSmiles, MolToSmiles, \
+    Descriptors, Mol, AllChem, SanitizeMol
 
 from moses.metrics.SA_Score import sascorer
 from moses.metrics.NP_Score import npscorer
@@ -13,9 +14,9 @@ def disable_rdkit_logging():
     """
     Disables RDKit whiny logging.
     """
-    logger = rkl.logger()
-    logger.setLevel(rkl.ERROR)
-    rkrb.DisableLog('rdApp.error')
+    logger = RDLogger.logger()
+    logger.setLevel(RDLogger.ERROR)
+    rdBase.DisableLog('rdApp.error')
 
 disable_rdkit_logging()
 
@@ -96,6 +97,25 @@ def to_mol(smi):
     """
     if isinstance(smi, str) and smi and len(smi)>0 and smi != 'nan':
         return MolFromSmiles(smi)
+
+
+# https://github.com/molecularsets/moses/blob/master/moses/metrics/metrics.py
+def get_mol(smiles_or_mol):
+    '''
+    Loads SMILES/molecule into RDKit's object
+    '''
+    if isinstance(smiles_or_mol, str):
+        if len(smiles_or_mol) == 0:
+            return None
+        mol = MolFromSmiles(smiles_or_mol)
+        if mol is None:
+            return None
+        try:
+            SanitizeMol(mol)
+        except ValueError:
+            return None
+        return mol
+    return smiles_or_mol
 
 
 def get_canonical_smile(smile):

@@ -40,8 +40,6 @@ def get_similar_molecular_pairs(smiles_path, pair_path, similarity, n_workers):
     find_sim_time = build_pairs_time = 0
     first = True
 
-    print(similarity)
-
     for i, (smi, idx1) in enumerate(dataset):
         find_sim_time -= time()
         results = fpe.similarity(smi, similarity, n_workers=n_workers)        

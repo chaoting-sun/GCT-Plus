@@ -13,8 +13,6 @@ until CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -similarity ${SIMILARITY} \
         -n_jobs 2 \
         -load_field \
-        -data_name moses \
-        -data_path /fileserver-gamma/chaoting/ML/dataset/moses/ \
         -field_path /fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/ \
         -load_scaler \
         -model_type ${MODEL_TYPE} \
@@ -38,8 +36,6 @@ done
 #         -similarity ${SIMILARITY} \
 #         -n_jobs 2 \
 #         -load_field \
-#         -data_name moses \
-#         -data_path /fileserver-gamma/chaoting/ML/dataset/moses/ \
 #         -field_path /fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/ \
 #         -load_scaler \
 #         -model_type ${MODEL_TYPE} \

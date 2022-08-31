@@ -19,6 +19,7 @@ def train(args, debug=False):
     set_seed(51)
     torch.set_printoptions(profile="full")
     device = allocate_gpu()
+    
 
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
 
@@ -26,8 +27,9 @@ def train(args, debug=False):
     print('Preparing training/validation dataset')
     prepare_dataset_time = -time()
     train_data, valid_data = data.TabularDataset.splits(
-        path=args.data_path, train='train.csv', validation='validation.csv',
-        test=None, format='csv', fields=fields, skip_header=True)
+        path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'),
+        train='train.csv', validation='validation.csv', test=None,
+        format='csv', fields=fields, skip_header=True)
     prepare_dataset_time += time()
 
     args.train_nbatches = int(np.ceil(len(train_data) / args.batch_size))

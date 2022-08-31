@@ -86,22 +86,14 @@ def to_tokenlist(dataset, data_path):
 
 
 class Batch:
-    "Object for holding a batch of data with mask during training."
-
     def __init__(self, src, trg_en, trg, pad_idx, device,
                  src_cond=None, dif_cond=None, trg_cond=None):
+        # input of encoder
         self.src = src.to(device)
-        self.trg_en = trg_en.to(device)    # the encoder input
-        # the expected output of the decoder
+        self.trg_en = trg_en.to(device)
+        # output of the decoder
         self.trg_y = trg[:, 1:].to(device)
-        self.trg = trg[:, :-1].to(device)  # the input of the decoder
-
-        # torch.set_printoptions(threshold=10_000)
-
-        # print('src:', self.src.size(), self.src[0])
-        # print('trg_y:', self.trg_y.size(), self.trg_y[0])
-        # print('trg:', self.trg.size(), self.trg_de[0])
-        # print('trg_en:', self.trg_en.size(), self.trg_en[0])
+        self.trg = trg[:, :-1].to(device)
 
         if src_cond is not None:
             self.econds = src_cond.to(device)

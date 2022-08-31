@@ -23,10 +23,4 @@ if __name__ == "__main__":
         mlp_train(args, debug=DEBUG)
 
     elif args.model_type == 'mlp_encoder':
-        if not os.path.exists(os.path.join(args.data_path, 'train.csv')):
-            exit('File not found: train.csv')
-
-        if not os.path.exists(os.path.join(args.data_path, 'validation.csv')):
-            exit('File not found: validation.csv')
-
         train(args, debug=DEBUG)

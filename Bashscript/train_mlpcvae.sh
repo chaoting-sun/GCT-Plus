@@ -6,8 +6,6 @@
 #         -similarity 1 \
 #         -n_jobs 2 \
 #         -load_field \
-#         -data_name moses \
-#         -data_path /fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1/ \
 #         -field_path /fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/ \
 #         -load_scaler \
 #         -variational \
@@ -21,9 +19,9 @@
 #     >train_sim1.out 2>train_sim1.err &
 
 MODEL_TYPE='mlp_encoder'
-SIMILARITY=0.70
+SIMILARITY=0.90
 MLP_STACK=1
-GPU_IDX=0
+GPU_IDX=3
 NUM_EPOCH=40
 START_EPOCH=1
 
@@ -34,9 +32,6 @@ START_EPOCH=1
 #         -similarity ${SIMILARITY} \
 #         -n_jobs 2 \
 #         -load_field \
-#         -data_name moses \
-#         -data_path /fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim${SIMILARITY}/ \
-#         -field_path /fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/ \
 #         -load_scaler \
 #         -variational \
 #     train-2nd \
@@ -48,14 +43,12 @@ START_EPOCH=1
 #         -train_stage 2 \
 #     >train_sim${SIMILARITY}_${MLP_STACK}.out 2>train_sim${SIMILARITY}_${MLP_STACK}.err &
 
+
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
     main_train.py \
         -similarity ${SIMILARITY} \
         -n_jobs 2 \
         -load_field \
-        -data_name moses \
-        -data_path /fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim${SIMILARITY}/ \
-        -field_path /fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/ \
         -load_scaler \
         -model_type ${MODEL_TYPE} \
         -variational \

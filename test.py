@@ -249,19 +249,6 @@ def tensor_to_numpy():
         pickle.dump(t, open(outpath, "wb"))
         print(i)
 
-def a():
-    num_points = 5
-    target_properties = np.array(np.meshgrid(np.linspace(0.03, 4.97, num=num_points),
-                                            np.linspace(17.92, 112.83, num=num_points),
-                                            np.linspace(0.58, 0.95, num=num_points))) \
-                        .T.reshape(-1, 3)
-
-    for i, (p1, p2, p3) in enumerate(target_properties):
-        print(i)
-        if abs(p1-1.26)<0.01 and abs(p2-17.92)<0.01 and abs(p3-0.86)<0.01:
-            print(p1, p2, p3)
-            break
-
 
 def test_rdkit():
     from rdkit import Chem
@@ -282,6 +269,111 @@ def test_rdkit():
         print("QED:", np.nan)
     print('end program')
 
+
+def test_novelty():
+    from multiprocessing import Pool
+    from Utils.property import get_mol
+    from Utils.mapper import mapper
+    from moses.metrics import metrics
+    import pandas as pd
+
+    n_jobs = 4
+    train = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/smiles_serial.csv")
+    # train = train['smiles'].tolist()
+    
+    gen_path = "/fileserver-gamma/chaoting/ML/cvae-transformer/Inference/tf_sim1.00/3.73_65.38_0.86.txt"
+    gen_path1 = "/fileserver-gamma/chaoting/ML/cvae-transformer/Inference/mlptf_sim0.90_1_mse_epoch3/2.50_65.38_0.86.txt"
+    gen = pd.read_csv(gen_path1, sep="\t")
+    gen = gen["smiles"].tolist()
+    print(f'train: {len(train)}\tgen: {len(gen)}, {len(set(gen))}')
+
+    if n_jobs != 1:
+        pool = Pool(n_jobs)
+        close_pool = True
+    else:
+        pool = 1
+    mols = mapper(pool)(get_mol, gen)
+    gen_novelty = metrics.novelty(mols, train, n_jobs)
+    print(gen_novelty)
+    if close_pool:
+        pool.close()
+        pool.join()
+
+
+def bar_plot():
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import plotly.graph_objects as go
+
+    n = 83
+
+    df = pd.DataFrame({
+        'dimension': [i for i in range(n)],
+        'data': np.random.normal(0, 0.5, n)
+    })
+
+    df["color"] = np.where(df["data"] < 0, 'orange', 'darkcyan')
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(name='data',
+               x=df['dimension'],
+               y=df['data'],
+               marker_color=df['color'])
+    )
+    fig.update_layout(
+        title={
+            'text': 'Correlation of Mean and Sigma',
+            'x': 0.5,
+            'y': 0.9,
+            'xanchor': 'center'
+        },
+        xaxis_title="dimension",
+        yaxis_title="correlation coefficient",
+        font={ 'size': 16 }
+    )
+    
+    fig.update(layout_yaxis_range=[-1,1])
+    fig.update_layout(barmode='stack')
+    fig.write_image("./test.png")
+    
+    return
+    # plt.figure(figsize=(14,10), dpi=80)
+    df.plot(kind='bar', color=df['color'])
+    plt.title('Correlation of Mean and Sigma', fontsize=20)
+    plt.xlabel('dimension', fontsize=18)
+    plt.ylabel('correlation coefficient', fontsize=18)
+    plt.ylim(bottom=-1, top=1)
+    plt.savefig("./test.png")
+
+
+def k():
+    import pandas as pd
+    import numpy as np
+    import dill as pickle
+
+    mu_corr_path = './all_mu.csv'
+    log_var_corr_path = './all_log_var.csv'
+
+    mu_corr = pd.read_csv(mu_corr_path, index_col=0)
+    log_var_corr = pd.read_csv(log_var_corr_path, index_col=0)
+
+    np.set_printoptions(threshold=np.inf)
+
+    print(mu_corr.max())
+    print(mu_corr.min())
+    print(log_var_corr.max())
+
+    mu_corr[:1000].to_csv('test.csv')
+
+    print(mu_corr[['4', '6']].corr())
+    print(log_var_corr[['4', '6']].corr())
+
+    non_zero = (mu_corr.loc[:, '0'] != 0).sum()
+    print(non_zero)
+
+
 if __name__ == '__main__':
     # test_intdiv()
     # test_speed_of_open_binaryfiles()
@@ -292,4 +384,7 @@ if __name__ == '__main__':
     # test_if_restart_is_possible()
     # tensor_to_numpy()
     # create_a_dataset()
-    test_rdkit()
+    # test_rdkit()
+    # test_novelty()
+    # bar_plot()
+    k()
