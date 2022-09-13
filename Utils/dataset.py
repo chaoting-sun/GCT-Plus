@@ -106,12 +106,12 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
     trg_en = batch.trg_en.transpose(0, 1)
     trg = batch.trg.transpose(0, 1)
 
-    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1))),
+    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) - len(conditions))),
                          dtype=torch.long) * pad_idx
-    trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1))),
+    trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1) - len(conditions))),
                             dtype=torch.long) * pad_idx
-    trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1))),
-                     dtype=torch.long) * pad_idx
+    trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - len(conditions))),
+                         dtype=torch.long) * pad_idx
     
     src = torch.cat([src, src_pad], dim=1)
     trg_en = torch.cat([trg_en, trg_en_pad], dim=1)

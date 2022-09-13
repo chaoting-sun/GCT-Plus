@@ -2,9 +2,10 @@ import os
 import torch
 
 from .transformer import Transformer
-from .mlp_encoder import MLPEncoder
 from .mlp_transformer import MLPTransformer
-from .mlp import MLP_Train #, MLP
+from .mlp_encoder import MLPEncoder
+from .att_encoder import ATTEncoder
+from .mlp import MLP_Train
 
 
 def transfer_parameters(transformer, mlptransformer):
@@ -17,10 +18,10 @@ def transfer_parameters(transformer, mlptransformer):
             exit()
 
 
-def freeze_parameters(mlptransformer):
+def freeze_parameters(mlptransformer, pass_keywords):
     for name, param in mlptransformer.named_parameters():
         name_split = name.split('.')
-        if name_split[0] == 'mlp':
+        if name_split[0] in pass_keywords:
             continue
         param.requires_grad = False
 
@@ -48,7 +49,7 @@ def build_mlptransformer(src_vocab, trg_vocab, N, d_model, d_ff, H,
         mlptf.load_state_dict(torch.load(model_path)['model_state_dict'])
     else:
         transfer_parameters(tf, mlptf)
-        freeze_parameters(mlptf)
+        freeze_parameters(mlptf, pass_keywords=('mlp'))
     return mlptf
 
 
@@ -65,8 +66,25 @@ def build_mlpencoder(src_vocab, trg_vocab, N, d_model, d_ff,
     if model_path is not None:
         mlptf.load_state_dict(torch.load(model_path)['model_state_dict'])
     transfer_parameters(tf, mlptf)
-    freeze_parameters(mlptf)
+    freeze_parameters(mlptf, pass_keywords=('mlp'))
     return mlptf
+
+
+def build_attencoder(src_vocab, trg_vocab, N, d_model, d_ff, 
+                     H, latent_dim, dropout, nconds, use_cond2dec, 
+                     use_cond2lat, variational, transfer_path,
+                     model_path):
+    tf = build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H,
+                          latent_dim, dropout, nconds, use_cond2dec, 
+                          use_cond2lat, transfer_path)
+    atttf = ATTEncoder(src_vocab, trg_vocab, N, d_model, d_ff, H, latent_dim,
+                       dropout, nconds, use_cond2dec, use_cond2lat, variational)
+
+    if model_path is not None:
+        atttf.load_state_dict(torch.load(model_path)['model_state_dict'])
+    transfer_parameters(tf, atttf)
+    freeze_parameters(atttf, pass_keywords=('att_mu', 'att_log_var'))
+    return atttf
 
 
 def build_mlptrain(src_vocab, trg_vocab, d_model, latent_dim, 
@@ -113,6 +131,14 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, train=False
     elif args.model_type == "mlp_encoder":
         # training phase II
         model = build_mlpencoder(SRC_vocab_len, TRG_vocab_len,
+                                 args.N, args.d_model, args.d_ff, 
+                                 args.H, args.latent_dim, args.dropout,
+                                 args.nconds, args.use_cond2dec,
+                                 args.use_cond2lat, args.variational,
+                                 args.molgct_path, model_path)
+    elif args.model_type == "att_encoder":
+        # training phase II
+        model = build_attencoder(SRC_vocab_len, TRG_vocab_len,
                                  args.N, args.d_model, args.d_ff, 
                                  args.H, args.latent_dim, args.dropout,
                                  args.nconds, args.use_cond2dec,

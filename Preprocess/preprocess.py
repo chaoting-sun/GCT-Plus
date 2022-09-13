@@ -143,7 +143,7 @@ def preprocess(args, data_type):
         
         # filter out those longer than max string length
         dataset = dataset.loc[(dataset['smiles'].str.len() 
-                            + len(args.conditions) < args.max_strlen)]
+                            + len(args.conditions) <= args.max_strlen)]
         dataset.to_csv(smiles_path, index=False)
 
     if not os.path.exists(property_path):

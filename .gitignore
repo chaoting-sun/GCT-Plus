@@ -18,3 +18,4 @@ __pycache__
 # data file
 *.csv
 *.txt
+*.png

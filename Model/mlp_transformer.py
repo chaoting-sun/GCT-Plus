@@ -176,8 +176,8 @@ class MLPTransformer(nn.Module):
         z2, _, _ = self.sampler2(x)
         return z2
 
-    def forward(self, src, trg, econds, mconds, dconds):
-        src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
+    def forward(self, src, trg, econds, mconds, dconds, src_mask, trg_mask):
+        # src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
         x, q_k_enc = self.encoder(src, econds, src_mask)
         z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
         x = self.mlp(z1, mconds)
@@ -201,8 +201,8 @@ class MLPTransformer(nn.Module):
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
-           max_strlen, decode_type, use_cond2dec=False):
-    src_mask = create_source_mask(src, econds)
+           pad_idx, max_strlen, decode_type, use_cond2dec=False):
+    src_mask = create_source_mask(src, pad_idx, econds)
     z = model.encode_mlp(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 

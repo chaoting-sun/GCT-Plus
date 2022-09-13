@@ -33,6 +33,8 @@ def _unique(smiles): return len(np.unique(smiles)) / \
 
 
 def _novelty(gen_smiles, train, n_jobs):
+    if len(gen_smiles) == 0:
+        return 0
     close_pool = False
     if n_jobs != 1:
         pool = Pool(n_jobs)
@@ -44,7 +46,7 @@ def _novelty(gen_smiles, train, n_jobs):
     if close_pool:
         pool.close()
         pool.join()
-    return gen_novelty
+    return gen_novelty*100
 
 
 def _intdiv(valid_smiles): return metrics.internal_diversity(
@@ -186,12 +188,6 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
 
 
-# def generate_smiles_from_properties(predictor, bsTool, conditions, TRG, scaler,
-#                                     toklen_data, device, num_samplings):
-#     return [bsTool.sample_molecule(conditions, toklen_data,
-#             predictor, TRG, scaler, device)[0] for _ in range(num_samplings)]
-
-
 def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
                   toklen_data, num_samplings, device, mu=0, std=0.2):
     conditions = np.array([[logp, tpsa, qed]])
@@ -266,18 +262,17 @@ if __name__ == "__main__":
             generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
                           toklen_data, num_samplings=40, device=device)
     
-    elif args.test_random: 
+    elif args.test_random:
         # settings
-        num_points = 5
         num_samplings = 100
         std_choices = (0.2, 0.4, 0.6, 0.8, 1.0)
 
         generate_smiles_time = store_properties_time = 0
         total_time = time()
 
-        target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=num_points),
-                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=num_points),
-                                                 np.linspace(args.qed_lb, args.qed_ub, num=num_points))) \
+        target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=args.num_points),
+                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=args.num_points),
+                                                 np.linspace(args.qed_lb, args.qed_ub, num=args.num_points))) \
             .T.reshape(-1, 3)
 
         print("Predict molecules given all combination of properties")
@@ -379,15 +374,13 @@ if __name__ == "__main__":
             print("Work Finished")
 
     else:
-        num_points = 5
-        num_samplings = 1000
         generate_smiles_time = store_properties_time = 0
         os.makedirs(args.storage_path, exist_ok=True)
 
         total_time = time()
-        target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=num_points),
-                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=num_points),
-                                                 np.linspace(args.qed_lb, args.qed_ub, num=num_points))) \
+        target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=args.num_points),
+                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=args.num_points),
+                                                 np.linspace(args.qed_lb, args.qed_ub, num=args.num_points))) \
             .T.reshape(-1, 3)
 
         bsTool = BeamSearchTool(args.nconds, args.latent_dim,
@@ -410,7 +403,7 @@ if __name__ == "__main__":
             
             generate_smiles_time -= time()
             generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties, TRG,
-                                                               scaler, toklen_data, device, num_samplings)
+                                                               scaler, toklen_data, device, args.samples_each)
             generate_smiles_time += time()
 
             with open(smiles_path, 'w') as sample_file:
@@ -433,7 +426,7 @@ if __name__ == "__main__":
         for logp, tpsa, qed in target_properties:
             mean_file_path = os.path.join(args.storage_path, 
                              f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
-
+            print(">>>", mean_file_path)
             with open(mean_file_path, 'w') as metrics_writer:
                 preds = pd.read_csv(os.path.join(args.storage_path,
                         f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')

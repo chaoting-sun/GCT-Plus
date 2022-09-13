@@ -348,30 +348,19 @@ def bar_plot():
     plt.savefig("./test.png")
 
 
-def k():
-    import pandas as pd
-    import numpy as np
-    import dill as pickle
+def multihead_attention():
+    import torch
+    import torch.nn as nn
+    from torch.nn import MultiheadAttention
 
-    mu_corr_path = './all_mu.csv'
-    log_var_corr_path = './all_log_var.csv'
+    t = torch.normal(2, 3, size=(10, 8, 4))
+    net = nn.MultiheadAttention(embed_dim=4, num_heads=1)
+    k = net(t, t, t)
+    k1, k2 = k
 
-    mu_corr = pd.read_csv(mu_corr_path, index_col=0)
-    log_var_corr = pd.read_csv(log_var_corr_path, index_col=0)
-
-    np.set_printoptions(threshold=np.inf)
-
-    print(mu_corr.max())
-    print(mu_corr.min())
-    print(log_var_corr.max())
-
-    mu_corr[:1000].to_csv('test.csv')
-
-    print(mu_corr[['4', '6']].corr())
-    print(log_var_corr[['4', '6']].corr())
-
-    non_zero = (mu_corr.loc[:, '0'] != 0).sum()
-    print(non_zero)
+    print(k1.size(), k2.size())
+    print(t.size())
+    print(k.size())
 
 
 if __name__ == '__main__':
@@ -387,4 +376,4 @@ if __name__ == '__main__':
     # test_rdkit()
     # test_novelty()
     # bar_plot()
-    k()
+    multihead_attention()

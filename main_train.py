@@ -24,3 +24,6 @@ if __name__ == "__main__":
 
     elif args.model_type == 'mlp_encoder':
         train(args, debug=DEBUG)
+    
+    elif args.model_type == 'att_encoder':
+        train(args, debug=DEBUG)

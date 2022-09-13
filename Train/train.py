@@ -20,7 +20,6 @@ def train(args, debug=False):
     torch.set_printoptions(profile="full")
     device = allocate_gpu()
     
-
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
 
     """ Preparing data """
@@ -53,8 +52,7 @@ def train(args, debug=False):
 
     args.sos_idx = TRG.vocab.stoi['<sos>']
     args.eos_idx = TRG.vocab.stoi['<eos>']
-    args.src_pad_idx = SRC.vocab.stoi['<pad>']
-    args.trg_pad_idx = TRG.vocab.stoi['<pad>']
+    args.pad_idx = SRC.vocab.stoi['<pad>']
 
     assert SRC.vocab.stoi['<pad>'] == TRG.vocab.stoi['<pad>']
 
@@ -68,9 +66,14 @@ def train(args, debug=False):
     else:
         model_path = None
     model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path).to(device)
+    
+    # for n, p in model.named_parameters():
+    #     if p.requires_grad:
+    #         print(n, p.size())
 
     print('Parameters:', f'{sum(p.numel() for p in model.parameters()):<40}\t')
     print('Trainable Parameters:', f'{sum(p.numel() for p in model.parameters() if p.requires_grad):<40}')
-    
+    # exit()
+
     trainer = Trainer(args)
     trainer.train(model, train_iter, valid_iter, SRC, TRG, device)

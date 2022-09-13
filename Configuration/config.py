@@ -4,6 +4,8 @@ def options(parser):
     """ GENERAL SETUP """
     # soft constraints
     parser.add_argument('-similarity', type=float, default=1, help="lowerbound of similarity between source and target")
+    parser.add_argument('-loss_fcn', type=str, default='mse', help="the loss function during training phase")
+
     # hard constraints
     parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/', help="Path of dataset")
     parser.add_argument('-nconds', type=int, default=3, help="Number of conditions")
@@ -105,7 +107,10 @@ def generate_opts(parser):
 def evaluation_opts(parser):
     # soft constraints
     parser.add_argument('-epoch', type=int, default=20)
+    parser.add_argument('-encode_type', type=str, default='encode')
     parser.add_argument('-decode_type', type=str, default='mlp_decode')
+    parser.add_argument('-samples_each', type=int, default=1000)
+    parser.add_argument('-num_points', type=int, default=5)
     parser.add_argument('-model_directory', default='train')
     parser.add_argument('-storage_path', type=str, default='molGCT/inference')
     parser.add_argument('-demo', action='store_true')

@@ -21,6 +21,7 @@ from Model.loss import LossCompute, MSE_KLDiv, MSE, KLDiv, JSD
 from Model.modules import NoamOpt as moptim
 from Utils.dataset import to_dataloader
 from Utils.log import get_logger
+from Model.modules import create_source_mask
 # import Process.data_preparation as pdp
 # import Process.vocabulary as mv
 
@@ -43,7 +44,7 @@ class Trainer(object):
             if os.path.exists(details_path):
                 os.remove(details_path)
 
-        self.LOG_results = get_logger(name="train_results", 
+        self.LOG_results = get_logger(name="train_results",
                                       log_path=results_path)
         self.LOG_results.info(args)
         self.LOG_details = get_logger(name="train_details", 
@@ -85,38 +86,47 @@ class Trainer(object):
         torch.save(save_dict, file_name)
 
 
-    def run_epoch(self, data_iter, nbatches, model, loss_compute, device, TRG):
+    def run_epoch(self, model, data_iter, nbatches, loss_compute, device, TRG):
         """
         The following variables records the total values from the dataset
         """
-        n_samples = 0
-        sum_mse = sum_kld = 0
+        n_samples = sum_mse = sum_kld = 0
         total_model_time = total_update_time = total_clear_time = 0
 
         start_time = timer()
-        mse = MSE()
+        mse, kld = MSE(), KLDiv()
 
         dataloader = to_dataloader(data_iter,
                                    self.args.conditions,
-                                   TRG.vocab.stoi['<pad>'],
+                                   self.args.pad_idx,
                                    self.args.max_strlen,
                                    device)
 
         for i, batch in enumerate(dataloader):
             # dim of out: (batch_size, max_trg_seq_length-1, d_model)
             total_model_time -= timer()
+            
+            src_pad_mask = create_source_mask(batch.src, self.args.pad_idx, batch.econds)
+            trg_pad_mask = create_source_mask(batch.trg_en, self.args.pad_idx, batch.dconds)
+
             trg_z_pred, trg_z_truth = model.forward(batch.src,
                                                     batch.trg_en,
                                                     batch.econds,
                                                     batch.mconds,
-                                                    batch.dconds)
+                                                    batch.dconds,
+                                                    src_pad_mask,
+                                                    trg_pad_mask
+                                                    )
             total_model_time += timer()
 
             # Compute loss (rec-loss + KL-div) and update
             total_update_time -= timer()
-            _kld = loss_compute(trg_z_pred, trg_z_truth)
-            _mse = mse(trg_z_pred, trg_z_truth)
             
+            _kld = kld(trg_z_pred, trg_z_truth)
+            _mse = mse(trg_z_pred, trg_z_truth)
+
+            _loss = loss_compute(trg_z_pred, trg_z_truth)
+
             total_update_time += timer()
 
             total_clear_time -= timer()
@@ -130,8 +140,8 @@ class Trainer(object):
             end_time = timer()
 
             details = f'{i+1}/{nbatches:<10}\t' \
-                      f'MSE: {float(_mse)/len(batch.src):.3f}\t' \
-                      f'KLDiv(*10^2): {float(_kld)*10**2/len(batch.src):.3f}\t' \
+                      f'MSE: {float(_mse)/len(batch.src):.6f}\t' \
+                      f'KLDiv: {float(_kld)/len(batch.src):.6f}\t' \
                       f'TotalT(s): {end_time-start_time:.1f}\t' \
                       f'ModelT(s): {total_model_time:.1f}\t' \
                       f'UpdateT(s): {total_update_time:.1f}\t' \
@@ -142,73 +152,12 @@ class Trainer(object):
 
         return sum_mse/n_samples, sum_kld/n_samples
 
-
-    # def run_epoch(self, data_iter, nbatches, model, loss_compute, device, TRG):
-    #     """
-    #     The following variables records the total values from the dataset
-    #     """
-    #     n_samples = 0
-    #     sum_rmse = sum_kldiv = 0
-    #     total_model_time = total_update_time = total_clear_time = 0
-
-    #     start_time = timer()
-        
-    #     mse_kld = MSE_KLDiv()
-    #     mse = MSE()
-    #     kldiv = KLDiv()
-    #     jsd = JSD()
-
-    #     dataloader = to_dataloader(data_iter, self.args.conditions, TRG.vocab.stoi['<pad>'],
-    #                                self.args.max_strlen, device)
-
-    #     for i, batch in enumerate(dataloader):
-    #         # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-    #         total_model_time -= timer()
-    #         trg_z_pred, trg_z_truth = model.forward(batch.src,
-    #                                                 batch.trg_en,
-    #                                                 batch.econds,
-    #                                                 batch.mconds,
-    #                                                 batch.dconds)
-    #         total_model_time += timer()
-
-    #         # Compute loss (rec-loss + KL-div) and update
-    #         total_update_time -= timer()
-    #         loss = loss_compute(trg_z_pred, trg_z_truth)
-
-    #         kl_loss = kldiv()
-    #         kl_loss = kl_loss_fcn(F.log_softmax(trg_z_pred.view(-1), dim=-1),
-    #                               F.softmax(trg_z_truth.view(-1), dim=-1))
-
-            
-    #         total_update_time += timer()
-
-    #         total_clear_time -= timer()
-    #         torch.cuda.empty_cache()
-    #         total_clear_time += timer()
-
-    #         sum_rmse += float(loss)
-    #         sum_kldiv += float(kl_loss)
-    #         n_samples += len(batch.src)
-
-    #         end_time = timer()
-
-    #         details = f'{i+1}/{nbatches:<10}\t' \
-    #                   f'RMSE: {float(loss)/len(batch.src):.3f}\t' \
-    #                   f'KLDiv(*10^7): {float(kl_loss)*10**7/len(batch.src):.3f}\t' \
-    #                   f'TotalT(s): {end_time-start_time:.1f}\t' \
-    #                   f'ModelT(s): {total_model_time:.1f}\t' \
-    #                   f'UpdateT(s): {total_update_time:.1f}\t' \
-    #                   f'ClearT(s): {total_clear_time:.1f}\t'
-
-    #         self.LOG_details.info(details)
-    #         print(details)
-
-    #     return sum_rmse/n_samples, sum_kldiv/n_samples
-
     
     def train(self, model, train_iter, valid_iter, SRC, TRG, device):
-        # criterion = MSELoss() # 1
-        criterion = KLDiv()
+        if self.args.loss_fcn == 'mse':
+            criterion = MSE()
+        elif self.args.loss_fcn == 'kld':
+            criterion = KLDiv()
 
         optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
         
@@ -223,8 +172,8 @@ class Trainer(object):
             model.train()
 
             self.LOG_details.info(f"Training Start EPOCH: {epoch}")
-            train_mse, train_kldiv = self.run_epoch(train_iter, self.args.train_nbatches, model, 
-                                                     LossCompute(criterion, optim), device, TRG)
+            train_mse, train_kldiv = self.run_epoch(model, train_iter, self.args.train_nbatches,
+                                                    LossCompute(criterion, optim), device, TRG)
             self.LOG_details.info("Training End")
 
             """ Validation """
@@ -232,13 +181,13 @@ class Trainer(object):
 
             self.LOG_details.info(f"Validation Start EPOCH: {epoch}")
             with torch.no_grad():
-                valid_mse, valid_kldiv = self.run_epoch(valid_iter, self.args.valid_nbatches, model,
-                                                          LossCompute(criterion, None), device, TRG)
+                valid_mse, valid_kldiv = self.run_epoch(model, valid_iter, self.args.valid_nbatches,
+                                                        LossCompute(criterion, None), device, TRG)
             self.LOG_details.info("Validation End")
 
             """ Recording """
-            self.LOG_results.info(f"Train:RMSE/KLDiv(10^2) {train_mse:.3f}/{train_kldiv*10**2:.3f}\t"
-                                   f"Valid:RMSE/KLDiv(10^2) {valid_mse:.3f}/{valid_kldiv*10**2:.3f}")
+            self.LOG_results.info(f"Train:RMSE/KLDiv {train_mse:.6f}/{train_kldiv:.6f}\t"
+                                   f"Valid:RMSE/KLDiv {valid_mse:.6f}/{valid_kldiv:.6f}")
 
             """ Recording the best model """
             if lowest_kldiv > valid_kldiv:

@@ -1,5 +1,6 @@
 import os
 import gc
+from statistics import StatisticsError
 import sys
 import joblib
 import argparse
@@ -23,14 +24,10 @@ from Model.modules import create_source_mask
 from regression import linear_regression
 
 
-def produce_tiny_data(original_data_folder, tiny_data_folder, random_state=0):
-    train = pd.read_csv(os.path.join(original_data_folder, 'train.csv'))
-    train = train.sample(n=10000, random_state=random_state)
-    train.to_csv(os.path.join(tiny_data_folder, f'train_{random_state}.csv'))
-
-    validation = pd.read_csv(os.path.join(original_data_folder, 'validation.csv'))
-    validation = validation.sample(n=1000, random_state=random_state)
-    validation.to_csv(os.path.join(tiny_data_folder, f'validation_{random_state}.csv'))
+def sample_and_store_data(data_type, input_path, output_path, n_samples, random_state):
+    data = pd.read_csv(os.path.join(input_path, f'{data_type}.csv'))
+    data = data.sample(n=n_samples, random_state=random_state)
+    data.to_csv(os.path.join(output_path, f'{data_type}_{random_state}.csv'))
 
 
 def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
@@ -45,26 +42,40 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
     return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path)
 
 
-def generate_encoder_outputs(args, nbatches, model, data_iter, device):
+def generate_encoder_outputs(model, data_iter, conditions, encode_type, batch_size,
+                             nbatches, latent_dim, max_strlen, TRG, device):
     # including mean and variance
     # return matrix with dimension: (latent_dim, n_samples)
 
-    all_z = np.empty((args.batch_size*nbatches, (args.max_strlen+3), args.latent_dim))
-    all_mu = np.empty((args.batch_size*nbatches, (args.max_strlen+3), args.latent_dim))
-    all_log_var = np.empty((args.batch_size*nbatches, (args.max_strlen+3), args.latent_dim))
+    all_z = np.empty((batch_size*nbatches, max_strlen, latent_dim))
+    all_mu = np.empty((batch_size*nbatches, max_strlen, latent_dim))
+    all_log_var = np.empty((batch_size*nbatches, max_strlen, latent_dim))
 
+    encoder = getattr(model, args.encode_type)
     dataloader = to_dataloader(data_iter,
-                               args.conditions,
+                               conditions,
                                TRG.vocab.stoi['<pad>'],
-                               args.max_strlen,
+                               max_strlen,
                                device)
     all_n = cur_n = 0
 
     for i, batch in enumerate(dataloader):
         print(f'{(i+1)} / {nbatches}')
 
-        src_mask = create_source_mask(batch.src, batch.econds)
-        z, mu, log_var = model(batch.src, batch.econds, src_mask)
+        src_mask = create_source_mask(batch.src, 
+                                      TRG.vocab.stoi['<pad>'],
+                                      batch.econds)
+
+        if encode_type == 'encode_sample':
+            z, mu, log_var = encoder(batch.src,
+                                     batch.econds,
+                                     src_mask)
+        elif encode_type == 'encode_sample_mlp_sample':
+            z, mu, log_var = encoder(batch.src,
+                                     batch.econds,
+                                     batch.mconds,
+                                     src_mask)
+
         cur_n = len(batch.src)
      
         all_z[all_n:all_n+cur_n, :, :] = z.cpu().numpy()
@@ -76,76 +87,26 @@ def generate_encoder_outputs(args, nbatches, model, data_iter, device):
     return all_z, all_mu, all_log_var
 
 
-def find_latent_dim_correlation(args, correlation_folder, mu_name,
-                                log_var_name, all_mu, all_log_var):
-    def get_corr(all_val, save_path):
-        if os.path.exists(save_path):
-            return pickle.load(open(save_path, 'rb'))
-        else:
-            all_val = np.reshape(all_val, (-1, args.latent_dim))
-            df_all_val = pd.DataFrame(all_val, columns=[i for i in range(args.latent_dim)])
-            all_val_corr = df_all_val.corr()
-            pickle.dump(all_val_corr, open(save_path, 'wb'))
-            return all_val_corr
+def plot_latent_space_distribution(data_type, mu, log_var, z, n_samples, 
+                                   latent_dim, max_strlen, state, correlation_path):
+    os.makedirs(correlation_path, exist_ok=True)
+    assert mu.shape == log_var.shape and mu.shape == z.shape
 
-    mu_corr = get_corr(all_mu, os.path.join(correlation_folder, f'{mu_name}.pkl'))
-    log_var_corr = get_corr(all_log_var, os.path.join(correlation_folder, f'{log_var_name}.pkl'))
+    plot_dict = density_plot_dict(xlabel='dimension of latent space', ylabel='position', 
+                                  nbins=128, figsize=None, xlim=None, ylim=(-15,15))
 
-    save_correlation_plot(mu_corr, os.path.join(correlation_folder, f'{mu_name}.png'))
-    save_correlation_plot(log_var_corr, os.path.join(correlation_folder, f'{log_var_name}.png'))
+    lat_dim = np.tile([i for i in range(latent_dim)], len(z)*max_strlen)
+    idx = np.random.choice(np.arange(len(lat_dim)), n_samples, replace=False)
 
-
-def find_diff_position_correlation(args, correlation_folder, mu_name, 
-                                   log_var_name, all_mu, all_log_var, position):
-    # 固定意義（mu/log_var），了解 latent_dim 中不同 dim 之間的相關性
-
-    print('Compute correlation of mu...')
-    
-    def get_corr(all_val, save_path):
-        if os.path.exists(save_path):
-            return pickle.load(open(save_path, 'rb'))
-        else:
-            all_val = pd.DataFrame(all_val[:,:,position], columns=[i for i in range(args.max_strlen+3)])
-            all_val_corr = all_val.corr()
-            pickle.dump(all_val_corr, open(save_path, 'wb'))
-            return all_val_corr
-
-    mu_corr = get_corr(all_mu, os.path.join(correlation_folder, 'pkl',f'{mu_name}.pkl'))
-    log_var_corr = get_corr(all_log_var, os.path.join(correlation_folder, 'pkl',f'{log_var_name}.pkl'))
-   
-    save_correlation_plot(mu_corr, os.path.join(correlation_folder, 'png',f'{mu_name}.png'))
-    save_correlation_plot(log_var_corr, os.path.join(correlation_folder, 'png',f'{log_var_name}.png'))
-
-    # print(f'mu - highest/lowest corr val: {mu_corr.max().max():.6f}/{mu_corr.min().min():.6f}') 
-    # print(f'var - highest/lowest corr val: {log_var_corr.max().max():.6f}/{log_var_corr.min().min():.6f}')
-    return (mu_corr.max().max(), mu_corr.min().min()), (log_var_corr.max().max(), log_var_corr.min().min())
-
-
-def find_mean_sigma_correlation(args, correlation_folder, file_name, all_mu, all_log_var):
-    def get_corr(all_mu, all_log_var, save_path):
-        if os.path.exists(save_path):
-            return pickle.load(open(save_path, 'rb'))
-        else:
-            correlation_coeff = []
-            for i in range(args.max_strlen+3):
-                arr = np.empty((2, len(all_mu)*args.latent_dim))
-                arr[0, :] = np.reshape(all_mu[:, i, :], (1, -1))
-                arr[1, :] = np.reshape(all_log_var[:, i, :], (1, -1))
-                res = np.corrcoef(arr)
-
-                print(res)
-                coeff = res[0, 1]
-                correlation_coeff.append(coeff)
-            pickle.dump(correlation_coeff, open(save_path, 'wb'))
-            return correlation_coeff
-    
-    correlation_coeff = get_corr(all_mu, all_log_var, os.path.join(correlation_folder, f'{file_name}.pkl'))
-    save_correlation_bar_plot(correlation_coeff, os.path.join(correlation_folder, f'{file_name}.png'))
-
-
-def compute_pearson_correlation(matrix):
-    correlation = np.corrcoef(matrix)
-    return correlation
+    density_plot(lat_dim[idx], np.reshape(mu, (-1))[idx],
+                 fig_path=os.path.join(correlation_path, f'{data_type}_density_mu_{state}.png'), 
+                 plot_dict=plot_dict)
+    density_plot(lat_dim[idx], np.reshape(log_var, (-1))[idx],
+                 fig_path=os.path.join(correlation_path, f'{data_type}_density_log_var_{state}.png'),
+                 plot_dict=plot_dict)
+    density_plot(lat_dim[idx], np.reshape(z, (-1))[idx],
+                 fig_path=os.path.join(correlation_path, f'{data_type}_density_z_{state}.png'),
+                 plot_dict=plot_dict)
 
 
 def save_correlation_plot(corr, fig_name):
@@ -157,6 +118,8 @@ def save_correlation_plot(corr, fig_name):
         cmap=sns.diverging_palette(20, 220, n=200),
         square=True
     )
+    ax.set_xlabel('dimension of latent space', fontsize=12)
+    ax.set_ylabel('dimension of latent space', fontsize=12)
 
     ax.set_xticklabels(
         ax.get_xticklabels(),
@@ -164,7 +127,103 @@ def save_correlation_plot(corr, fig_name):
         horizontalalignment='right'
     );
     
-    plt.savefig(fig_name)
+    plt.savefig(fig_name, bbox_inches="tight")
+
+
+def find_latent_dim_correlation(data_type, all_mu, all_log_var,
+                                latent_dim, state, correlation_path):
+    assert all_mu.shape == all_log_var.shape
+    for ext in ('png', 'pkl'):
+        os.makedirs(os.path.join(correlation_path, ext), exist_ok=True)
+
+    def get_corr(all_val, save_path):
+        if os.path.exists(save_path):
+            return pickle.load(open(save_path, 'rb'))
+        else:
+            all_val = np.reshape(all_val, (-1, latent_dim))
+            df_all_val = pd.DataFrame(all_val, columns=[i for i in range(latent_dim)])
+            all_val_corr = df_all_val.corr()
+            pickle.dump(all_val_corr, open(save_path, 'wb'))
+            return all_val_corr
+
+    mu_corr = get_corr(all_mu, os.path.join(correlation_path,
+                       'pkl', f'{data_type}_mu_corr_{state}.pkl'))
+    log_var_corr = get_corr(all_log_var, os.path.join(correlation_path,
+                            'pkl', f'{data_type}_log_var_corr_{state}.pkl'))
+
+    save_correlation_plot(mu_corr, os.path.join(correlation_path,
+                         'png', f'{data_type}_mu_corr_{state}.png'))
+    save_correlation_plot(log_var_corr, os.path.join(correlation_path, 
+                          'png', f'{data_type}_log_var_corr_{state}.png'))
+
+
+def find_all_position_correlation(data_type, all_mu, all_log_var, 
+                                  max_strlen, state, correlation_path):
+    for ext in ('png', 'pkl'):
+        os.makedirs(os.path.join(correlation_path, ext), exist_ok=True)
+
+    def get_corr(all_values, position, save_path):
+        if os.path.exists(save_path):
+            return pickle.load(open(save_path, 'rb'))
+        else:
+            all_values = pd.DataFrame(all_values[:,:,position],     
+                                      columns=[i for i in range(max_strlen)])
+            corr = all_values.corr()
+            pickle.dump(corr, open(save_path, 'wb'))
+            return corr
+
+    positions = tuple(i for i in range(max_strlen))
+    
+    all_corr = None
+    
+    for p in positions:
+        mu_corr = get_corr(all_mu, p, os.path.join(correlation_path, 
+                           'pkl', f'{data_type}_mu_{p}_{state}.pkl'))
+        log_var_corr = get_corr(all_log_var, p, os.path.join(correlation_path,
+                                'pkl', f'{data_type}_log_var_{p}_{state}.pkl'))
+
+        corr = pd.DataFrame({ 'mu_corr_max': [mu_corr.max().max()],
+                              'mu_corr_min': [mu_corr.min().min()],
+                              'log_var_corr_max': [log_var_corr.max().max()], 
+                              'log_var_corr_min': [log_var_corr.min().min()] 
+                            })
+        all_corr = pd.concat([all_corr, corr], axis=0)
+
+        save_correlation_plot(mu_corr, os.path.join(correlation_path,
+                            'png', f'{data_type}_mu_{p}_{state}.png'))
+        save_correlation_plot(log_var_corr, os.path.join(correlation_path,
+                            'png',f'{data_type}_log_var_{p}_{state}.png'))
+
+    all_corr.to_csv(os.path.join(correlation_path, f'{data_type}_corr_{state}.csv'))
+
+
+def find_mean_sigma_correlation(data_type, all_mu, all_log_var, latent_dim,
+                                max_strlen, state, correlation_path):
+    if os.path.exists(os.path.join(correlation_path, 'png', f'{data_type}_corr_{state}.png')):
+        return
+
+    for ext in ('png', 'pkl'):
+        os.makedirs(os.path.join(correlation_path, ext), exist_ok=True)
+
+    correlation_coeff = []
+    for i in range(max_strlen):
+        arr = np.empty((2, len(all_mu)*latent_dim))
+        arr[0, :] = np.reshape(all_mu[:, i, :], (1, -1))
+        arr[1, :] = np.reshape(all_log_var[:, i, :], (1, -1))
+        res = np.corrcoef(arr)
+
+        coeff = res[0, 1]
+        correlation_coeff.append(coeff)
+    pickle.dump(correlation_coeff, open(os.path.join(correlation_path, 
+                'pkl', f'{data_type}_corr_{state}.pkl'), 'wb'))
+
+    save_correlation_bar_plot(correlation_coeff, os.path.join(correlation_path,
+                              'png', f'{data_type}_corr_{state}.png'))
+
+
+def compute_pearson_correlation(matrix):
+    correlation = np.corrcoef(matrix)
+    return correlation
 
 
 def save_correlation_bar_plot(corr, fig_path):
@@ -199,6 +258,177 @@ def save_correlation_bar_plot(corr, fig_path):
     fig.write_image(fig_path)
 
 
+def multi_faceted_analysis(args, model, device, fields, TRG):
+    ################## Settings ##################
+    plot_density_of_encoder_outputs = True
+    compute_latent_dimensional_correlation = True
+    compute_string_location_correlation = True
+    compute_mu_log_var_correlation = True
+
+    random_states = (0,1,2)
+    ##############################################
+
+    data_path = os.path.join(args.data_path, 'aug', 'data_sim1.00')
+    results_path = os.path.join(data_path, 'tiny')
+    os.makedirs(results_path, exist_ok=True)
+
+    for state in random_states:
+        sample_and_store_data('train', data_path, results_path, 10000, state)
+        sample_and_store_data('validation', data_path, results_path, 1000, state)
+
+    for state in random_states:
+        train_data, valid_data = data.TabularDataset.splits(
+            path=results_path, train=f'train_{state}.csv', 
+            validation=f'validation_{state}.csv', test=None,
+            format='csv', fields=fields, skip_header=True
+        )
+
+        train_iter, valid_iter = data.BucketIterator.splits(
+            (train_data, valid_data), 
+            batch_sizes=(args.batch_size, args.batch_size),
+            sort_key=lambda x: (len(x.src), len(x.trg))
+        )
+
+        train_nbatches = int(np.ceil(len(train_data) / args.batch_size))
+        valid_nbatches = int(np.ceil(len(valid_data) / args.batch_size))
+
+        del train_data
+        del valid_data
+        gc.collect()
+
+        model.eval()
+
+        print("Producing encoder outputs of training/validation set...")
+        with torch.no_grad():
+            train_z, train_mu, train_log_var = generate_encoder_outputs(model,
+                                                                        train_iter,
+                                                                        args.conditions,
+                                                                        args.encode_type,
+                                                                        args.batch_size,
+                                                                        train_nbatches,
+                                                                        args.latent_dim,
+                                                                        args.max_strlen,
+                                                                        TRG,
+                                                                        device)
+
+            valid_z, valid_mu, valid_log_var = generate_encoder_outputs(model,
+                                                                        valid_iter,
+                                                                        args.conditions,
+                                                                        args.encode_type,
+                                                                        args.batch_size,
+                                                                        valid_nbatches,
+                                                                        args.latent_dim,
+                                                                        args.max_strlen,
+                                                                        TRG,
+                                                                        device)
+
+        if plot_density_of_encoder_outputs:
+            print('Plot distribution of the encoder outputs...')
+            plot_latent_space_distribution('train', train_mu, train_log_var, train_z, 
+                                           100000, args.latent_dim, args.max_strlen, state,
+                                           correlation_path=os.path.join(args.storage_path, 'density_distribution'))
+
+            plot_latent_space_distribution('validation', valid_mu, valid_log_var, valid_z,
+                                           10000, args.latent_dim, args.max_strlen, state,
+                                           correlation_path=os.path.join(args.storage_path, 'density_distribution'))
+
+        if compute_latent_dimensional_correlation:
+            print("Find correlation among all latent space dimensions...")
+            find_latent_dim_correlation('train', train_mu, train_log_var, args.latent_dim, state, 
+                                        correlation_path=os.path.join(args.storage_path, 'latent_dim_correlation'))
+            find_latent_dim_correlation('validation', valid_mu, valid_log_var, args.latent_dim, state, 
+                                        correlation_path=os.path.join(args.storage_path, 'latent_dim_correlation'))
+
+        if compute_string_location_correlation:
+            print("Find correlation among all string positions...")
+            find_all_position_correlation('train', train_mu, train_log_var, args.max_strlen, state,
+                                          correlation_path=os.path.join(args.storage_path, 'diff_pos_correlation'))
+            find_all_position_correlation('validation', valid_mu, valid_log_var, args.max_strlen, state,
+                                          correlation_path=os.path.join(args.storage_path, 'diff_pos_correlation'))
+
+        if compute_mu_log_var_correlation:
+            print("Find correlation between mean and std...")
+            find_mean_sigma_correlation('train', train_mu, train_log_var, args.latent_dim, args.max_strlen, state, 
+                                        correlation_path=os.path.join(args.storage_path, 'mu_log_var_correlation'))
+            find_mean_sigma_correlation('validation', valid_mu, valid_log_var, args.latent_dim, args.max_strlen, state, 
+                                        correlation_path=os.path.join(args.storage_path, 'mu_log_var_correlation'))
+
+            print("Do linear regression between mu and log_var of the training set...")
+            for i in range(args.max_strlen):
+                _mu = np.reshape(train_mu[:, i, :], (-1,))
+                _log_var = np.reshape(train_log_var[:, i, :], (-1,))
+                linear_regression(_mu, _log_var)
+
+            print("Do linear regression between mu and log_var of the validation set...")
+            for i in range(args.max_strlen):
+                _mu = np.reshape(valid_mu[:, i, :], (-1,))
+                _log_var = np.reshape(valid_log_var[:, i, :], (-1,))
+                linear_regression(_mu, _log_var)
+
+
+def test_same_len_sequence(args, model, device, fields, TRG):
+    data_path = os.path.join(args.data_path, 'aug', 'data_sim1.00')
+    results_path = os.path.join(data_path, 'same_length')
+    os.makedirs(results_path, exist_ok=True)
+
+    random_states = (0,1,2)
+    chosen_str_len = 30
+    args.max_strlen = chosen_str_len + len(args.conditions)
+
+    print(f"Sampling data from {data_path}...")
+    samples = pd.read_csv(os.path.join(data_path, f'train.csv'))
+    samples = samples.loc[samples['src'].str.len() == chosen_str_len]
+    for state in random_states:
+        if os.path.exists(os.path.join(results_path, f'train_{state}.csv')):
+            continue
+        samples = samples.sample(n=1000, random_state=state)
+        samples.to_csv(os.path.join(results_path, f'train_{state}.csv'))
+
+    for state in random_states:
+        print("Getting the iterator...")
+        train_data = data.TabularDataset(path=os.path.join(results_path, f'train_{state}.csv'),
+                                         format='csv', fields=fields, skip_header=True)
+        train_iter = data.BucketIterator(train_data, batch_size=args.batch_size)
+
+        train_nbatches = int(np.ceil(len(train_data) / args.batch_size))
+
+        model.eval()
+
+        with torch.no_grad():
+            train_z, train_mu, train_log_var = generate_encoder_outputs(model,
+                                                                        train_iter,
+                                                                        args.conditions,
+                                                                        args.encode_type,
+                                                                        args.batch_size,
+                                                                        train_nbatches,
+                                                                        args.latent_dim,
+                                                                        args.max_strlen,
+                                                                        TRG,
+                                                                        device)
+        print('Plot distribution of the encoder outputs...')
+        plot_latent_space_distribution('train', train_mu, train_log_var, train_z, 
+                                       10000, args.latent_dim, args.max_strlen, state,
+                                       correlation_path=os.path.join(args.storage_path, 'density_distribution'))
+
+        print("Find correlation among all latent space dimensions...")
+        find_latent_dim_correlation('train', train_mu, train_log_var, args.latent_dim, state, 
+                                    correlation_path=os.path.join(args.storage_path, 'latent_dim_correlation'))
+
+        print("Find correlation among all string positions...")
+        find_all_position_correlation('train', train_mu, train_log_var, args.max_strlen, state,
+                                        correlation_path=os.path.join(args.storage_path, 'diff_pos_correlation'))
+
+        print("Find correlation between mean and std...")
+        find_mean_sigma_correlation('train', train_mu, train_log_var, args.latent_dim, args.max_strlen, state, 
+                                    correlation_path=os.path.join(args.storage_path, 'mu_log_var_correlation'))
+
+        print("Do linear regression between mu and log_var...")
+        for i in range(args.max_strlen):
+            _mu = np.reshape(train_mu[:, i, :], (-1,))
+            _log_var = np.reshape(train_log_var[:, i, :], (-1,))
+            linear_regression(_mu, _log_var)
+
+
 if __name__ == '__main__':
     set_seed(seed=0)
 
@@ -207,158 +437,20 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.batch_size = 512
 
-    args.plot_density_of_encoder_outputs = False
-    args.compute_latent_dimensional_correlation = False
-    args.compute_string_location_correlation = False
-    args.compute_mu_log_var_correlation = True
-
-    original_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
-    tiny_data_folder = os.path.join(original_data_folder, 'tiny')
-    os.makedirs(tiny_data_folder, exist_ok=True)
-
     print('-------------------------- Settings --------------------------')
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
     print('-------------------------- Settings --------------------------')
 
     device = allocate_gpu()
-    scaler = joblib.load(args.scaler_path)
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
     toklen_data = pd.read_csv(args.toklen_path)
 
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
                       args.model_type, args.decode_type).to(device)
 
-    # state = (0, 1, 2)
-    random_states = (0,1,2)
+    choice = 1
 
-    for state in random_states:
-        if os.path.exists(os.path.join(tiny_data_folder, f'train_{state}.csv')):
-            continue
-        produce_tiny_data(original_data_folder, tiny_data_folder, random_state=state)
-
-    for state in random_states:
-        train_data, valid_data = data.TabularDataset.splits(
-            path=tiny_data_folder, train=f'train_{state}.csv', validation=f'validation_{state}.csv', test=None,
-            format='csv', fields=fields, skip_header=True)
-
-        train_nbatches = int(np.ceil(len(train_data) / args.batch_size))
-        valid_nbatches = int(np.ceil(len(valid_data) / args.batch_size))
-
-        train_iter, valid_iter = data.BucketIterator.splits(
-            (train_data, valid_data), batch_sizes=(args.batch_size, args.batch_size),
-            sort_key=lambda x: (len(x.src), len(x.trg)))
-
-        del train_data
-        del valid_data
-        gc.collect()
-
-        model.eval()
-
-        with torch.no_grad():
-            train_z, train_mu, train_log_var = generate_encoder_outputs(args, 
-                                                                        train_nbatches,
-                                                                        model.encode_sample,
-                                                                        train_iter, device)
-
-        with torch.no_grad():
-            valid_z, valid_mu, valid_log_var = generate_encoder_outputs(args, 
-                                                                        valid_nbatches,
-                                                                        model.encode_sample,
-                                                                        valid_iter, device)
-
-        if args.plot_density_of_encoder_outputs:
-            plot_dict = density_plot_dict(xlabel='dimension of latent space', ylabel='density', 
-                                        nbins=128, figsize=None, xlim=None, ylim=(-8,8))
-
-            _z = np.reshape(train_z, (-1))
-            _mu = np.reshape(train_mu, (-1))
-            _log_var = np.reshape(train_log_var, (-1))
-
-            lat_dim = np.tile([i for i in range(args.latent_dim)], len(train_z)*(args.max_strlen+3))
-            # idx = np.random.choice(np.arange(len(lat_dim)), 50000, replace=False)
-
-            density_plot(lat_dim, _z, fig_path=f'train_density_z_{state}.png', plot_dict=plot_dict)
-            density_plot(lat_dim, _mu, fig_path=f'train_density_mu_{state}.png', plot_dict=plot_dict)
-            density_plot(lat_dim, _log_var, fig_path=f'train_density_log_var_{state}.png', plot_dict=plot_dict)
-
-            _z = np.reshape(valid_z, (-1))
-            _mu = np.reshape(valid_mu, (-1))
-            _log_var = np.reshape(valid_log_var, (-1))
-
-            lat_dim = np.tile([i for i in range(args.latent_dim)], len(valid_z)*(args.max_strlen+3))
-            # idx = np.random.choice(np.arange(len(lat_dim)), 10000, replace=False)
-
-            density_plot(lat_dim, _z, fig_path=f'valid_density_{state}.png', plot_dict=plot_dict)
-            density_plot(lat_dim, _mu, fig_path=f'valid_density_{state}.png', plot_dict=plot_dict)
-            density_plot(lat_dim, _log_var, fig_path=f'valid_density_log_var_{state}.png', plot_dict=plot_dict)
-
-        if args.compute_latent_dimensional_correlation:
-            print('--- Correlation among different latent dimensions ---')
-
-            correlation_folder = 'latent_dim_correlation'
-            os.makedirs(correlation_folder, exist_ok=True)
-
-            find_latent_dim_correlation(args, correlation_folder, f'train_mu_corr_{state}',
-                                        f'train_log_var_corr_{state}', train_mu, train_log_var)
-            find_latent_dim_correlation(args, correlation_folder, f'valid_mu_corr_{state}',
-                                        f'train_log_var_corr_{state}', train_mu, train_log_var)
-
-        if args.compute_string_location_correlation:
-            print("--- Correlation between different string positions ---")
-
-            correlation_folder = 'diff_pos_correlation'
-            os.makedirs(os.path.join(correlation_folder, 'pkl'), exist_ok=True)
-            os.makedirs(os.path.join(correlation_folder, 'png'), exist_ok=True)
-
-            positions = tuple(i for i in range(args.max_strlen+3))
-            
-            # for pos in positions:
-
-
-            train_corr = None
-            for pos in positions:
-                mu_corr, log_var_corr = find_diff_position_correlation(args, correlation_folder,
-                                                                      f'train_mu_{pos}_{state}', 
-                                                                      f'train_log_var_{pos}_{state}',
-                                                                      train_mu, train_log_var, pos)
-                print(mu_corr, log_var_corr)
-                _corr = pd.DataFrame({
-                    'mu_corr_max': [mu_corr[0]], 'mu_corr_min': [mu_corr[1]],
-                    'log_var_corr_max': [log_var_corr[0]], 'log_var_corr_min': [log_var_corr[1]]
-                })
-                train_corr = pd.concat([train_corr, _corr], axis=0)
-            train_corr.to_csv(os.path.join(correlation_folder, 'train_corr.csv'))
-
-            valid_corr = None
-            for pos in positions:
-                mu_corr, log_var_corr = find_diff_position_correlation(args, correlation_folder,
-                                                                    f'validation_mu_{pos}_{state}', 
-                                                                    f'validation_log_var_{pos}_{state}',
-                                                                    valid_mu, valid_log_var, pos)
-                _corr = pd.DataFrame({
-                    'mu_corr_max': [mu_corr[0]], 'mu_corr_min': [mu_corr[1]],
-                    'log_var_corr_max': [log_var_corr[0]], 'log_var_corr_min': [log_var_corr[1]]
-                })
-                valid_corr = pd.concat([valid_corr, _corr], axis=0)
-            valid_corr.to_csv(os.path.join(correlation_folder, 'valid_corr.csv'))
-
-        if args.compute_mu_log_var_correlation:
-            print("--- Correlation between mean and std ---")
-
-            correlation_folder = 'mu_log_var_correlation'
-            os.makedirs(correlation_folder, exist_ok=True)
-
-            print('train:')
-            for i in range(args.max_strlen+3):
-                _mu = np.reshape(train_mu[:, i, :], (-1,))
-                _log_var = np.reshape(train_log_var[:, i, :], (-1,))
-                linear_regression(_mu, _log_var)
-
-            print('validation:')
-            for i in range(args.max_strlen+3):
-                _mu = np.reshape(valid_mu[:, i, :], (-1,))
-                _log_var = np.reshape(valid_log_var[:, i, :], (-1,))
-                linear_regression(_mu, _log_var)
-
-            find_mean_sigma_correlation(args, correlation_folder, f'train_corr_{state}', train_mu, train_log_var)
-            find_mean_sigma_correlation(args, correlation_folder, f'validation_corr_{state}', valid_mu, valid_log_var)
+    if choice == 1:
+        multi_faceted_analysis(args, model, device, fields, TRG)
+    elif choice == 2:
+        test_same_len_sequence(args, model, device, fields, TRG)

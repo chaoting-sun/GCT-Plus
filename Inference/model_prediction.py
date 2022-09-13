@@ -9,7 +9,7 @@ class ModelPrediction(object):
     def predict(self, trg, e_outputs, conds, src_mask, trg_mask):
         if self.use_cond2dec == True:
             output_mol = self.predictor(trg, e_outputs, conds,
-                                      src_mask, trg_mask)[:, 3:, :]
+                                        src_mask, trg_mask)[:, 3:, :]
         else:
             output_mol = self.predictor(trg, e_outputs, conds, src_mask, trg_mask)
         return F.softmax(output_mol, dim=-1)
