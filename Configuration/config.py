@@ -113,6 +113,7 @@ def evaluation_opts(parser):
     parser.add_argument('-num_points', type=int, default=5)
     parser.add_argument('-model_directory', default='train')
     parser.add_argument('-storage_path', type=str, default='molGCT/inference')
+    
     parser.add_argument('-demo', action='store_true')
     parser.add_argument('-test_random', action='store_true')
 

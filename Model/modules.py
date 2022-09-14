@@ -18,13 +18,13 @@ def subsequent_mask(size):
     return torch.from_numpy(subsequent_mask) == 0
 
 
-def nopeak_mask(size, cond_dim, use_cond2dec, device):
-    np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')
+def nopeak_mask(trg_size, use_cond2dec, cond_dim=0, device=-1):
+    np_mask = np.triu(np.ones((1, trg_size, trg_size)), k=1).astype('uint8')
     if use_cond2dec == True:
         cond_mask = np.zeros((1, cond_dim, cond_dim))
-        cond_mask_upperright = np.ones((1, cond_dim, size))
+        cond_mask_upperright = np.ones((1, cond_dim, trg_size))
         cond_mask_upperright[:, :, 0] = 0 # ??? cannot understand
-        cond_mask_lowerleft = np.zeros((1, size, cond_dim))
+        cond_mask_lowerleft = np.zeros((1, trg_size, cond_dim))
         upper_mask = np.concatenate([cond_mask, cond_mask_upperright], axis=2)
         lower_mask = np.concatenate([cond_mask_lowerleft, np_mask], axis=2)
         np_mask = np.concatenate([upper_mask, lower_mask], axis=1)
@@ -38,9 +38,9 @@ def nopeak_mask(size, cond_dim, use_cond2dec, device):
 
 def create_condition_mask(conditions):
     # (bs, nconds) -> (bs, 1, nconds)
-    cond_mask = torch.unsqueeze(conditions, -2)
-    cond_mask = torch.ones_like(cond_mask, dtype=bool)
-    return cond_mask
+    condition_mask = torch.unsqueeze(conditions, -2)
+    condition_mask = torch.ones_like(condition_mask, dtype=bool)
+    return condition_mask
 
 
 def create_source_mask(source, pad_idx, conditions=None, condition_mask=None):
@@ -54,22 +54,26 @@ def create_source_mask(source, pad_idx, conditions=None, condition_mask=None):
     return source_mask
 
 
-def create_target_mask(target, pad_idx, condition_mask, use_cond2dec):
+def create_target_mask(target, pad_idx, conditions, use_cond2dec):
+    """ 
+    create a target mask composed of padding/sequence mask 
+    target and conditions are tensors.
+    """
     # padding mask
     target_mask = (target != pad_idx).unsqueeze(-2)
+    condition_mask = create_condition_mask(conditions)
     if use_cond2dec == True:
-        target_mask = torch.cat([condition_mask, target_mask], dim=2) 
+        target_mask = torch.cat([condition_mask, target_mask], dim=2)
     # sequence mask
-    np_mask = nopeak_mask(target.size(1), condition_mask.size(-1), 
-                          use_cond2dec, target.get_device())
+    np_mask = nopeak_mask(target.size()[1], use_cond2dec,
+                          conditions.size()[-1], target.get_device())
     return target_mask & np_mask
 
 
-def create_masks(source, target, condition, pad_idx, use_cond2dec=True):
-    condition_mask = create_condition_mask(condition)
-    source_mask = create_source_mask(source, pad_idx, condition, condition_mask)
+def create_masks(source, target, conditions, pad_idx, use_cond2dec=True):
+    source_mask = create_source_mask(source, pad_idx, conditions)
     if target is not None:
-        target_mask = create_target_mask(target, pad_idx, condition_mask, use_cond2dec)
+        target_mask = create_target_mask(target, pad_idx, conditions, use_cond2dec)
     device = source.get_device()
     return source_mask.to(device), target_mask.to(device)
 

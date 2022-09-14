@@ -1,4 +1,5 @@
 import os
+from re import L
 from time import time
 import joblib
 import argparse
@@ -9,46 +10,52 @@ from multiprocessing import Pool
 
 from rdkit import Chem, RDLogger
 from moses.metrics import metrics
+from torchtext import data
 
-from Utils import allocate_gpu
+from Utils import allocate_gpu, get_fields
 from Utils.mapper import mapper
 from Utils.field import smiles_fields
 from Utils.seed import set_seed
 from Utils.property import property_prediction, get_mol
-
+from Utils.dataset import to_dataloader
 from Configuration.config import options
 from Inference.beam_search import BeamSearchTool
 from Inference.model_prediction import ModelPrediction
+from Model.modules import create_source_mask
+from Model.att_encoder import decode
+
 # from Model.build_model import build_model
 
 from Model.build_model import build_model
 
 
 def _valid(valid_preds, preds): return len(valid_preds) / \
-    len(preds) * 100 if len(preds) else 0
+    len(preds)*100 if len(preds) else 0
 
 
 def _unique(smiles): return len(np.unique(smiles)) / \
-    len(smiles) * 100 if len(smiles) > 0 else 0
+    len(smiles)*100 if len(smiles) > 0 else 0
 
 
-def _intdiv(valid_smiles): return metrics.internal_diversity(
-    valid_smiles) if len(valid_smiles) > 0 else 0
-
-
-def _novelty(gen, train, n_jobs=1):    
-    if pool is None:
-        if n_jobs != 1:
-            pool = Pool(n_jobs)
-            close_pool = True
-        else:
-            pool = 1
-    mols = mapper(pool)(get_mol, gen)
+def _novelty(gen_smiles, train, n_jobs):
+    if len(gen_smiles) == 0:
+        return 0
+    close_pool = False
+    if n_jobs != 1:
+        pool = Pool(n_jobs)
+        close_pool = True
+    else:
+        pool = 1
+    mols = mapper(pool)(get_mol, gen_smiles)
     gen_novelty = metrics.novelty(mols, train, n_jobs)
     if close_pool:
         pool.close()
         pool.join()
-    return gen_novelty
+    return gen_novelty*100
+
+
+def _intdiv(valid_smiles): return metrics.internal_diversity(
+    valid_smiles)*100 if len(valid_smiles) > 0 else 0
 
 
 def _mae(valid_dif): return valid_dif.apply(np.abs).mean()
@@ -57,22 +64,23 @@ def _max(valid_dif): return valid_dif.max()
 def _min(valid_dif): return valid_dif.min()
 
 
-def generate_metrics_line(preds):
+def generate_metrics_line(preds, train, n_jobs):
     valid_preds = preds.loc[preds['valid'] == 1].copy()
     valid_preds['logp_diff'] = valid_preds['logp_p'] - valid_preds['logp_t']
     valid_preds['tpsa_diff'] = valid_preds['tpsa_p'] - valid_preds['tpsa_t']
     valid_preds['qed_diff'] = valid_preds['qed_p'] - valid_preds['qed_t']
 
-    head = 'validity\tuniqueness\tdiversity\t'        \
-           'logp_mae\ttpsa_mae\tqed_mae\t'            \
-           'logp_mse\ttpsa_mse\tqed_mse\t'            \
-           'logp_max\ttpsa_max\tqed_max\t'            \
-           'logp_min\ttpsa_min\tqed_min\t'            \
-           'logp_aard(%)\ttpsa_aard(%)\tqed_aard(%)\t'\
-           'logp_amsd(%)\ttpsa_amsd(%)\tqed_amsd(%)'  \
+    header = 'valid(%)\tunique(%)\tnovelty(%)\tdiversity(%)\t'  \
+             'logp_mae\ttpsa_mae\tqed_mae\t'                    \
+             'logp_mse\ttpsa_mse\tqed_mse\t'                    \
+             'logp_max\ttpsa_max\tqed_max\t'                    \
+             'logp_min\ttpsa_min\tqed_min\t'                    \
+             'logp_aard(%)\ttpsa_aard(%)\tqed_aard(%)\t'        \
+             'logp_amsd(%)\ttpsa_amsd(%)\tqed_amsd(%)'          \
 
-    line = f"{_valid(valid_preds, preds):.3f}\t"  \
-           f"{_unique(valid_preds['smiles']):.3f}\t" \
+    line = f"{_valid(valid_preds, preds):.3f}\t"                     \
+           f"{_unique(valid_preds['smiles']):.3f}\t"                 \
+           f"{_novelty(valid_preds['smiles'], train, n_jobs):.3f}\t" \
            f"{_intdiv(valid_preds['smiles']):.3f}\t" \
            f"{_mae(valid_preds['logp_diff']):.3f}\t" \
            f"{_mae(valid_preds['tpsa_diff']):.3f}\t" \
@@ -93,7 +101,7 @@ def generate_metrics_line(preds):
            f"{(valid_preds['tpsa_diff'] / valid_preds['tpsa_t']).mean()*100:.3f}\t"       \
            f"{(valid_preds['qed_diff'] / valid_preds['qed_t']).mean()*100:.3f}"           \
 
-    return head, line
+    return header, line
 
 
 def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
@@ -185,12 +193,6 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
 
 
-# def generate_smiles_from_properties(predictor, bsTool, conditions, TRG, scaler,
-#                                     toklen_data, device, num_samplings):
-#     return [bsTool.sample_molecule(conditions, toklen_data,
-#             predictor, TRG, scaler, device)[0] for _ in range(num_samplings)]
-
-
 def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
                   toklen_data, num_samplings, device, mu=0, std=0.2):
     conditions = np.array([[logp, tpsa, qed]])
@@ -201,8 +203,7 @@ def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
 
     bsTool = BeamSearchTool(args.nconds, args.latent_dim,
                             args.max_strlen, model, args.use_cond2dec)
-    predictor = ModelPrediction(
-        getattr(model, args.decode_type), args.use_cond2dec)
+    predictor = ModelPrediction(getattr(model, args.decode_type), args.use_cond2dec)
 
     for i in range(num_samplings):
         smiles, _, _ = bsTool.sample_molecule(conditions, toklen_data,
@@ -215,16 +216,14 @@ def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
                   f'QED:  {property_prediction[args.conditions[2]](mol):.2f}')
 
 
-
-
-def check_novelty(args):
-    train_smiles_path = os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv')
-    pd.read_csv(train_smiles_path)
-
+def sample_source_from_filepath(infile_path, oufile_path, n_samples, state=0):
+    df = pd.read_csv(infile_path)
+    df = df.sample(n=n_samples, random_state=state)
+    df.to_csv(oufile_path)
 
 
 if __name__ == "__main__":
-    set_seed(seed=0)
+    # set_seed(seed=0)
     RDLogger.DisableLog('rdApp.*')
 
     parser = argparse.ArgumentParser()
@@ -237,24 +236,56 @@ if __name__ == "__main__":
 
     device = allocate_gpu()
     scaler = joblib.load(args.scaler_path)
-    SRC, TRG = smiles_fields(smiles_field_path=args.field_path)
+    fields, SRC, TRG = get_fields(args.conditions, args.field_path)
     toklen_data = pd.read_csv(args.toklen_path)
 
-    model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
-                      args.model_type, args.decode_type).to(device)
+    print(TRG.vocab.stoi)
+
+    sos_idx = TRG.vocab.stoi['<sos>']
+    eos_idx = TRG.vocab.stoi['<eos>']
+    pad_idx = SRC.vocab.stoi['<pad>']
+
+    n_samples = 100
+    data_type = 'train'
+
+    source_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
+    sample_data_folder = os.path.join(source_data_folder, 'phaseI-inference')
+    os.makedirs(sample_data_folder, exist_ok=True)
     
+    sample_source_from_filepath(infile_path=os.path.join(source_data_folder, data_type+'.csv'),
+                                oufile_path=os.path.join(sample_data_folder, data_type+'.csv'),
+                                n_samples=n_samples, state=0)
+
+    dataset = data.TabularDataset(path=os.path.join(sample_data_folder, data_type+'.csv'),
+                                  format='csv', fields=fields, skip_header=True)
+    data_iter = data.BucketIterator(dataset, batch_size=1)
+
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
+                      args.model_type, args.decode_type).to(device)    
     model.eval()
 
-    num_points = 5
-    num_samplings = 1000
+    dataloader = to_dataloader(data_iter, args.conditions, pad_idx, args.max_strlen, device)
+
+    for i, batch in enumerate(dataloader):
+        # src_pad_mask = create_source_mask(batch.src, pad_idx, batch.econds)
+        # model.encode_att_sample(batch.src, batch.econds, batch.mconds, src_pad_mask)
+        smi_sequence = decode(model, batch.src, batch.econds, batch.mconds, batch.dconds,
+                              sos_idx, eos_idx, pad_idx, args.max_strlen, 'multinomial',
+                              args.use_cond2dec)
+        print(smi_sequence)
+        # break
+    
+    exit(0)
+
+    target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=args.num_points),
+                                             np.linspace(args.tpsa_lb, args.tpsa_ub, num=args.num_points),
+                                             np.linspace(args.qed_lb, args.qed_ub, num=args.num_points))) \
+        .T.reshape(-1, 3)
+
     generate_smiles_time = store_properties_time = 0
     os.makedirs(args.storage_path, exist_ok=True)
 
     total_time = time()
-    target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=num_points),
-                                                np.linspace(args.tpsa_lb, args.tpsa_ub, num=num_points),
-                                                np.linspace(args.qed_lb, args.qed_ub, num=num_points))) \
-        .T.reshape(-1, 3)
 
     bsTool = BeamSearchTool(args.nconds, args.latent_dim,
                             args.max_strlen, model, args.use_cond2dec)
@@ -272,11 +303,11 @@ if __name__ == "__main__":
                                 f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
 
         if os.path.exists(smiles_property_path):
-            continue # filter the files already run
+            continue
         
         generate_smiles_time -= time()
         generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties, TRG,
-                                                            scaler, toklen_data, device, num_samplings)
+                                                            scaler, toklen_data, device, args.samples_each)
         generate_smiles_time += time()
 
         with open(smiles_path, 'w') as sample_file:
@@ -290,8 +321,8 @@ if __name__ == "__main__":
         store_properties_time += time()
 
         print(f"generateT(s): {generate_smiles_time}\t"
-              f"storepropT(s): {store_properties_time}\t"
-              f"totalT(s): {time() - total_time}")
+                f"storepropT(s): {store_properties_time}\t"
+                f"totalT(s): {time() - total_time}")
         os.remove(smiles_path)
 
     print("Compute metrics for generated smiles of each desirable properties")
@@ -299,11 +330,11 @@ if __name__ == "__main__":
     for logp, tpsa, qed in target_properties:
         mean_file_path = os.path.join(args.storage_path, 
                             f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
-
+        print(">>>", mean_file_path)
         with open(mean_file_path, 'w') as metrics_writer:
             preds = pd.read_csv(os.path.join(args.storage_path,
                     f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
-            head, line = generate_metrics_line(preds)
+            head, line = generate_metrics_line(preds, train_smiles, args.n_jobs)
             metrics_writer.write('logp\ttpsa\tqed\t'+head+'\n')
             metrics_writer.write(f'{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t'+line+'\n')
 
@@ -332,7 +363,7 @@ if __name__ == "__main__":
     all_preds = all_preds.reset_index()
 
     with open(os.path.join(args.storage_path, 'output.txt'), 'w') as all_metrics_writer:
-        head, line = generate_metrics_line(all_preds)
+        head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
         all_metrics_writer.write(head+'\n')
         all_metrics_writer.write(line+'\n')
 
@@ -349,7 +380,7 @@ if __name__ == "__main__":
     all_preds = all_preds.reset_index()
 
     with open(os.path.join(args.storage_path, 'output-logp0.03.txt'), 'w') as all_metrics_writer:
-        head, line = generate_metrics_line(all_preds)
+        head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
         all_metrics_writer.write(head+'\n')
         all_metrics_writer.write(line+'\n')
     

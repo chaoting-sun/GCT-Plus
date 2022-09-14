@@ -17,39 +17,84 @@ import torch.nn.functional as F
 from .sublayers import Sampler
 from .layers import EncoderLayer, DecoderLayer
 from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, nopeak_mask, create_source_mask, get_clones
+from .modules import Norm, nopeak_mask, create_source_mask, get_clones, create_target_mask
 
 
-class MLP(nn.Module):
-    def __init__(self, vocab_size, latent_dim, mcond_dim, d_model, dropout=0.1):
-        super(MLP, self).__init__()
-        self.vocab_size = vocab_size
-        self.latent_dim = latent_dim
-        mlp_stacks = [latent_dim + mcond_dim, 512, 256, 128, 64, 128, 256, 512, d_model]
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
-        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
-        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
-        # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
-        # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
-        self.mlp_layers = self.build_mlp(mlp_stacks)
-        self.dropout = nn.Dropout(p=dropout)
-        self.norm = Norm(d_model)
-
-    def build_mlp(self, stacks):
-        layers = []        
-        for i in range(len(stacks) - 1):
-            layers.extend([nn.Linear(stacks[i], stacks[i + 1]), nn.ReLU()])
-        return nn.ModuleList(layers)
-
+# att-v2
+class ATT(nn.Module):
+    def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
+                 d_mid=256, dropout=0.1, batch_first=True):
+        super(ATT, self).__init__()
+        # assert (latent_dim + cond_dim) % n_heads == 0
+        self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
+        self.att = nn.MultiheadAttention(embed_dim=d_in,
+                                         num_heads=n_heads,
+                                         dropout=dropout,
+                                         batch_first=batch_first
+                                         )
+        self.norm_1 = Norm(d_in)
+        self.linear_1 = nn.Linear(d_in, d_mid)
+        self.dropout1 = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(d_mid, latent_dim)
+        self.dropout2 = nn.Dropout(dropout)
+        self.norm_2 = Norm(latent_dim)
+    
     def forward(self, x, mconds):
+        """
+        concatenate x and mconds to get input of dimension
+        -> (batch_size, max_strlen+mconds.size(-1), latent_dim)
+        N = batch_size
+        L = max_strlen+mconds.size(-1)
+        Eq = Ek = Ev = latent_dim
+        """ 
+
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
-        x = torch.cat([x, mconds], dim=2)
+        x = torch.cat([mconds, x], dim=2)
+        x1 = self.linear_in(x)
+        attn_out, attn_out_weights = self.att(x1, x1, x1)
+        x1 = x1 + attn_out
+        x1 = self.norm_1(x1)
 
-        for i in range(len(self.mlp_layers)):
-            x = self.dropout(self.mlp_layers[i](x))
+        x = self.dropout1(self.linear_1(x1))
+        x = self.dropout2(self.linear_2(x))
+        # x = x + x1
+        x = self.norm_2(x)
+        return x
 
-        return self.norm(x) # should add to avoid inf
+# att-v1
+# class ATT(nn.Module):
+#     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512, d_mid=256,
+#                  dropout=0.1, batch_first=True):
+#         super(ATT, self).__init__()
+#         # assert (latent_dim + cond_dim) % n_heads == 0
+#         self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
+#         self.att = nn.MultiheadAttention(embed_dim=d_in,
+#                                          num_heads=n_heads,
+#                                          dropout=dropout,
+#                                          batch_first=batch_first
+#                                          )
+#         self.linear_1 = nn.Linear(d_in, d_mid)
+#         self.dropout = nn.Dropout(dropout)
+#         self.linear_2 = nn.Linear(d_mid, latent_dim)
+    
+#     def forward(self, x, mconds):
+#         """
+#         concatenate x and mconds to get input of dimension
+#         -> (batch_size, max_strlen+mconds.size(-1), latent_dim)
+#         N = batch_size
+#         L = max_strlen+mconds.size(-1)
+#         Eq = Ek = Ev = latent_dim
+#         """
+
+#         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
+#         x = torch.cat([mconds, x], dim=2)
+#         x1 = self.linear_in(x)
+#         # attn_output: (N,L,E). E is embed_dim
+#         attn_output, attn_output_weights = self.att(x1, x1, x1)
+#         x = self.linear_1(attn_output)
+#         x = self.dropout(x)
+#         x = self.linear_2(x)
+#         return x
 
 
 class Encoder(nn.Module):
@@ -93,7 +138,7 @@ class Encoder(nn.Module):
         return x, q_k_enc
 
 
-class Decoder(nn.Module):   
+class Decoder(nn.Module):
     "Pass N decoder layers, followed by a layernorm"
     def __init__(self, vocab_size, d_model, N, h, 
                  dff, latent_dim, nconds, dropout, use_cond2dec, use_cond2lat):
@@ -143,10 +188,10 @@ class Decoder(nn.Module):
         return self.norm(x), q_k_dec1, q_k_dec2
     
 
-class MLPEncoder(nn.Module):
+class ATTEncoder(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPEncoder, self).__init__()
+        super(ATTEncoder, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -155,9 +200,10 @@ class MLPEncoder(nn.Module):
         # model architecture
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
-        self.sampler1 = Sampler(d_model, latent_dim, variational)
-        self.mlp = MLP(src_vocab, latent_dim, 2*nconds, d_model)
-        self.sampler2 = Sampler(d_model, latent_dim, variational)
+        self.sampler = Sampler(d_model, latent_dim, variational)
+        self.att_mu = ATT(latent_dim)
+        self.att_log_var = ATT(latent_dim)
+        # self.sampler2 = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
@@ -180,13 +226,21 @@ class MLPEncoder(nn.Module):
         z2, mu1, log_var2 = self.sampler2(x)
         return z2, mu1, log_var2
 
+    def encode_att_sample(self, src, econds, mconds, src_mask):
+        x, _ = self.encoder(src, econds, src_mask)
+        z, mu1, log_var1 = self.sampler(x)
+        mu2 = self.att_mu(mu1, mconds)
+        log_var2 = self.att_log_var(log_var1, mconds)
+        return self.sampler.sampling(mu2, log_var2), mu2, log_var2
+
     def encode_sample(self, src, econds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z, mu, log_var = self.sampler1(x)
         return z, mu, log_var
 
-    def mlp_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+    def att_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
         mconds, dconds = conds[0], conds[1]
+        self.att_mu(trg)
         x = self.mlp(e_outputs, mconds)
         e_outputs, _, _ = self.sampler2(x)
         return self.out(self.decoder(trg, e_outputs,
@@ -200,17 +254,17 @@ class MLPEncoder(nn.Module):
         decoded = self.decoder(trg, e_outputs, dconds, 
                                src_mask, trg_mask)[0]
         return self.out(decoded)
- 
+
     def forward(self, src, trg_en, econds, mconds, dconds, src_pad_mask, trg_pad_mask):
         x, _ = self.encoder(src, econds, src_pad_mask)
+        _, mu1, log_var1 = self.sampler(x)
 
-        z, _, _ = self.sampler1(x)
-        x = self.mlp(z, mconds)
-        trg_z_pred, _, _ = self.sampler2(x) # output of mlp
-        trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
+        mu2 = self.att_mu(mu1, mconds)
+        log_var2 = self.att_log_var(log_var1, mconds)
+        trg_z_pred = self.sampler.sampling(mu2, log_var2)
 
         x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
-        trg_z_truth, _, _ = self.sampler2(x)
+        trg_z_truth, _, _ = self.sampler(x)
 
         return trg_z_pred, trg_z_truth
 
@@ -218,29 +272,32 @@ class MLPEncoder(nn.Module):
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
            pad_idx, max_strlen, decode_type, use_cond2dec=False):
     src_mask = create_source_mask(src, pad_idx, econds)
-    z, _, _ = model.encode_sample_mlp_sample(src, econds, mconds, src_mask)
+    z, _, _ = model.encode_att_sample(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
     break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
     
     # create a batch of starting tokens (1)
     ys = (torch.ones(src.shape[0], 1, requires_grad=True)*sos_idx).type_as(src.data)
-    
+
+    # print(z)
+
     with torch.no_grad():
         for i in range(max_strlen-1):
-            # create a sequence (nopeak) mask for target
-            # use_cond2dec should be true s.t. trg_mask considers both the conditions and smiles tokens
-            trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), 
-                                   use_cond2dec, src.get_device())
-            # dim. of output: (bs, ys.size(-1)+1, d_model)
-            output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
-            # dim. of output: (bs, ys.size(-1)+1, vocab_size)
-            output = model.out(output)
-            # 1.
+            # create a target padding/nopeaking mask
+            trg_mask = create_target_mask(ys, pad_idx, dconds, use_cond2dec)
+
+            # predict given current sequence and latent space
+            output = model.decode(ys, z, dconds, src_mask, trg_mask) # (bs, len(ys[0])+1, tar_vocab)
+
+            # take the probability distribution of the next token
             output = output[:, -1, :]
+            
+            print(i, output)
+
+            # normalize the distribution
             prob = F.softmax(output, dim=-1)
-            # 2.
-            # output = output[:, -1, :]
+
             # prob = torch.exp(output)
             if decode_type == 'greedy':
                 _, next_word = torch.max(prob, dim=1)
@@ -252,6 +309,7 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
             
             # update the break condition. 2 is the stop token
             break_condition = (break_condition | (next_word.to('cpu')==eos_idx))
+            
             # If all satisfies the break condition, then break the loop.
             if all(break_condition):
                 break

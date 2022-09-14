@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from .sublayers import Sampler
 from .layers import EncoderLayer, DecoderLayer
 from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, nopeak_mask, create_source_mask, get_clones
+from .modules import Norm, nopeak_mask, create_source_mask, get_clones, create_target_mask
 
 
 # att-v2
@@ -226,6 +226,13 @@ class ATTEncoder(nn.Module):
         z2, mu1, log_var2 = self.sampler2(x)
         return z2, mu1, log_var2
 
+    def encode_att_sample(self, src, econds, mconds, src_mask):
+        x, _ = self.encoder(src, econds, src_mask)
+        z, mu1, log_var1 = self.sampler(x)
+        mu2 = self.att_mu(mu1, mconds)
+        log_var2 = self.att_log_var(log_var1, mconds)
+        return self.sampler.sampling(mu2, log_var2), mu2, log_var2
+
     def encode_sample(self, src, econds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z, mu, log_var = self.sampler1(x)
@@ -250,44 +257,46 @@ class ATTEncoder(nn.Module):
 
     def forward(self, src, trg_en, econds, mconds, dconds, src_pad_mask, trg_pad_mask):
         x, _ = self.encoder(src, econds, src_pad_mask)
-        z, mu1, log_var1 = self.sampler(x)
+        _, mu, logvar = self.sampler(x)
 
-        mu2 = self.att_mu(mu1, mconds)
-        log_var2 = self.att_log_var(log_var1, mconds)
-        trg_z_pred = self.sampler.sampling(mu2, log_var2)
+        mu_pred = self.att_mu(mu, mconds)
+        logvar_pred = self.att_log_var(logvar, mconds)
 
         x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
-        trg_z_truth, _, _ = self.sampler(x)
+        _, mu_truth, logvar_truth = self.sampler(x)
 
-        return trg_z_pred, trg_z_truth
+        return mu_pred, mu_truth, logvar_pred, logvar_truth
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
            pad_idx, max_strlen, decode_type, use_cond2dec=False):
     src_mask = create_source_mask(src, pad_idx, econds)
-    z, _, _ = model.encode_sample_mlp_sample(src, econds, mconds, src_mask)
+    z, _, _ = model.encode_att_sample(src, econds, mconds, src_mask)
 
     # initialize the record for break condition. 0 for non-stop, while 1 for stop 
     break_condition = torch.zeros(src.shape[0], dtype=torch.bool)
     
     # create a batch of starting tokens (1)
     ys = (torch.ones(src.shape[0], 1, requires_grad=True)*sos_idx).type_as(src.data)
-    
-    for i in range(max_strlen-1):
-        with torch.no_grad():
-            # create a sequence (nopeak) mask for target
-            # use_cond2dec should be true s.t. trg_mask considers both the conditions and smiles tokens
-            trg_mask = nopeak_mask(ys.size(-1), dconds.size(1), 
-                                   use_cond2dec, src.get_device())
-            # dim. of output: (bs, ys.size(-1)+1, d_model)
-            output = model.decoder(ys, z, dconds, src_mask, trg_mask)[0]
-            # dim. of output: (bs, ys.size(-1)+1, vocab_size)
-            output = model.out(output)
-            # 1.
+
+    # print(z)
+
+    with torch.no_grad():
+        for i in range(max_strlen-1):
+            # create a target padding/nopeaking mask
+            trg_mask = create_target_mask(ys, pad_idx, dconds, use_cond2dec)
+
+            # predict given current sequence and latent space
+            output = model.decode(ys, z, dconds, src_mask, trg_mask) # (bs, len(ys[0])+1, tar_vocab)
+
+            # take the probability distribution of the next token
             output = output[:, -1, :]
+            
+            print(i, output)
+
+            # normalize the distribution
             prob = F.softmax(output, dim=-1)
-            # 2.
-            # output = output[:, -1, :]
+
             # prob = torch.exp(output)
             if decode_type == 'greedy':
                 _, next_word = torch.max(prob, dim=1)
@@ -299,6 +308,7 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
             
             # update the break condition. 2 is the stop token
             break_condition = (break_condition | (next_word.to('cpu')==eos_idx))
+            
             # If all satisfies the break condition, then break the loop.
             if all(break_condition):
                 break

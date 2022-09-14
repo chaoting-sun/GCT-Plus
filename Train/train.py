@@ -6,16 +6,19 @@ from time import time
 import torch
 from torchtext import data
 
-from Train.trainer import Trainer
+# from Train.trainer import Trainer
+# from Train.att_trainer import ATT_Trainer
 from Model.modules import NoamOpt as moptim
 from Utils import set_seed, allocate_gpu, get_fields, save_fields
 from Model.build_model import build_model
 
-"""
-branch: mlp-only-training
-"""
 
 def train(args, debug=False):
+    if args.model_type == 'att_encoder':
+        from Train.att_trainer import ATT_Trainer as Trainer
+    elif args.model_type == 'mlp_encoder':
+        from Train.trainer import Trainer
+
     set_seed(51)
     torch.set_printoptions(profile="full")
     device = allocate_gpu()

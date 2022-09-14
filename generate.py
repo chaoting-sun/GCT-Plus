@@ -264,7 +264,6 @@ if __name__ == "__main__":
     
     elif args.test_random:
         # settings
-        num_samplings = 100
         std_choices = (0.2, 0.4, 0.6, 0.8, 1.0)
 
         generate_smiles_time = store_properties_time = 0
@@ -300,7 +299,7 @@ if __name__ == "__main__":
                 generate_smiles_time -= time()
                 generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties,
                                                                    TRG, scaler, toklen_data, device,
-                                                                   num_samplings, mu=0, std=std)
+                                                                   args.num_samplings, mu=0, std=std)
                 generate_smiles_time += time()
 
                 with open(smiles_path, 'w') as sample_file:
