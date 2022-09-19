@@ -87,7 +87,7 @@ def to_tokenlist(dataset, data_path):
 
 class Batch:
     def __init__(self, src, trg_en, trg, pad_idx, device,
-                 src_cond=None, dif_cond=None, trg_cond=None):
+                 src_cond=None, trg_cond=None, dif_cond=None):
         # input of encoder
         self.src = src.to(device)
         self.trg_en = trg_en.to(device)
@@ -102,9 +102,9 @@ class Batch:
 
 
 def rebatch(batch, conditions, pad_idx, max_strlen, device):
-    src = batch.src.transpose(0, 1)
-    trg_en = batch.trg_en.transpose(0, 1)
-    trg = batch.trg.transpose(0, 1)
+    src, trg_en, trg = batch.src.transpose(0, 1),    \
+                       batch.trg_en.transpose(0, 1), \
+                       batch.trg.transpose(0, 1)
 
     src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) - len(conditions))),
                          dtype=torch.long) * pad_idx
@@ -119,10 +119,11 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
 
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:
-        src_conds, trg_conds = [], []
-        for c in conditions:
-            src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
-            trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
+        src_conds = [getattr(batch, f"src_{c}").view(-1, 1) for c in conditions]
+        trg_conds = [getattr(batch, f"trg_{c}").view(-1, 1) for c in conditions]
+        # for c in conditions:
+        #     src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
+        #     trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
         src_cond_t = torch.cat(src_conds, dim=1)
         trg_cond_t = torch.cat(trg_conds, dim=1)
         dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
@@ -133,7 +134,7 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
 
 
 def to_dataloader(data_iter, conditions, pad_idx, max_strlen, device):
-    return (rebatch(batch, conditions, pad_idx, max_strlen, device) 
+    return (rebatch(batch, conditions, pad_idx, max_strlen, device)
             for batch in data_iter)
 
 

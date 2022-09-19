@@ -73,12 +73,12 @@ def build_mlpencoder(src_vocab, trg_vocab, N, d_model, d_ff,
 def build_attencoder(src_vocab, trg_vocab, N, d_model, d_ff, 
                      H, latent_dim, dropout, nconds, use_cond2dec, 
                      use_cond2lat, variational, transfer_path,
-                     model_path):
+                     model_path, att_type):
     tf = build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H,
                           latent_dim, dropout, nconds, use_cond2dec, 
                           use_cond2lat, transfer_path)
-    atttf = ATTEncoder(src_vocab, trg_vocab, N, d_model, d_ff, H, latent_dim,
-                       dropout, nconds, use_cond2dec, use_cond2lat, variational)
+    atttf = ATTEncoder(src_vocab, trg_vocab, N, d_model, d_ff, H, latent_dim, dropout,
+                       nconds, use_cond2dec, use_cond2lat, variational, att_type)
 
     if model_path is not None:
         atttf.load_state_dict(torch.load(model_path)['model_state_dict'])
@@ -112,7 +112,13 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
     return mlp
 
 
-def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, train=False):
+def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
+    model_param_names = [
+        'N', 'd_model', 'd_ff', 'H', 'latent_dim', 'dropout', 'nconds', 'use_cond2dec', 'use_cond2lat'
+    ]
+    
+    'model_path'
+
     if args.model_type == "transformer":
         # training phase I
         model = build_transformer(SRC_vocab_len, TRG_vocab_len,
@@ -143,18 +149,18 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, train=False
                                  args.H, args.latent_dim, args.dropout,
                                  args.nconds, args.use_cond2dec,
                                  args.use_cond2lat, args.variational,
-                                 args.molgct_path, model_path)
+                                 args.molgct_path, model_path, kwargs['att_type'])
     elif args.model_type == "mlp":
         # training phase II
-        if train is True:
+        if kwargs['train']:
             model = build_mlptrain(SRC_vocab_len, TRG_vocab_len, args.d_model,
                                    args.latent_dim, args.dropout, args.nconds,
                                    args.variational, model_path)
         else:
             model = build_mlp(SRC_vocab_len, TRG_vocab_len,
-                            args.N, args.d_model, args.d_ff, 
-                            args.H, args.latent_dim, args.dropout,
-                            args.nconds, args.use_cond2dec,
-                            args.use_cond2lat, args.variational,
-                            args.molgct_path, model_path)
+                              args.N, args.d_model, args.d_ff, 
+                              args.H, args.latent_dim, args.dropout,
+                              args.nconds, args.use_cond2dec,
+                              args.use_cond2lat, args.variational,
+                              args.molgct_path, model_path)
     return model

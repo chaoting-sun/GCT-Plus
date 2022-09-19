@@ -1,57 +1,57 @@
 import os
 import gc
-import numpy as np
+
+from numpy import ceil
 from time import time
 
 import torch
 from torchtext import data
 
-# from Train.trainer import Trainer
-# from Train.att_trainer import ATT_Trainer
+from Train.mlpcvae_trainer import MLPCVAE_Trainer
+from Train.att_trainer import ATT_Trainer
 from Model.modules import NoamOpt as moptim
 from Utils import set_seed, allocate_gpu, get_fields, save_fields
 from Model.build_model import build_model
 
 
 def train(args, debug=False):
-    if args.model_type == 'att_encoder':
-        from Train.att_trainer import ATT_Trainer as Trainer
-    elif args.model_type == 'mlp_encoder':
-        from Train.trainer import Trainer
-
     set_seed(51)
-    torch.set_printoptions(profile="full")
-    device = allocate_gpu()
-    
+
+    print('Getting GPU')
+
+    device = allocate_gpu()    
+
+    print('Getting feilds / SRC / TRG')
+
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
 
-    """ Preparing data """
-    print('Preparing training/validation dataset')
-    prepare_dataset_time = -time()
+    print('Preparing training / validation dataset')
+
     train_data, valid_data = data.TabularDataset.splits(
-        path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'),
-        train='train.csv', validation='validation.csv', test=None,
-        format='csv', fields=fields, skip_header=True)
-    prepare_dataset_time += time()
+        path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}_tiny'),
+        train='train.csv', validation='validation.csv', test=None, format='csv',
+        fields=fields, skip_header=True
+    )
 
-    args.train_nbatches = int(np.ceil(len(train_data) / args.batch_size))
-    args.valid_nbatches = int(np.ceil(len(valid_data) / args.batch_size))
-
-    print(f'Pairs in Train/Validation Data: {len(train_data)}/{len(valid_data)}')
-    print('Elipsed time (s):', prepare_dataset_time)
-
-    print('Preparing training/validation dataloader')
-    train_iter, valid_iter = data.BucketIterator.splits(
-        (train_data, valid_data), batch_sizes=(args.batch_size, args.batch_size),
-        sort_key=lambda x: (len(x.src), len(x.trg)))
+    print(f'#pairs in training / validation dataset: {len(train_data)}/{len(valid_data)}')
 
     if args.load_field is False:
         SRC.build_vocab(train_data)
         TRG.build_vocab(valid_data)
         save_fields(SRC, TRG, args.field_path)
 
-    # print("--- SRC VOCAB:", SRC.vocab.stoi)
-    # print("--- TRG VOCAB:", TRG.vocab.stoi)
+    args.train_nbatches, args.valid_nbatches = int(ceil(len(train_data) / args.batch_size)), \
+                                               int(ceil(len(valid_data) / args.batch_size))
+
+    print('Preparing training / validation dataloader')
+
+    train_iter, valid_iter = data.BucketIterator.splits(
+        (train_data, valid_data), batch_sizes=(args.batch_size, args.batch_size),
+        sort_key=lambda x: (len(x.src), len(x.trg))
+    )
+
+    del train_data, valid_data
+    gc.collect()
 
     args.sos_idx = TRG.vocab.stoi['<sos>']
     args.eos_idx = TRG.vocab.stoi['<eos>']
@@ -59,24 +59,33 @@ def train(args, debug=False):
 
     assert SRC.vocab.stoi['<pad>'] == TRG.vocab.stoi['<pad>']
 
-    del train_data
-    del valid_data
-    gc.collect()
+    print(f'Preparing model with starting epoch: {args.start_epoch}')
 
-    """ Preparing Model """
     if args.start_epoch > 1:
         model_path = os.path.join(args.save_directory, f'model_{args.start_epoch-1}.pt')
     else:
         model_path = None
-    model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path).to(device)
     
+    if args.model_type == 'att_encoder':
+        att_type = 'ATT_v3'
+        model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path, att_type=att_type).to(device)
+    elif args.model_type == 'mlp_encoder':
+        model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path).to(device)
+
     # for n, p in model.named_parameters():
     #     if p.requires_grad:
     #         print(n, p.size())
 
-    print('Parameters:', f'{sum(p.numel() for p in model.parameters()):<40}\t')
-    print('Trainable Parameters:', f'{sum(p.numel() for p in model.parameters() if p.requires_grad):<40}')
-    # exit()
+    total_parameters = sum(p.numel() for p in model.parameters())
+    trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    trainer = Trainer(args)
-    trainer.train(model, train_iter, valid_iter, SRC, TRG, device)
+    assert trainable_parameters > 0
+
+    print('Parameters / Trainable Parameters:', f'{total_parameters:<11}/{trainable_parameters:<11}\t')
+    
+    if args.model_type == 'att_encoder':
+        trainer = ATT_Trainer(args.conditions, args.save_directory, args.pad_idx, args.max_strlen)
+        trainer.train(args, model, train_iter, valid_iter, SRC, TRG, device)
+    elif args.model_type == 'mlp_encoder':
+        trainer = MLPCVAE_Trainer(args)
+        trainer.train(model, train_iter, valid_iter, SRC, TRG, device)

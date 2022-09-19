@@ -20,8 +20,8 @@ class KLDiv(nn.Module):
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
     
     def forward(self, predict, target):
-        predict = predict.view(-1, predict.size()[-1])
-        target = target.view(-1, target.size()[-1])
+        predict = predict.contiguous().view(-1, predict.size()[-1])
+        target = target.contiguous().view(-1, target.size()[-1])
         return self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
 
 
@@ -33,8 +33,8 @@ class MSE_KLDiv(nn.Module):
         self.beta = 10
 
     def forward(self, predict, target):
-        predict = predict.view(-1, predict.size()[-1])
-        target = target.view(-1, target.size()[-1])
+        predict = predict.contiguous().view(-1, predict.size()[-1])
+        target = target.contiguous().view(-1, target.size()[-1])
         self.mse_loss = self.mse_loss(predict, target)
         self.kl_loss = self.kl_loss(F.log_softmax(predict, dim=-1), F.softmax(target, dim=-1))
         return self.mse_loss + self.beta*self.kl_loss

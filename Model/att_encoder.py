@@ -20,11 +20,11 @@ from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, nopeak_mask, create_source_mask, get_clones, create_target_mask
 
 
-# att-v2
-class ATT(nn.Module):
+"""ATT-v1"""
+class ATT_v1(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True):
-        super(ATT, self).__init__()
+        super(ATT_v1, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
@@ -61,40 +61,69 @@ class ATT(nn.Module):
         x = self.norm_2(x)
         return x
 
-# att-v1
-# class ATT(nn.Module):
-#     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512, d_mid=256,
-#                  dropout=0.1, batch_first=True):
-#         super(ATT, self).__init__()
-#         # assert (latent_dim + cond_dim) % n_heads == 0
-#         self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
-#         self.att = nn.MultiheadAttention(embed_dim=d_in,
-#                                          num_heads=n_heads,
-#                                          dropout=dropout,
-#                                          batch_first=batch_first
-#                                          )
-#         self.linear_1 = nn.Linear(d_in, d_mid)
-#         self.dropout = nn.Dropout(dropout)
-#         self.linear_2 = nn.Linear(d_mid, latent_dim)
-    
-#     def forward(self, x, mconds):
-#         """
-#         concatenate x and mconds to get input of dimension
-#         -> (batch_size, max_strlen+mconds.size(-1), latent_dim)
-#         N = batch_size
-#         L = max_strlen+mconds.size(-1)
-#         Eq = Ek = Ev = latent_dim
-#         """
 
-#         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
-#         x = torch.cat([mconds, x], dim=2)
-#         x1 = self.linear_in(x)
-#         # attn_output: (N,L,E). E is embed_dim
-#         attn_output, attn_output_weights = self.att(x1, x1, x1)
-#         x = self.linear_1(attn_output)
-#         x = self.dropout(x)
-#         x = self.linear_2(x)
-#         return x
+"""ATT-v2"""
+class ATT_v2(nn.Module):
+    def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
+                 d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
+        super(ATT_v2, self).__init__()
+        # assert (latent_dim + cond_dim) % n_heads == 0
+        self.linear_in = nn.Linear(cond_dim+max_strlen, d_in)
+        self.att = nn.MultiheadAttention(embed_dim=d_in,
+                                         num_heads=n_heads,
+                                         dropout=dropout,
+                                         batch_first=batch_first
+                                         )
+        self.norm_1 = Norm(d_in)
+        self.linear_1 = nn.Linear(d_in, d_mid)
+        self.dropout1 = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(d_mid, max_strlen)
+        self.dropout2 = nn.Dropout(dropout)
+        self.norm_2 = Norm(max_strlen)
+    
+    def forward(self, x, mconds):
+        """
+        concatenate x and mconds to get input of dimension
+        -> (batch_size, max_strlen+mconds.size(-1), latent_dim)
+        N = batch_size
+        L = max_strlen+mconds.size(-1)
+        Eq = Ek = Ev = latent_dim
+        """ 
+
+        x = torch.transpose(x, 1, 2)
+        mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
+        x = torch.cat([mconds, x], dim=2)
+    
+        x1 = self.linear_in(x)
+        attn_out, attn_out_weights = self.att(x1, x1, x1)
+        x1 = x1 + attn_out
+        x1 = self.norm_1(x1)
+
+        x = self.dropout1(self.linear_1(x1))
+        x = self.dropout2(self.linear_2(x))
+        # x = x + x1
+        x = self.norm_2(x)
+        x = torch.transpose(x, 1, 2)
+        return x
+
+
+"""ATT-v3"""
+class ATT_v3(nn.Module):
+    def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
+                 d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
+        super(ATT_v3, self).__init__()
+        # assert (latent_dim + cond_dim) % n_heads == 0
+
+        self.att_v1 = ATT_v1(latent_dim, n_heads, cond_dim, d_in,
+                             d_mid, dropout, batch_first)
+        self.att_v2 = ATT_v2(latent_dim, n_heads, cond_dim, d_in,
+                             d_mid, dropout, batch_first, max_strlen)
+
+    def forward(self, x, mconds):
+        x1 = self.att_v1(x, mconds)
+        x2 = self.att_v2(x, mconds)
+       
+        return x1 + x2
 
 
 class Encoder(nn.Module):
@@ -120,7 +149,6 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds, d_model)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
         # dim: -> (batch_size, src_maxstr, d_model)
-
         x = self.embed_sentence(src)
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
@@ -190,7 +218,7 @@ class Decoder(nn.Module):
 
 class ATTEncoder(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
-                 dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
+                 dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True, att_type='ATT_v1'):
         super(ATTEncoder, self).__init__()
         # settings
         self.nconds = nconds
@@ -201,8 +229,13 @@ class ATTEncoder(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
-        self.att_mu = ATT(latent_dim)
-        self.att_log_var = ATT(latent_dim)
+        
+        self.att_mu = globals()[att_type](latent_dim)
+        self.att_log_var = globals()[att_type](latent_dim)
+
+        # self.att_mu = ATT_v1(latent_dim)
+        # self.att_log_var = ATT_v1(latent_dim)
+    
         # self.sampler2 = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
@@ -279,8 +312,6 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
     # create a batch of starting tokens (1)
     ys = (torch.ones(src.shape[0], 1, requires_grad=True)*sos_idx).type_as(src.data)
 
-    # print(z)
-
     with torch.no_grad():
         for i in range(max_strlen-1):
             # create a target padding/nopeaking mask
@@ -291,8 +322,6 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
 
             # take the probability distribution of the next token
             output = output[:, -1, :]
-            
-            print(i, output)
 
             # normalize the distribution
             prob = F.softmax(output, dim=-1)

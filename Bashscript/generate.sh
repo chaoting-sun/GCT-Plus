@@ -14,13 +14,14 @@ GPU_IDX=1
 # ATT-Decoder 
 
 MODEL=atttf
-MODEL_VERSION=v2
+MODEL_VERSION=v4
 MODEL_TYPE=att_encoder
 DECODE_TYPE=att_decode
-SIMILARITY=1.00
+SIMILARITY=0.80
 LOSS_FCN=kld
-EPOCH=3
+EPOCH=1
 
+export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
 #     generate.py \

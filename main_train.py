@@ -23,7 +23,9 @@ if __name__ == "__main__":
         mlp_train(args, debug=DEBUG)
 
     elif args.model_type == 'mlp_encoder':
+        print('Start to train MLP_Encoder')
         train(args, debug=DEBUG)
     
     elif args.model_type == 'att_encoder':
+        print('Start to train ATT_Encoder')
         train(args, debug=DEBUG)

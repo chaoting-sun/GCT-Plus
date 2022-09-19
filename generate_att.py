@@ -16,7 +16,7 @@ from Utils import allocate_gpu, get_fields
 from Utils.mapper import mapper
 from Utils.field import smiles_fields
 from Utils.seed import set_seed
-from Utils.property import property_prediction, get_mol
+from Utils.property import property_prediction, get_mol, tanimoto_similarity, logP, tPSA, QED
 from Utils.dataset import to_dataloader
 from Configuration.config import options
 from Inference.beam_search import BeamSearchTool
@@ -219,7 +219,21 @@ def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
 def sample_source_from_filepath(infile_path, oufile_path, n_samples, state=0):
     df = pd.read_csv(infile_path)
     df = df.sample(n=n_samples, random_state=state)
-    df.to_csv(oufile_path)
+    df.to_csv(oufile_path, index=False)
+
+
+def convert_output_into_smiles(idx_sequence, vocab, type='TRG'):
+    idx_sequence = [idx for idx in idx_sequence if idx != vocab.stoi['<pad>']]
+    smi_list = [vocab.itos[token] for token in idx_sequence]
+    if type == 'TRG':
+        return ''.join(smi_list[1:-1])
+    elif type == 'SRC':
+        return ''.join(smi_list)
+
+
+def test():
+    # find the delta properties that appear most often in the training dataset.
+    # use
 
 
 if __name__ == "__main__":
@@ -248,10 +262,11 @@ if __name__ == "__main__":
     n_samples = 100
     data_type = 'train'
 
-    source_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
+    source_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity}')
     sample_data_folder = os.path.join(source_data_folder, 'phaseI-inference')
+
     os.makedirs(sample_data_folder, exist_ok=True)
-    
+        
     sample_source_from_filepath(infile_path=os.path.join(source_data_folder, data_type+'.csv'),
                                 oufile_path=os.path.join(sample_data_folder, data_type+'.csv'),
                                 n_samples=n_samples, state=0)
@@ -267,12 +282,43 @@ if __name__ == "__main__":
     dataloader = to_dataloader(data_iter, args.conditions, pad_idx, args.max_strlen, device)
 
     for i, batch in enumerate(dataloader):
-        # src_pad_mask = create_source_mask(batch.src, pad_idx, batch.econds)
-        # model.encode_att_sample(batch.src, batch.econds, batch.mconds, src_pad_mask)
-        smi_sequence = decode(model, batch.src, batch.econds, batch.mconds, batch.dconds,
-                              sos_idx, eos_idx, pad_idx, args.max_strlen, 'multinomial',
-                              args.use_cond2dec)
-        print(smi_sequence)
+        src_smi = convert_output_into_smiles(batch.src.cpu().numpy()[0], SRC.vocab, 'SRC')
+        trg_smi = convert_output_into_smiles(batch.trg.cpu().numpy()[0], TRG.vocab, 'TRG')
+
+        mol = Chem.MolFromSmiles(src_smi)
+        s_logp, s_tpsa, s_qed = logP(mol), tPSA(mol), QED(mol)
+
+        mol = Chem.MolFromSmiles(trg_smi)
+        t_logp, t_tpsa, t_qed = logP(mol), tPSA(mol), QED(mol)
+
+        for _ in range(10):
+            pred_sequence = decode(model, batch.src, batch.econds, batch.mconds, batch.dconds,
+                                sos_idx, eos_idx, pad_idx, args.max_strlen, 'multinomial',
+                                args.use_cond2dec)
+
+            pred_sequence = pred_sequence.cpu().numpy()[0]
+            pred_smi = convert_output_into_smiles(pred_sequence, TRG.vocab, 'TRG')
+
+            mol = Chem.MolFromSmiles(pred_smi)
+            if mol is not None:
+                valid = 'O'
+                similarity = tanimoto_similarity(src_smi, pred_smi)
+                p_logp, p_tpsa, p_qed = logP(mol), tPSA(mol), QED(mol)
+                print(f'{src_smi:<45} -> {pred_smi:<45}{valid} -> {similarity:.3f} | '
+                      f'logP {(p_logp-t_logp)/t_logp*100:<10.3f}%\t'
+                      f'tPSA {(p_tpsa-t_tpsa)/t_tpsa*100:<10.3f}%\t'
+                      f'QED {(p_qed-t_qed)/t_qed*100:<10.3f}%')
+
+
+
+                    #   f'logP {s_logp:.4f} => {t_logp:.4f} <-> {p_logp:.4f}  '
+                    #   f'tPSA {s_tpsa:.4f} => {t_tpsa:.4f} <-> {p_tpsa:.4f}  '
+                    #   f'QED {s_qed:.4f} => {t_qed:.4f} <-> {p_qed:.4f}')
+            else:
+                valid = 'X'
+                similarity = 0
+                print(f'{src_smi:<45} -> {trg_smi:<45}{valid}')
+        print('\n')
         # break
     
     exit(0)

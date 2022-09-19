@@ -43,12 +43,11 @@ def create_condition_mask(conditions):
     return condition_mask
 
 
-def create_source_mask(source, pad_idx, conditions=None, condition_mask=None):
+def create_source_mask(source, pad_idx, conditions=None):
     # (bs, strlen) -> (bs, 1, strlen)
     source_mask = (source != pad_idx).unsqueeze(-2)
     if conditions is not None:
-        if condition_mask is None:
-            condition_mask = create_condition_mask(conditions)
+        condition_mask = create_condition_mask(conditions)
         # (bs, 1, strlen+nconds)
         return torch.cat([condition_mask, source_mask], dim=2)
     return source_mask

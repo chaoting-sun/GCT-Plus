@@ -6,6 +6,8 @@ from rdkit.Chem.rdchem import AtomValenceException
 from rdkit.Chem import MolFromSmiles, MolToSmiles, \
     Descriptors, Mol, AllChem, SanitizeMol
 
+from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
+
 from moses.metrics.SA_Score import sascorer
 from moses.metrics.NP_Score import npscorer
 
@@ -60,12 +62,14 @@ property_prediction = {
     "NP": NP
 }
 
+
 def to_fp_ECFP(smi):
     if smi:
         mol = MolFromSmiles(smi)
         if mol is None:
             return None
-        return AllChem.GetMorganFingerprint(mol, 2)
+        return GetMorganFingerprintAsBitVect(mol, 2, 1024)
+        # return AllChem.GetMorganFingerprint(mol, radius=2)
 
 
 def tanimoto_similarity_pool(args):

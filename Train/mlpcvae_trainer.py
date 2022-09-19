@@ -29,7 +29,7 @@ DEBUG = True
 N_SAMPLES = 80 if DEBUG is True else None
 
 
-class Trainer(object):
+class MLPCVAE_Trainer(object):
     def __init__(self, args):
         # parameters for training
         self.args = args
@@ -62,8 +62,10 @@ class Trainer(object):
             checkpoint = torch.load(os.path.join(self.args.save_directory,
                                     f'model_{self.args.start_epoch-1}.pt'), map_location='cuda:0')
             optim_dict = checkpoint['optimizer_state_dict']
-            optim = moptim(optim_dict['model_size'], optim_dict['factor'], 
-                           optim_dict['warmup'], torch.optim.Adam(trainable_parameters, lr=0))
+            optim = moptim(optim_dict['model_size'],
+                           optim_dict['factor'], 
+                           optim_dict['warmup'],
+                           torch.optim.Adam(trainable_parameters, lr=0))
             optim.load_state_dict(optim_dict)
         return optim
 
