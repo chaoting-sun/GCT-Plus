@@ -21,10 +21,10 @@ from .modules import Norm, nopeak_mask, create_source_mask, get_clones, create_t
 
 
 """ATT-v1"""
-class ATT_v1(nn.Module):
+class ATT_v3(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True):
-        super(ATT_v1, self).__init__()
+        super(ATT_v3, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
@@ -63,10 +63,10 @@ class ATT_v1(nn.Module):
 
 
 """ATT-v2"""
-class ATT_v2(nn.Module):
+class ATT_v4(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
-        super(ATT_v2, self).__init__()
+        super(ATT_v4, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         self.linear_in = nn.Linear(cond_dim+max_strlen, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
@@ -108,20 +108,20 @@ class ATT_v2(nn.Module):
 
 
 """ATT-v3"""
-class ATT_v3(nn.Module):
+class ATT_v5(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
-        super(ATT_v3, self).__init__()
+        super(ATT_v5, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
 
-        self.att_v1 = ATT_v1(latent_dim, n_heads, cond_dim, d_in,
+        self.att_v3 = ATT_v3(latent_dim, n_heads, cond_dim, d_in,
                              d_mid, dropout, batch_first)
-        self.att_v2 = ATT_v2(latent_dim, n_heads, cond_dim, d_in,
+        self.att_v4 = ATT_v4(latent_dim, n_heads, cond_dim, d_in,
                              d_mid, dropout, batch_first, max_strlen)
 
     def forward(self, x, mconds):
-        x1 = self.att_v1(x, mconds)
-        x2 = self.att_v2(x, mconds)
+        x1 = self.att_v3(x, mconds)
+        x2 = self.att_v4(x, mconds)
        
         return x1 + x2
 
@@ -229,12 +229,11 @@ class ATTEncoder(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
-        
         self.att_mu = globals()[att_type](latent_dim)
         self.att_log_var = globals()[att_type](latent_dim)
 
-        # self.att_mu = ATT_v1(latent_dim)
-        # self.att_log_var = ATT_v1(latent_dim)
+        # self.att_mu = ATT(latent_dim)
+        # self.att_log_var = ATT(latent_dim)
     
         # self.sampler2 = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
@@ -252,41 +251,35 @@ class ATTEncoder(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
     
-    def encode_sample_mlp_sample(self, src, econds, mconds, src_mask):
-        x, _ = self.encoder(src, econds, src_mask)
-        z1, _, _ = self.sampler1(x)
-        x = self.mlp(z1, mconds)
-        z2, mu1, log_var2 = self.sampler2(x)
-        return z2, mu1, log_var2
-
-    def encode_att_sample(self, src, econds, mconds, src_mask):
-        x, _ = self.encoder(src, econds, src_mask)
+    def encode_att_sample(self, src, conds, src_mask):
+        assert len(conds) == 2
+        econds, mconds = conds[0], conds[1]
+        x, q_k_enc = self.encoder(src, econds, src_mask)
         z, mu1, log_var1 = self.sampler(x)
         mu2 = self.att_mu(mu1, mconds)
         log_var2 = self.att_log_var(log_var1, mconds)
-        return self.sampler.sampling(mu2, log_var2), mu2, log_var2
+        return self.sampler.sampling(mu2, log_var2), mu2, log_var2, q_k_enc
 
     def encode_sample(self, src, econds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z, mu, log_var = self.sampler1(x)
         return z, mu, log_var
 
-    def att_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
-        mconds, dconds = conds[0], conds[1]
-        self.att_mu(trg)
-        x = self.mlp(e_outputs, mconds)
-        e_outputs, _, _ = self.sampler2(x)
-        return self.out(self.decoder(trg, e_outputs,
-                        dconds, src_mask, trg_mask)[0])
+    # def att_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+    #     mconds, dconds = conds[0], conds[1]
+    #     self.att_mu(trg)
+    #     x = self.mlp(e_outputs, mconds)
+    #     e_outputs, _, _ = self.sampler2(x)
+    #     return self.out(self.decoder(trg, e_outputs,
+    #                     dconds, src_mask, trg_mask)[0])
 
     def encode(self, src, econds, src_mask):
-        x, _ = self.encoder(src, econds, src_mask)
-        return x
+        x, q_k_enc = self.encoder(src, econds, src_mask)
+        return x, q_k_enc
     
-    def decode(self, trg, e_outputs, dconds, src_mask, trg_mask):
-        decoded = self.decoder(trg, e_outputs, dconds, 
-                               src_mask, trg_mask)[0]
-        return self.out(decoded)
+    def decode(self, trg, z, dconds, src_mask, trg_mask):
+        x, q_k_dec1, q_k_dec2 = self.decoder(trg, z, dconds, src_mask, trg_mask)
+        return self.out(x), q_k_dec1, q_k_dec2
 
     def forward(self, src, trg_en, econds, mconds, dconds, src_pad_mask, trg_pad_mask):
         x, _ = self.encoder(src, econds, src_pad_mask)
@@ -326,7 +319,6 @@ def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
             # normalize the distribution
             prob = F.softmax(output, dim=-1)
 
-            # prob = torch.exp(output)
             if decode_type == 'greedy':
                 _, next_word = torch.max(prob, dim=1)
                 ys = torch.cat([ys, next_word.unsqueeze(-1)], dim=1)  # [batch_size, i]

@@ -113,11 +113,10 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
 
 
 def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
+    molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
     model_param_names = [
         'N', 'd_model', 'd_ff', 'H', 'latent_dim', 'dropout', 'nconds', 'use_cond2dec', 'use_cond2lat'
     ]
-    
-    'model_path'
 
     if args.model_type == "transformer":
         # training phase I
@@ -133,7 +132,7 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
                                      args.H, args.latent_dim, args.dropout,
                                      args.nconds, args.use_cond2dec,
                                      args.use_cond2lat, args.variational,
-                                     args.molgct_path, model_path)
+                                     molgct_model_path, model_path)
     elif args.model_type == "mlp_encoder":
         # training phase II
         model = build_mlpencoder(SRC_vocab_len, TRG_vocab_len,
@@ -141,7 +140,7 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
                                  args.H, args.latent_dim, args.dropout,
                                  args.nconds, args.use_cond2dec,
                                  args.use_cond2lat, args.variational,
-                                 args.molgct_path, model_path)
+                                 molgct_model_path, model_path)
     elif args.model_type == "att_encoder":
         # training phase II
         model = build_attencoder(SRC_vocab_len, TRG_vocab_len,
@@ -149,7 +148,7 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
                                  args.H, args.latent_dim, args.dropout,
                                  args.nconds, args.use_cond2dec,
                                  args.use_cond2lat, args.variational,
-                                 args.molgct_path, model_path, kwargs['att_type'])
+                                 molgct_model_path, model_path, kwargs['att_type'])
     elif args.model_type == "mlp":
         # training phase II
         if kwargs['train']:
@@ -162,5 +161,5 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
                               args.H, args.latent_dim, args.dropout,
                               args.nconds, args.use_cond2dec,
                               args.use_cond2lat, args.variational,
-                              args.molgct_path, model_path)
+                              molgct_model_path, model_path)
     return model

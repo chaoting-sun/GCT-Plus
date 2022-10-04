@@ -26,9 +26,9 @@
 #         # >preprocess.out 2>preprocess.err&
 
 MODEL_TYPE='mlp_encoder'
-SIMILARITY=0.5
+SIMILARITY=0.9
 
-nohup python3 -u \
+python3 -u \
     main_preprocess.py \
         -similarity ${SIMILARITY} \
         -n_jobs 4 \
@@ -37,4 +37,4 @@ nohup python3 -u \
         -load_scaler \
         -model_type ${MODEL_TYPE} \
         -variational \
-    >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
+    # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&

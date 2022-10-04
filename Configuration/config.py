@@ -15,13 +15,10 @@ def options(parser):
     parser.add_argument('-lang_format', type=str, default='SMILES', help='Path of the original data')
     parser.add_argument('-data_name', type=str, default='moses', help='Path of the original data')
 
-    # hard constraints    
-    parser.add_argument('-molgct_path', type=str, default='molGCT/molgct.pt')
-    parser.add_argument('-toklen_path', type=str, default='Data/moses/toklen_list.csv')
+    # hard constraints
+    parser.add_argument('-molgct_path', type=str, default='/fileserver-gamma/chaoting/ML/molGCT/')
     parser.add_argument('-load_field', action='store_true', help="load the weights of fields")
-    parser.add_argument('-field_path', type=str, default="molGCT", help="weights of fields")
     parser.add_argument('-load_scaler', action='store_true', help="load the weights of fields")
-    parser.add_argument('-scaler_path', type=str, default='molGCT/scaler.pkl')
     
     """ MODEL ARCHITECTURE """
     # hard constraints (molGCT)

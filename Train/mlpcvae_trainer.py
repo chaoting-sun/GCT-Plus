@@ -145,12 +145,8 @@ class MLPCVAE_Trainer(object):
                       f'MSE: {float(_mse)/len(batch.src):.6f}\t' \
                       f'KLDiv: {float(_kld)/len(batch.src):.6f}\t' \
                       f'TotalT(s): {end_time-start_time:.1f}\t' \
-                      f'ModelT(s): {total_model_time:.1f}\t' \
-                      f'UpdateT(s): {total_update_time:.1f}\t' \
-                      f'ClearT(s): {total_clear_time:.1f}\t'
 
             self.LOG_details.info(details)
-            print(details)
 
         return sum_mse/n_samples, sum_kld/n_samples
 
@@ -208,55 +204,3 @@ class MLPCVAE_Trainer(object):
             
             if stop_cnt >= early_stop:
                 break
-
-    # def train(self, model, train_iter, valid_iter, SRC, TRG, device):
-    #     # criterion = MSELoss() # 1
-    #     criterion = KLDiv()
-
-    #     optim = self.get_optimization(filter(lambda p: p.requires_grad, model.parameters()))
-        
-    #     lowest_mse = 1000
-    #     early_stop, stop_cnt = 4, 0
-    #     epoch_best = self.args.start_epoch
-
-    #     for epoch in range(self.args.start_epoch, self.args.num_epoch+1):
-    #         self.LOG_results.info(f"Start EPOCH {epoch}")
-
-    #         """ Train """
-    #         model.train()
-
-    #         self.LOG_details.info(f"Training Start EPOCH: {epoch}")
-    #         train_mse, train_kldiv = self.run_epoch(train_iter, self.args.train_nbatches, model, 
-    #                                                  LossCompute(criterion, optim), device, TRG)
-    #         self.LOG_details.info("Training End")
-
-    #         """ Validation """
-    #         model.eval()
-
-    #         self.LOG_details.info(f"Validation Start EPOCH: {epoch}")
-    #         with torch.no_grad():
-    #             valid_mse, valid_kldiv = self.run_epoch(valid_iter, self.args.valid_nbatches, model,
-    #                                                       LossCompute(criterion, None), device, TRG)
-    #         self.LOG_details.info("Validation End")
-
-    #         """ Recording """
-    #         self.LOG_results.info(f"Train:RMSE/KLDiv(10^6) {train_mse:.3f}/{train_kldiv*10**6:.3f}\t"
-    #                                f"Valid:RMSE/KLDiv(10^6) {valid_mse:.3f}/{valid_kldiv*10**6:.3f}")
-
-    #         """ Recording the best model """
-    #         if lowest_mse > valid_mse:
-    #             # store lowest-loss new model every time is saferx
-    #             if os.path.exists(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt")):
-    #                 os.remove(os.path.join(self.args.save_directory, f"best_{epoch_best}.pt"))
-                    
-    #             self.save_checkpoint(model, optim, f"best_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
-    #             lowest_mse = valid_mse
-    #             epoch_best = epoch
-    #             stop_cnt = 0
-    #         else:
-    #             stop_cnt += 1
-
-    #         self.save_checkpoint(model, optim, f"model_{epoch}.pt", len(SRC.vocab), len(TRG.vocab))
-            
-    #         if stop_cnt >= early_stop:
-    #             break

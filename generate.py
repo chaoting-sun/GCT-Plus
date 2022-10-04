@@ -7,9 +7,12 @@ import pandas as pd
 import numpy as np
 import pandas as pd
 from multiprocessing import Pool
+from torchtext import data
+from Utils import allocate_gpu, get_fields
 
 from rdkit import Chem, RDLogger
 from moses.metrics import metrics
+from Utils.dataset import to_dataloader
 
 from Utils import allocate_gpu
 from Utils.mapper import mapper
@@ -17,8 +20,9 @@ from Utils.field import smiles_fields
 from Utils.seed import set_seed
 from Utils.property import property_prediction, get_mol
 from Configuration.config import options
-from Inference.beam_search import BeamSearchTool
-from Inference.model_prediction import ModelPrediction
+# from Inference.beam_search import BeamSearchTool
+from Inference.demo import Demo
+from Inference.model_prediction import Predictor
 # from Model.build_model import build_model
 
 from Model.build_model import build_model
@@ -101,7 +105,7 @@ def generate_metrics_line(preds, train, n_jobs):
 
 def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
     if model_type == 'transformer':
-        model_path = 'molGCT/molgct.pt'
+        model_path = os.path.join(args.molgct_path, 'molgct.pt')
     elif args.epoch > 0:
         model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
         # model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
@@ -188,28 +192,30 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
 
 
-def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
-                  toklen_data, num_samplings, device, mu=0, std=0.2):
-    conditions = np.array([[logp, tpsa, qed]])
+def generate_smiles_from_src(args, fields, TRG):
+    test_file_path = "./test_smiles.csv"
+    target_smiles = 'CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c1'
+    
+    if not os.path.exists(test_file_path):    
+        df = pd.read_csv(os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'))
+        df = df.loc[df.src == target_smiles]
+        df.to_csv(test_file_path, index=False)
 
-    if args.decode_type == 'mlp_decode':
-        noise = np.random.normal(mu, std, size=(1, args.nconds))
-        conditions = (conditions-noise, conditions)
+    dataset = data.TabularDataset(path=test_file_path, format='csv', fields=fields, skip_header=True)
+    data_iter = data.BucketIterator(dataset, batch_size=1)
+    dataloader = to_dataloader(data_iter, args.conditions, TRG.vocab.stoi['<pad>'], args.max_strlen, device)
 
-    bsTool = BeamSearchTool(args.nconds, args.latent_dim,
-                            args.max_strlen, model, args.use_cond2dec)
-    predictor = ModelPrediction(
-        getattr(model, args.decode_type), args.use_cond2dec)
+    predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
 
-    for i in range(num_samplings):
-        smiles, _, _ = bsTool.sample_molecule(conditions, toklen_data,
-                                              predictor, TRG, scaler, device)
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is not None:
-            print(f'SMILES {i+1:<6}{smiles:<55} ->\t'
-                  f'logP: {property_prediction[args.conditions[0]](mol):.2f}\t'
-                  f'tPSA: {property_prediction[args.conditions[1]](mol):.2f}\t'
-                  f'QED:  {property_prediction[args.conditions[2]](mol):.2f}')
+    demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
+                args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
+                (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
+                (args.qed_lb, args.qed_ub), 'beam_search', device)
+    
+
+    for i, batch in enumerate(dataloader):
+        demo.inference_from_src_properties()
+
 
 
 if __name__ == "__main__":
@@ -220,16 +226,20 @@ if __name__ == "__main__":
     parser = options(parser)
     args = parser.parse_args()
 
+
     print('-------------------------- Settings --------------------------')
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
     print('-------------------------- Settings --------------------------')
 
     device = allocate_gpu()
-    scaler = joblib.load(args.scaler_path)
-    SRC, TRG = smiles_fields(smiles_field_path=args.field_path)
-    toklen_data = pd.read_csv(args.toklen_path)
-    train_smiles = pd.read_csv(os.path.join(args.data_path, 
-                               "raw", "train", "smiles_serial.csv"))
+    scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
+    fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
+
+    generate_smiles_from_src(args, fields)
+    exit(0)
+
+    toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
+    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv'))
     train_smiles = train_smiles['smiles'].tolist()
 
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
@@ -238,29 +248,37 @@ if __name__ == "__main__":
     model.eval()
 
     if args.demo:
-        """
-        Bashscript/generate.sh
-        Bashscript/plot_smiles.sh smiles demo.png
-        """
-
         print(f'Enter desirable properties:'
-              f'logP ({args.logp_lb} ~ {args.logp_ub}), '
-              f'tPSA ({args.tpsa_lb} ~ {args.tpsa_ub}), '
-              f'QED ({args.qed_lb} ~ {args.qed_ub})')
+              f'logP ({args.logp_lb} - {args.logp_ub}), '
+              f'tPSA ({args.tpsa_lb} - {args.tpsa_ub}), '
+              f'QED ({args.qed_lb} - {args.qed_ub})')
 
         while True:
-            if_continue = input('Continue? Input Y/N: ')
-            if if_continue == 'Y':
-                logp = float(input('Enter logP: '))
-                tpsa = float(input('Enter tPSA: '))
-                qed = float(input('Enter QED: '))
-            elif if_continue == 'N':
-                exit('Bye~ Bye~')
+            # if_continue = input('Continue? Input Y/N: ')
+            if_continue = 'Y'
+            if if_continue.upper() == 'Y':
+                # logp = float(input('Enter logP: '))
+                # tpsa = float(input('Enter tPSA: '))
+                # qed = float(input('Enter QED: '))                
+
+                logp = 2.2
+                tpsa = 28.8
+                qed = 0.62
+
+            elif if_continue.upper() == 'N':
+                exit('Bye bye ~')
             else:
                 print('Please enter Y/N !!!!')
+                continue
 
-            generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
-                          toklen_data, num_samplings=40, device=device)
+            predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
+
+            demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
+                        args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
+                        (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
+                        (args.qed_lb, args.qed_ub), 'beam_search', device)
+            
+            demo.inference_from_properties(logp, tpsa, qed, num_samples=40, mu=0, std=0.2)
     
     elif args.test_random:
         # settings

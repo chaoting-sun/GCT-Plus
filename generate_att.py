@@ -23,10 +23,14 @@ from Inference.beam_search import BeamSearchTool
 from Inference.model_prediction import ModelPrediction
 from Model.modules import create_source_mask
 from Model.att_encoder import decode
-
+from Preprocess.preprocess import prepare_processed_data
+from pandarallel import pandarallel
 # from Model.build_model import build_model
 
 from Model.build_model import build_model
+from Utils.log import get_logger
+
+from plot import smilesList_to_img
 
 
 def _valid(valid_preds, preds): return len(valid_preds) / \
@@ -104,7 +108,7 @@ def generate_metrics_line(preds, train, n_jobs):
     return header, line
 
 
-def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
+def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type, att_type):
     if model_type == 'transformer':
         model_path = 'molGCT/molgct.pt'
     elif args.epoch > 0:
@@ -113,7 +117,7 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
     else:
         model_path = None
     print("Model path:", model_path)
-    return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path)
+    return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path, att_type=att_type)
 
 
 # def predict_molecules(args, bsTool, predictor, properties, TRG, scaler,
@@ -166,17 +170,21 @@ def generate_smiles_from_properties(args, bsTool, predictor, properties, TRG, sc
             predictor, TRG, scaler, device)[0] for _ in range(num_samplings)]
 
 
-def store_properties_from_predicted_smiles(args, properties, property_prediction, 
+def store_properties_from_predicted_smiles(args, prop_s, prop_t, property_prediction, 
                                            generated_smiles, smiles_path):
-    logp, tpsa, qed = properties
+    logp_s, tpsa_s, qed_s = prop_s
+    logp_t, tpsa_t, qed_t = prop_t
 
     with open(smiles_path, 'w', buffering=10) as sample_file:
-        sample_file.write(f"number\tsmiles\tvalid\t"
-                          f"logp_t\ttpsa_t\tqed_t\t"
-                          f"logp_p\ttpsa_p\tqed_p\n")
-
+        header = f"number\tsmiles\tvalid\t" \
+                 f"logp_s\ttpsa_s\tqed_s\t" \
+                 f"logp_t\ttpsa_t\tqed_t\t" \
+                 f"logp_p\ttpsa_p\tqed_p"
+        sample_file.write(header+'\n')
+        print(header)
+        
         for i in range(len(generated_smiles)):
-            print(f'{i:>5} Compute properties:', generated_smiles[i])
+            # print(f'{i:>5} Compute properties:', generated_smiles[i])
             mol = Chem.MolFromSmiles(generated_smiles[i])
             if mol is not None:
                 valid = 1
@@ -185,12 +193,13 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             else:
                 valid = 0
                 logp_p = tpsa_p = qed_p = np.nan
-            line = f"{i+1}\t{generated_smiles[i]}\t{valid}\t"  \
-                   f"{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t"      \
+            line = f"{i+1}\t{generated_smiles[i]}\t{valid}\t"   \
+                   f"{logp_s:.2f}\t{tpsa_s:.2f}\t{qed_s:.2f}\t" \
+                   f"{logp_t:.2f}\t{tpsa_t:.2f}\t{qed_t:.2f}\t" \
                    f"{logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}"
 
             sample_file.write(line+'\n')
-            print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
+            print(line+'\n')
 
 
 def generate_demo(args, model, logp, tpsa, qed, TRG, scaler,
@@ -231,9 +240,46 @@ def convert_output_into_smiles(idx_sequence, vocab, type='TRG'):
         return ''.join(smi_list)
 
 
-def test():
+def test(args, save_path):
     # find the delta properties that appear most often in the training dataset.
     # use
+
+    k = 1
+    data_type = 'train'
+
+    print('Read augmented file.')
+    df_aug = pd.read_csv(os.path.join(
+        args.data_path, 'aug', f'data_sim{args.similarity:.2f}', f'{data_type}.csv'))
+
+    print('Find common src SMILES.')
+    df_freq = df_aug.groupby(by=['src']).agg({ 'trg': len })
+    df_freq = df_freq.sort_values(by=['trg'], ascending=False)
+    src_of_k_common_pairs = df_freq.index.values[:k]
+    
+    df_sample = df_aug.loc[df_aug['src'].isin(src_of_k_common_pairs)]
+    df_sample = df_sample.loc[(df_sample.trg_logP - df_sample.src_logP >= 1.0) &
+                              (df_sample.trg_logP - df_sample.src_logP <= 1.2)]
+    df_sample.to_csv(save_path, index=False)
+
+
+def compute_tanimoto_similarity(df_data, in_cols=['src', 'trg'], out_col='sim'):
+    pandarallel.initialize(progress_bar=True)
+    df_data[out_col] = df_data.parallel_apply(lambda x: tanimoto_similarity(
+        x[in_cols[0]], x[in_cols[1]]), axis=1)
+    return df_data[[out_col]]
+
+
+def plot_smiles(sample_folder, smiles='CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c1'):
+    all_samples = None
+    for i in range(40):
+        samples = pd.read_csv(os.path.join(sample_folder, f'{i}.txt'), sep='\t')
+        all_samples = pd.concat([all_samples, samples], axis=0)
+    all_samples = all_samples.loc[all_samples.valid == 1]
+    all_samples = all_samples.sample(n=30)
+    
+    smilesList_to_img(all_samples['smiles'].tolist(),
+                      os.path.join(sample_folder, "smiles.png"),
+                      molsPerRow=6, hsize=360, vsize=300)
 
 
 if __name__ == "__main__":
@@ -249,9 +295,13 @@ if __name__ == "__main__":
     print('-------------------------- Settings --------------------------')
 
     device = allocate_gpu()
-    scaler = joblib.load(args.scaler_path)
-    fields, SRC, TRG = get_fields(args.conditions, args.field_path)
-    toklen_data = pd.read_csv(args.toklen_path)
+    scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
+    fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
+
+    rawdata_path = os.path.join(args.data_path, 'raw', 'train')
+    toklen_data = pd.read_csv(os.path.join(rawdata_path, 'toklen_list.csv'))
+    train_smiles = pd.read_csv(os.path.join(rawdata_path, "smiles_serial.csv"))
+    train_smiles = train_smiles['smiles'].tolist()
 
     print(TRG.vocab.stoi)
 
@@ -260,66 +310,127 @@ if __name__ == "__main__":
     pad_idx = SRC.vocab.stoi['<pad>']
 
     n_samples = 100
-    data_type = 'train'
+    data_type = 'test'
 
-    source_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity}')
-    sample_data_folder = os.path.join(source_data_folder, 'phaseI-inference')
+    source_data_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
+    # sample_data_folder = os.path.join(source_data_folder, 'phaseI-inference')
+    sample_data_folder = os.path.join(source_data_folder, 'test-inference')
 
     os.makedirs(sample_data_folder, exist_ok=True)
-        
-    sample_source_from_filepath(infile_path=os.path.join(source_data_folder, data_type+'.csv'),
-                                oufile_path=os.path.join(sample_data_folder, data_type+'.csv'),
-                                n_samples=n_samples, state=0)
+
+    # plot_smiles(sample_data_folder)
+
+    # if not os.path.exists(os.path.join(sample_data_folder, data_type+'.csv')):    
+    # test(args, os.path.join(sample_data_folder, data_type+'.csv'))
+
+    # sample_source_from_filepath(infile_path=os.path.join(source_data_folder, data_type+'.csv'),
+    #                             oufile_path=os.path.join(sample_data_folder, data_type+'.csv'),
+    #                             n_samples=n_samples, state=0)
 
     dataset = data.TabularDataset(path=os.path.join(sample_data_folder, data_type+'.csv'),
                                   format='csv', fields=fields, skip_header=True)
+    data_size = 40
+    # data_size = len(dataset)
     data_iter = data.BucketIterator(dataset, batch_size=1)
 
+    print('Get model')
+
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
-                      args.model_type, args.decode_type).to(device)    
+                      args.model_type, args.decode_type, 'ATT_v5').to(device)
     model.eval()
+
+    print('Get dataloader')
 
     dataloader = to_dataloader(data_iter, args.conditions, pad_idx, args.max_strlen, device)
 
+    print('Output SMILES')
+
+    # LOG_inference = get_logger(name="inference_results", 
+    #                            log_path=os.path.join(sample_data_folder, 'test.log'))
+
+    n_samples = 1000
+
     for i, batch in enumerate(dataloader):
+        sample_path = os.path.join(sample_data_folder, f'{i}.txt')
+        if os.path.exists(sample_path):
+            continue
+
         src_smi = convert_output_into_smiles(batch.src.cpu().numpy()[0], SRC.vocab, 'SRC')
         trg_smi = convert_output_into_smiles(batch.trg.cpu().numpy()[0], TRG.vocab, 'TRG')
 
-        mol = Chem.MolFromSmiles(src_smi)
-        s_logp, s_tpsa, s_qed = logP(mol), tPSA(mol), QED(mol)
+        s_logp, s_tpsa, s_qed = scaler.inverse_transform(batch.econds.cpu().numpy())[0]
+        t_logp, t_tpsa, t_qed = scaler.inverse_transform(batch.dconds.cpu().numpy())[0]
 
-        mol = Chem.MolFromSmiles(trg_smi)
-        t_logp, t_tpsa, t_qed = logP(mol), tPSA(mol), QED(mol)
+        all_pred_smi = []
 
-        for _ in range(10):
-            pred_sequence = decode(model, batch.src, batch.econds, batch.mconds, batch.dconds,
-                                sos_idx, eos_idx, pad_idx, args.max_strlen, 'multinomial',
-                                args.use_cond2dec)
-
+        def predict(model, src, econds, mconds, dconds, sos_idx, 
+                    eos_idx, pad_idx, max_strlen, strategy, use_cond2dec, TRG):
+            pred_sequence = decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,
+                                   pad_idx, max_strlen, strategy, use_cond2dec)
             pred_sequence = pred_sequence.cpu().numpy()[0]
-            pred_smi = convert_output_into_smiles(pred_sequence, TRG.vocab, 'TRG')
+            return convert_output_into_smiles(pred_sequence, TRG.vocab, 'TRG')
+        
+        generated_smiles = [predict(model, batch.src, batch.econds, batch.mconds, batch.dconds,
+                                    sos_idx, eos_idx, pad_idx, args.max_strlen, 'multinomial',
+                                    args.use_cond2dec, TRG) for _ in range(n_samples)]
 
-            mol = Chem.MolFromSmiles(pred_smi)
-            if mol is not None:
-                valid = 'O'
-                similarity = tanimoto_similarity(src_smi, pred_smi)
-                p_logp, p_tpsa, p_qed = logP(mol), tPSA(mol), QED(mol)
-                print(f'{src_smi:<45} -> {pred_smi:<45}{valid} -> {similarity:.3f} | '
-                      f'logP {(p_logp-t_logp)/t_logp*100:<10.3f}%\t'
-                      f'tPSA {(p_tpsa-t_tpsa)/t_tpsa*100:<10.3f}%\t'
-                      f'QED {(p_qed-t_qed)/t_qed*100:<10.3f}%')
-
+        store_properties_from_predicted_smiles(args, (s_logp, s_tpsa, s_qed), 
+                                               (t_logp, t_tpsa, t_qed), 
+                                               property_prediction, generated_smiles,
+                                               sample_path)
 
 
-                    #   f'logP {s_logp:.4f} => {t_logp:.4f} <-> {p_logp:.4f}  '
-                    #   f'tPSA {s_tpsa:.4f} => {t_tpsa:.4f} <-> {p_tpsa:.4f}  '
-                    #   f'QED {s_qed:.4f} => {t_qed:.4f} <-> {p_qed:.4f}')
-            else:
-                valid = 'X'
-                similarity = 0
-                print(f'{src_smi:<45} -> {trg_smi:<45}{valid}')
-        print('\n')
-        # break
+    for i in range(data_size):
+        mean_file_path = os.path.join(sample_data_folder, f'{i}_mean.txt')
+        print(">>>", mean_file_path)
+        if os.path.exists(mean_file_path):
+            continue
+
+        with open(mean_file_path, 'w') as metrics_writer:
+            preds = pd.read_csv(os.path.join(sample_data_folder, f'{i}.txt'), sep='\t')
+            head, line = generate_metrics_line(preds, train_smiles, args.n_jobs)
+            metrics_writer.write(head+'\n')
+            metrics_writer.write(line+'\n')
+
+    all_metrics = None
+    for i in range(data_size):
+        preds = pd.read_csv(os.path.join(sample_data_folder, f'{i}_mean.txt'), sep='\t')
+        all_metrics = pd.concat([all_metrics, preds], axis=0, ignore_index=True)
+    # all_metrics = all_metrics.sort_values(by=['logp', 'tpsa', 'qed'])
+    all_metrics.to_csv(os.path.join(sample_data_folder, 'mean.txt'), sep='\t', index=False)
+
+    all_preds = None
+    for i in range(data_size):
+        preds = pd.read_csv(os.path.join(sample_data_folder, f'{i}.txt'), sep='\t')
+        all_preds = pd.concat([all_preds, preds], axis=0)
+    all_preds = all_preds.reset_index()
+
+    with open(os.path.join(sample_data_folder, 'output.txt'), 'w') as all_metrics_writer:
+        head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
+        all_metrics_writer.write(head+'\n')
+        all_metrics_writer.write(line+'\n')
+
+
+
+            # mol = Chem.MolFromSmiles(pred_smi)
+
+            # if mol is not None:
+            #     valid = 'O'
+            #     similarity = tanimoto_similarity(src_smi, pred_smi)
+            #     p_logp, p_tpsa, p_qed = logP(mol), tPSA(mol), QED(mol)
+            #     result = f'{src_smi:<45} -> {pred_smi:<45} {valid}\t' \
+            #              f'sim: {similarity:.3f}\t' \
+            #              f'logP-err(%): {(p_logp-t_logp)/t_logp*100:.3f}\t' \
+            #              f'tPSA-err(%): {(p_tpsa-t_tpsa)/t_tpsa*100:.3f}\t' \
+            #              f'QED-err(%): {(p_qed-t_qed)/t_qed*100:.3f}'
+
+            # else:
+            #     valid = 'X'
+            #     similarity = 0
+            #     print(f'{src_smi:<45} -> {pred_smi:<45}{valid}')
+            #     result = f'{src_smi:<45} -> {pred_smi:<45} {valid}\t' \
+
+            # LOG_inference.info(result)
     
     exit(0)
 

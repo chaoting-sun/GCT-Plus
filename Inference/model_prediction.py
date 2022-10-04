@@ -1,15 +1,19 @@
+from itertools import zip_longest
+import zipfile
 import torch.nn.functional as F
 
 
-class ModelPrediction(object):
-    def __init__(self, predictor, use_cond2dec):
-        self.predictor = predictor
+class Predictor(object):
+    def __init__(self, decoder, use_cond2dec):
+        self.decoder = decoder
         self.use_cond2dec = use_cond2dec
-    
-    def predict(self, trg, e_outputs, conds, src_mask, trg_mask):
+
+    def predict(self, trg, z, conds, src_mask, trg_mask):
         if self.use_cond2dec == True:
-            output_mol = self.predictor(trg, e_outputs, conds,
-                                        src_mask, trg_mask)[:, 3:, :]
+            outputs = self.decoder(trg, z, conds, src_mask,
+                                   trg_mask)[:, 3:, :]
         else:
-            output_mol = self.predictor(trg, e_outputs, conds, src_mask, trg_mask)
+            outputs = self.decoder(trg, z, conds,
+                                   src_mask, trg_mask)
+        output_mol = outputs[0]
         return F.softmax(output_mol, dim=-1)

@@ -23,12 +23,12 @@ def train(args, debug=False):
 
     print('Getting feilds / SRC / TRG')
 
-    fields, SRC, TRG = get_fields(args.conditions, args.field_path)
+    fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
 
     print('Preparing training / validation dataset')
 
     train_data, valid_data = data.TabularDataset.splits(
-        path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}_tiny'),
+        path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'),
         train='train.csv', validation='validation.csv', test=None, format='csv',
         fields=fields, skip_header=True
     )
@@ -38,7 +38,7 @@ def train(args, debug=False):
     if args.load_field is False:
         SRC.build_vocab(train_data)
         TRG.build_vocab(valid_data)
-        save_fields(SRC, TRG, args.field_path)
+        save_fields(SRC, TRG, args.molgct_path)
 
     args.train_nbatches, args.valid_nbatches = int(ceil(len(train_data) / args.batch_size)), \
                                                int(ceil(len(valid_data) / args.batch_size))

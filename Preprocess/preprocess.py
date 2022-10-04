@@ -37,7 +37,7 @@ def scaler_transform(condition, scaler_path=None):
     """ 
     scaler transformation
     return a DataFrame of rescaled properties
-    
+
     Parameters:
         condition: DataFrame, the properties
         scaler: a property transformer
@@ -48,7 +48,7 @@ def scaler_transform(condition, scaler_path=None):
                         index=condition.index)
 
 
-def get_properties_from_smiles(dataset, properties, 
+def get_properties_from_smiles(dataset, properties,
                                property_prediction, n_jobs=1) -> pd.DataFrame:
     """
     Compute the properties of the source and target in dataset
@@ -71,45 +71,67 @@ def get_properties_from_smiles(dataset, properties,
     return pd.DataFrame.from_dict(properties_dict)
 
 
-def prepare_processed_data(smiles_path, property_path,
-                           processed_path, pair_path, scaler_path=None):
-    print('Transform properties')
+def prepare_processed_data(src_info, trg_info, conditions, processed_path):
+    for r in ['no', 'smiles'] + [c for c in conditions]:
+        assert r in src_info.columns.values.tolist()
+        assert r in trg_info.columns.values.tolist()
 
-    prop = pd.read_csv(property_path, index_col='no')
-    prop = scaler_transform(prop, scaler_path)
+    print('Rename src/trg SMILES/properties')
+    src_dict = dict([('smiles', 'src'), ('no', 'src_no')]
+                    + [(c, f'src_{c}') for c in conditions])
+    trg_dict = dict([('smiles', 'trg'), ('no', 'trg_no')]
+                    + [(c, f'trg_{c}') for c in conditions])
 
-    # prop = pd.read_csv(property_path, index_col='no')
-    # prop = pd.concat([prop[['no']], scaler_transform(prop[conditions], scaler_path)], axis=1)
+    src_info = src_info.rename(columns=src_dict)
+    trg_info = trg_info.rename(columns=trg_dict)
+    trg_info['trg_en'] = trg_info['trg'].copy()
 
-    print("Reading file:", pair_path)
-    pair = pd.read_csv(pair_path)
+    print('Concatenate src/trg SMILES/properties')
+    results = pd.concat([src_info, trg_info], axis=1)
 
-    src_no = pair['no1'].tolist()
-    trg_no = pair['no2'].tolist()
-    
-    print("Reading file:", smiles_path)
-    dataset = pd.read_csv(smiles_path, index_col='no')
-
-    print('Getting source smiles/properties...')
-    src_smi = dataset.loc[src_no].reset_index(inplace=False)
-    src_smi = src_smi[['smiles']].rename(columns={'smiles': 'src'})
-    src_prop = prop.loc[src_no].reset_index(inplace=False)
-    src_prop = src_prop.rename(columns={ k:f'src_{k}' for k in src_prop.columns })
-
-    print('Getting target smiles/properties...')
-    trg_smi = dataset.loc[trg_no].reset_index(inplace=False)
-    trg_smi = trg_smi[['smiles']].rename(columns={'smiles': 'trg'})
-    trg_en_smi = trg_smi[['trg']].rename(columns={'trg': 'trg_en'})
-    trg_prop = prop.loc[trg_no].reset_index(inplace=False)
-    trg_prop = trg_prop.rename(columns={ k:f'trg_{k}' for k in trg_prop.columns })
-
-    print('Concatenating source/target smiles/properties...')
-    results = pd.concat([src_smi, trg_en_smi, trg_smi, src_prop, trg_prop], axis=1)
-    # results = pd.concat([src_smi, trg_smi, src_prop, trg_prop], axis=1)
-
-    print("Saving file:", processed_path)
+    print("Save preprocessed data in", processed_path)
     results.to_csv(processed_path, index=False)
-    print(results.head())
+
+
+# def prepare_processed_data(smiles_path, property_path,
+#                            processed_path, pair_path, scaler_path=None):
+#     print('Transform properties')
+
+#     prop = pd.read_csv(property_path, index_col='no')
+#     prop = scaler_transform(prop, scaler_path)
+
+#     print("Reading file:", pair_path)
+#     pair = pd.read_csv(pair_path)
+
+#     src_no = pair['no1'].tolist()
+#     trg_no = pair['no2'].tolist()
+
+#     print("Reading file:", smiles_path)
+#     dataset = pd.read_csv(smiles_path, index_col='no')
+
+#     print('Getting source smiles/properties...')
+#     src_smi = dataset.loc[src_no].reset_index(inplace=False)
+#     src_smi = src_smi[['smiles']].rename(columns={'smiles': 'src'})
+#     src_prop = prop.loc[src_no].reset_index(inplace=False)
+#     src_prop = src_prop.rename(
+#         columns={k: f'src_{k}' for k in src_prop.columns})
+
+#     print('Getting target smiles/properties...')
+#     trg_smi = dataset.loc[trg_no].reset_index(inplace=False)
+#     trg_smi = trg_smi[['smiles']].rename(columns={'smiles': 'trg'})
+#     trg_en_smi = trg_smi[['trg']].rename(columns={'trg': 'trg_en'})
+#     trg_prop = prop.loc[trg_no].reset_index(inplace=False)
+#     trg_prop = trg_prop.rename(
+#         columns={k: f'trg_{k}' for k in trg_prop.columns})
+
+#     print('Concatenating source/target smiles/properties...')
+#     results = pd.concat([src_smi, trg_en_smi, trg_smi,
+#                         src_prop, trg_prop], axis=1)
+#     # results = pd.concat([src_smi, trg_smi, src_prop, trg_prop], axis=1)
+
+#     print("Saving file:", processed_path)
+#     results.to_csv(processed_path, index=False)
+#     print(results.head())
 
 
 def preprocess(args, data_type):
@@ -117,19 +139,20 @@ def preprocess(args, data_type):
 
     raw_folder = os.path.join(args.data_path, 'raw', data_type)
     aug_folder = os.path.join(args.data_path, 'aug', data_type)
-    processed_folder = os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
-    
-    os.makedirs(raw_folder, exist_ok=True)
-    os.makedirs(aug_folder, exist_ok=True)
-    os.makedirs(processed_folder, exist_ok=True)
+    processed_folder = os.path.join(
+        args.data_path, 'aug', f'data_sim{args.similarity:.2f}')
+
+    for f in (raw_folder, aug_folder, processed_folder):
+        os.makedirs(f, exist_ok=True)
 
     smiles_path = os.path.join(raw_folder, 'smiles_serial.csv')
     property_path = os.path.join(raw_folder, 'prop_serial.csv')
-    pair_path = os.path.join(aug_folder, f'pair_serial_{args.similarity:.2f}.csv')
-    processed_path = os.path.join(processed_folder, f'{data_type}.csv')
+    pair_path = os.path.join(
+        aug_folder, f'pair_serial_{args.similarity:.2f}.csv')
+    processed_path = os.path.join(processed_folder, f'{data_type}1.csv')
 
     if not os.path.exists(smiles_path):
-        print("Create", smiles_path)
+        print("Create smiles path:", smiles_path)
 
         if data_type == 'train':
             dataset = moses.get_dataset('train')
@@ -140,29 +163,40 @@ def preprocess(args, data_type):
 
         dataset = pd.DataFrame({'smiles': dataset,
                                 'no': [i+1 for i in range(len(dataset))]})
-        
+
         # filter out those longer than max string length
-        dataset = dataset.loc[(dataset['smiles'].str.len() 
-                            + len(args.conditions) <= args.max_strlen)]
+        dataset = dataset.loc[(dataset['smiles'].str.len()
+                               + len(args.conditions) <= args.max_strlen)]
         dataset.to_csv(smiles_path, index=False)
 
     if not os.path.exists(property_path):
-        df_properties = get_properties_from_smiles(dataset, args.conditions, args.n_jobs)
+        print("Prepare property path:", pair_path)
+        df_properties = get_properties_from_smiles(
+            dataset, args.conditions, args.n_jobs)
         df_properties['no'] = [i+1 for i in range(len(df_properties))]
         df_properties.to_csv(property_path, index=False)
 
     if not os.path.exists(pair_path):
-        print("Prepare", pair_path)
+        print("Prepare pair path:", pair_path)
         get_similar_molecular_pairs(smiles_path=smiles_path,
                                     pair_path=pair_path,
                                     similarity=args.similarity,
                                     n_workers=args.n_jobs)
-    return
 
     if not os.path.exists(processed_path):
-        print("Prepare", processed_path)
-        prepare_processed_data(smiles_path=smiles_path,
-                               property_path=property_path,
-                               processed_path=processed_path, 
-                               pair_path=pair_path, 
-                               scaler_path=args.scaler_path)
+        print("Prepare processed path:", processed_path)
+
+        pair_serial = pd.read_csv(pair_path)
+        src_no, trg_no = pair_serial.loc[:, 'no1'], pair_serial.loc[:, 'no2']
+
+        smiles_serial = pd.read_csv(smiles_path, index_col='no')
+        prop_serial = pd.read_csv(property_path, index_col='no')
+        prop_serial = scaler_transform(prop_serial, args.scaler_path)
+
+        src_info = pd.concat([smiles_serial.loc[src_no],
+                             prop_serial.loc[src_no]], axis=1).reset_index()
+        trg_info = pd.concat([smiles_serial.loc[trg_no],
+                             prop_serial.loc[trg_no]], axis=1).reset_index()
+
+        prepare_processed_data(
+            src_info, trg_info, args.conditions, processed_path)

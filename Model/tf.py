@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+from .sublayers import Sampler
 from .layers import EncoderLayer, DecoderLayer
 from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, create_masks, get_clones
@@ -42,18 +42,7 @@ class Encoder(nn.Module):
                 q_k_enc = np.concatenate((q_k_enc, q_k_enc_tmp), axis=1)
 
         x = self.norm(x)
-
-        mu = self.fc_mu(x) # d_model -> opt.latent_dim
-        log_var = self.fc_log_var(x) # d_model -> opt.latent_dim
-        return self.sampling(mu, log_var), mu, log_var, q_k_enc
-
-    def sampling(self, mu, log_var):
-        if self.variational:
-            std = torch.exp(0.5*log_var)
-            eps = torch.randn_like(std)
-            return eps.mul(std).add(mu)
-        else:
-            return mu
+        return x, q_k_enc
 
 
 class Decoder(nn.Module):
@@ -114,6 +103,7 @@ class Transformer(nn.Module):
         # encoder/decoder
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
+        self.sampler = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         # other layers
@@ -132,8 +122,10 @@ class Transformer(nn.Module):
     def forward(self, src, trg, conds):
         src_mask, trg_mask = create_masks(src, trg, conds, self.use_cond2dec)
 
-        z, mu, log_var, q_k_enc = self.encoder(src, conds, src_mask)
-        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z, conds, src_mask, trg_mask)
+        x, q_k_enc = self.encoder(src, conds, src_mask)
+        z, _, _ = self.sampler(x)
+        
+        d_output, _, _ = self.decoder(trg, z, conds, src_mask, trg_mask)
         
         # output = self.generator(d_output)
         output = self.out(d_output)
@@ -144,15 +136,14 @@ class Transformer(nn.Module):
         else:
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
-        return output_prop, output_mol, mu, log_var, z, q_k_enc, q_k_dec1, q_k_dec2
+        return output_prop, output_mol, z, q_k_enc
+
+    
 
     def encode(self, src, conds, src_mask):
-        z, mu, log_var, q_k_enc = self.encoder(src, conds, src_mask)
-        return z, mu, log_var, q_k_enc
+        return self.encoder(src, conds, src_mask)
 
-    # decode_type
     def decode(self, trg, z, conds, src_mask, trg_mask):
-        x, q_k_dec1, q_k_dec2 = self.decoder(trg, z, conds, src_mask, trg_mask)
-        return self.out(x), q_k_dec1, q_k_dec2
+        return self.out(self.decoder(trg, z, conds, src_mask, trg_mask)[0])
 
 
