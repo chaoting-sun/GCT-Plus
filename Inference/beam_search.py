@@ -7,6 +7,15 @@ from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
 from Model.modules import Norm, create_target_mask, create_source_mask, get_clones, nopeak_mask
 
 
+def generate_latent_space(toklen_data, latent_dim, device, n=1):
+    # 3 properties + number of source tokens sampled from training set
+    
+    toklen = 3 + int(tokenlen_gen_from_data_distribution(data=toklen_data,
+                 nBins=int(toklen_data.max() - toklen_data.min()), size=1))
+    z = torch.Tensor(np.random.normal(size=(n, toklen, latent_dim)))
+    return z.to(device), toklen
+
+
 class Sampling(object):
     def __init__(self, predictor, latent_dim, TRG, toklen_data,
                  scaler, max_strlen, use_cond2dec, device):
@@ -26,13 +35,13 @@ class Sampling(object):
 
         self.cond_dim = 3
 
-    def generate_latent_space(self):
-        # 3 properties + number of source tokens sampled from training set
+    # def generate_latent_space(self):
+    #     # 3 properties + number of source tokens sampled from training set
         
-        toklen = 3 + int(tokenlen_gen_from_data_distribution(data=self.toklen_data,
-                                                             nBins=int(self.toklen_data.max() - self.toklen_data.min()), size=1))
-        z = torch.Tensor(np.random.normal(size=(1, toklen, self.latent_dim)))
-        return z.to(self.device), toklen
+    #     toklen = 3 + int(tokenlen_gen_from_data_distribution(data=self.toklen_data,
+    #                                                          nBins=int(self.toklen_data.max() - self.toklen_data.min()), size=1))
+    #     z = torch.Tensor(np.random.normal(size=(1, toklen, self.latent_dim)))
+    #     return z.to(self.device), toklen
 
     def scaler_transform(self, properties):
         """
@@ -69,6 +78,7 @@ class MultinomialSearch(Sampling):
                  scaler, max_strlen, use_cond2dec, device):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
+        # self.decode_algo = "greedy"
         self.decode_algo = "multinomial"
 
     def decode(self, z, conds, src_mask):
@@ -112,8 +122,8 @@ class MultinomialSearch(Sampling):
         conds = self.scaler_transform(properties)
         if z is not None:
             toklen = z.size(1)
-        else: 
-            z, toklen = self.generate_latent_space()
+        else:
+            z, toklen = generate_latent_space(self.toklen_data, self.latent_dim, self.device)
         src_mask = (torch.ones(1, 1, toklen) != 0).to(
             self.device)  # (bs,1,toklen=nc+src_smi)
 
@@ -257,7 +267,7 @@ class BeamSearch(Sampling):
         if z is not None:
             toklen = z.size(1)
         else:
-            z, toklen = self.generate_latent_space()
+            z, toklen = generate_latent_space(self.toklen_data, self.latent_dim, self.device)
         smiles = self.beam_search(conds, toklen, z)
 
         toklen_gen = smiles.count(" ") + 1

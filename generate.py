@@ -1,6 +1,7 @@
 import os
 from re import L
 from time import time
+import torch
 import joblib
 import argparse
 import pandas as pd
@@ -18,13 +19,15 @@ from Utils import allocate_gpu
 from Utils.mapper import mapper
 from Utils.field import smiles_fields
 from Utils.seed import set_seed
-from Utils.property import property_prediction, get_mol
+from Utils.property import property_prediction, get_mol, tanimoto_similarity
 from Configuration.config import options
 # from Inference.beam_search import BeamSearchTool
 from Inference.demo import Demo
 from Inference.model_prediction import Predictor
 # from Model.build_model import build_model
+from moses.metrics import SNNMetric
 
+from Inference.beam_search import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, generate_latent_space
 from Model.build_model import build_model
 
 
@@ -192,40 +195,171 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             print(f'- {logp_p:.2f}\t{tpsa_p:.2f}\t{qed_p:.2f}')
 
 
-def generate_smiles_from_src(args, fields, TRG):
-    test_file_path = "./test_smiles.csv"
-    target_smiles = 'CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c1'
+# def generate_smiles_from_src(args, fields, TRG):
+#     test_file_path = "./test_smiles.csv"
+#     target_smiles = 'CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c1'
     
-    if not os.path.exists(test_file_path):    
-        df = pd.read_csv(os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'))
-        df = df.loc[df.src == target_smiles]
-        df.to_csv(test_file_path, index=False)
+#     if not os.path.exists(test_file_path):
+#         df = pd.read_csv(os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}', 'train.csv'))
+#         df = df.loc[df.src == target_smiles]
+#         df.to_csv(test_file_path, index=False)
 
-    dataset = data.TabularDataset(path=test_file_path, format='csv', fields=fields, skip_header=True)
-    data_iter = data.BucketIterator(dataset, batch_size=1)
-    dataloader = to_dataloader(data_iter, args.conditions, TRG.vocab.stoi['<pad>'], args.max_strlen, device)
+#     df = pd.read_csv(test_file_path)
 
+#     dataset = data.TabularDataset(path=test_file_path, format='csv', fields=fields, skip_header=True)
+#     data_iter = data.BucketIterator(dataset, batch_size=1)
+#     dataloader = to_dataloader(data_iter, args.conditions, TRG.vocab.stoi['<pad>'], args.max_strlen, device)
+
+#     predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
+
+#     demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
+#                 args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
+#                 (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
+#                 (args.qed_lb, args.qed_ub), 'beam_search', device)
+    
+
+#     for i, batch in enumerate(dataloader):
+#         properties = batch.dconds.cpu().numpy()[0]
+#         demo.inference_from_src_properties(batch.src, properties[0], properties[1], properties[2])
+
+import dill as pickle
+from plot import smilesList_to_img # in SMILES_plot
+
+
+calc_dist = lambda z: torch.sqrt(torch.sum(z**2)).item()
+
+
+def calc_snn_from_mol(molList1, molList2):
+    # Similarity to nearest neighbour
+    # molList1_fp = SNNMetric().precalc()
+    return SNNMetric()(gen=molList1, ref=molList2)
+
+
+def smi_to_mol(smilesList):
+    molList = []
+    for s in smilesList:
+        mol = Chem.MolFromSmiles(s)
+        if mol is not None:
+            molList.append(mol)
+    return molList
+
+
+class VaryingZGeneration:
+    def __init__(self, generator, latent_dim, distance, save_folder):
+        # save_folder -> dist1
+        self.generator = generator
+        self.latent_dim = latent_dim
+        self.distance = distance
+        self.save_folder = save_folder
+        self.zs_path = os.path.join(save_folder, "zs")
+
+        os.makedirs(self.zs_path, exist_ok=True)
+
+    def generate_rand_z(self, toklen, n=1):
+        return torch.Tensor(np.random.normal(size=(n, toklen, self.latent_dim)))
+
+    def generate_rand_scaled_z(self, toklen, start_z):
+        new_z = self.generate_rand_z(toklen)
+        del_new_z = new_z - start_z
+        return start_z + del_new_z * self.distance / calc_dist(del_new_z)
+    
+    def get_z_same_dist_from_start_z(self, toklen, num_z, start_z):
+        def take_z(file_path):
+            if not os.path.exists(file_path):
+                z = self.generate_rand_scaled_z(toklen, start_z)
+                pickle.dump(z.cpu(), open(file_path, "wb"))
+            else:
+                z = pickle.load(open(file_path, "rb"))
+            return z
+
+        z_list = [take_z(os.path.join(self.zs_path, f"z{i+1}")) for i in range(num_z)]
+        return [start_z] + z_list
+
+    def sample_molecules_from_varying_z(self, properties, toklen, n_z, n_samples):
+        logp, tpsa, qed = properties
+        conditions = np.array([[logp, tpsa, qed]])
+        
+        save_path = os.path.join(self.save_folder, f"cond_{logp:.2f}_{tpsa:.2f}_{qed:.2f}")
+        os.makedirs(save_path, exist_ok=True)
+
+        start_z_path = os.path.join(self.zs_path, "start_z.pkl")
+        if not os.path.exists(start_z_path):
+            start_z = self.generate_rand_z(toklen)
+            pickle.dump(start_z.cpu(), open(start_z_path, "wb"))
+        else:
+            start_z = pickle.load(open(start_z_path, "rb"))
+
+        z_list = self.get_z_same_dist_from_start_z(toklen, n_z, start_z)
+
+        snnList_start, snnList_prev = [], [0]
+        molList_start, molList_prev, molList = [], [], []
+
+        for i, z in enumerate(z_list):
+            z = z.to(device)
+            smilesList = [self.generator.sample_smiles(conditions, z)[0] for _ in range(n_samples)]
+
+            print("----------- smiles list -----------\n", smilesList)
+            with open(os.path.join(save_path, f"{i}.txt"), "w") as writer:
+                for s in smilesList:
+                    writer.write(s+"\n")
+            
+            if len(molList_start) == 0:
+                molList_start = smi_to_mol(smilesList)
+            molList = smi_to_mol(smilesList)
+
+            snn_start = calc_snn_from_mol(molList_start, molList)
+            snnList_start.append(snn_start)
+
+            if len(molList_prev) != 0:
+                snn_prev = calc_snn_from_mol(molList_prev, molList)
+                snnList_prev.append(snn_prev)
+
+            molList_prev = molList
+        
+        with open(os.path.join(save_path, f"snn.txt"), "w") as writer:
+            writer.write("snn_start\tsnn_prev\n")
+            for i in range(len(snnList_start)):
+                writer.write(f"{snnList_start[i]}\t{snnList_prev[i]}\n")
+
+                
+def getSmilesGenerator(model, decode_algo, has_src):
     predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
+    z_generator = model.encode
 
-    demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
-                args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
-                (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
-                (args.qed_lb, args.qed_ub), 'beam_search', device)
+    if decode_algo == "multinomial":
+        if has_src:
+            smiles_generator = MultinomialSearch(
+                predictor, args.latent_dim, TRG, toklen_data,
+                scaler, args.max_strlen, args.use_cond2dec, device
+            )
+        else:
+            smiles_generator = MultinomialSearchFromSource(
+                z_generator, predictor, args.latent_dim, TRG, toklen_data,
+                scaler, args.max_strlen, args.use_cond2dec, device
+            )
     
-
-    for i, batch in enumerate(dataloader):
-        demo.inference_from_src_properties()
-
+    elif decode_algo == "beam_search":
+        if has_src:
+            smiles_generator = BeamSearch(
+                predictor, args.latent_dim, TRG, toklen_data,
+                scaler, args.max_strlen, args.use_cond2dec, device
+            )
+        else:
+            smiles_generator = BeamSearch(
+                predictor, args.latent_dim, TRG, toklen_data,
+                scaler, args.max_strlen, args.use_cond2dec, device
+            )
+    return smiles_generator
+               
 
 
 if __name__ == "__main__":
-    set_seed(seed=0)
+    # set_seed(seed=0)
     RDLogger.DisableLog('rdApp.*')
 
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
-
 
     print('-------------------------- Settings --------------------------')
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
@@ -235,17 +369,54 @@ if __name__ == "__main__":
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
     fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
 
-    generate_smiles_from_src(args, fields)
-    exit(0)
-
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
+
     train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv'))
     train_smiles = train_smiles['smiles'].tolist()
 
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
                       args.model_type, args.decode_type).to(device)
-    
     model.eval()
+    
+
+    decode_algo = "multinomial"
+    has_src = True
+
+    n_z = 5
+    toklen = 40
+    n_samples = 20
+    distance = [1, 4, 8, 16, 32]
+    propertyList = [(2.22, 48.81, 0.84), (3.25, 89.95, 0.73), (2.01, 42.51, 0.63)] 
+
+    smiles_generator = getSmilesGenerator(model, decode_algo, has_src)
+    
+    
+    if has_src:
+        save_folder =  f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/"
+        dataset = data.TabularDataset(path=os.path.join(save_folder, 'test.csv'),
+                                      format='csv', fields=fields, skip_header=True)
+        data_iter = data.BucketIterator(dataset, batch_size=1)
+        dataloader = to_dataloader(data_iter, args.conditions, TRG.vocab.stoi["<pad>"], args.max_strlen, device)
+        batch = next(dataloader)
+        
+        smiles_generator.sample_smiles(batch.src, propertyList[0])
+        exit()        
+        
+        for dist in distance:
+            save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/dist{dist}"
+            obj = VaryingZGeneration(smiles_generator, args.latent_dim, dist, save_folder)
+
+            for prop in propertyList:
+                obj.sample_molecules_from_varying_z(prop, toklen, n_z, n_samples)
+    else:
+        for dist in distance:
+            save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/prop-{decode_algo}/dist{dist}"
+            obj = VaryingZGeneration(smiles_generator, args.latent_dim, dist, save_folder)
+
+            for prop in propertyList:
+                obj.sample_molecules_from_varying_z(prop, toklen, n_z, n_samples)
+
+    exit(0)
 
     if args.demo:
         print(f'Enter desirable properties:'

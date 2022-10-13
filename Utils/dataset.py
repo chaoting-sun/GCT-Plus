@@ -90,10 +90,12 @@ class Batch:
                  src_cond=None, trg_cond=None, dif_cond=None):
         # input of encoder
         self.src = src.to(device)
-        self.trg_en = trg_en.to(device)
+        if trg_en is not None:
+            self.trg_en = trg_en.to(device)
         # output of the decoder
-        self.trg_y = trg[:, 1:].to(device)
-        self.trg = trg[:, :-1].to(device)
+        if trg is not None:
+            self.trg_y = trg[:, 1:].to(device)
+            self.trg = trg[:, :-1].to(device)
 
         if src_cond is not None:
             self.econds = src_cond.to(device)
@@ -101,21 +103,58 @@ class Batch:
             self.dconds = trg_cond.to(device)
 
 
-def rebatch(batch, conditions, pad_idx, max_strlen, device):
-    src, trg_en, trg = batch.src.transpose(0, 1),    \
-                       batch.trg_en.transpose(0, 1), \
-                       batch.trg.transpose(0, 1)
+# def rebatch(batch, conditions, pad_idx, max_strlen, device):
+#     src, trg_en, trg = batch.src.transpose(0, 1),    \
+#                        batch.trg_en.transpose(0, 1), \
+#                        batch.trg.transpose(0, 1)
 
-    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) - len(conditions))),
-                         dtype=torch.long) * pad_idx
-    trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1) - len(conditions))),
-                            dtype=torch.long) * pad_idx
-    trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - len(conditions))),
-                         dtype=torch.long) * pad_idx
+#     src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) - len(conditions))),
+#                          dtype=torch.long) * pad_idx
+#     trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1) - len(conditions))),
+#                             dtype=torch.long) * pad_idx
+#     trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - len(conditions))),
+#                          dtype=torch.long) * pad_idx
     
+#     src = torch.cat([src, src_pad], dim=1)
+#     trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
+#     trg = torch.cat([trg, trg_pad], dim=1)
+
+#     # src, trg = batch.src, batch.trg
+#     if len(conditions) > 0:
+#         src_conds = [getattr(batch, f"src_{c}").view(-1, 1) for c in conditions]
+#         trg_conds = [getattr(batch, f"trg_{c}").view(-1, 1) for c in conditions]
+#         # for c in conditions:
+#         #     src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
+#         #     trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
+#         src_cond_t = torch.cat(src_conds, dim=1)
+#         trg_cond_t = torch.cat(trg_conds, dim=1)
+#         dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
+#     else:
+#         src_cond_t = trg_cond_t = dif_cond_t = None
+#     return Batch(src, trg_en, trg, pad_idx, device,
+#                  src_cond_t, trg_cond_t, dif_cond_t)
+
+def rebatch(batch, conditions, pad_idx, max_strlen, device):
+    src = batch.src.transpose(0, 1)
+    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) 
+                         - len(conditions))), dtype=torch.long) * pad_idx
     src = torch.cat([src, src_pad], dim=1)
-    trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
-    trg = torch.cat([trg, trg_pad], dim=1)
+    
+    if getattr(batch, 'trg') is not False:
+        trg = batch.trg.transpose(0, 1)
+        trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - 
+                             len(conditions))), dtype=torch.long) * pad_idx
+        trg = torch.cat([trg, trg_pad], dim=1)
+    else:
+        trg = None
+
+    if getattr(batch, 'trg_en') is not False:
+        trg_en = batch.trg_en.transpose(0, 1)
+        trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1)
+                                - len(conditions))), dtype=torch.long) * pad_idx
+        trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
+    else:
+        trg_en = None
 
     # src, trg = batch.src, batch.trg
     if len(conditions) > 0:

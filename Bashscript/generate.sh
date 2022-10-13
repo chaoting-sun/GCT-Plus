@@ -69,7 +69,8 @@ then
             -decode_type ${DECODE_TYPE} \
             -model_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/mlptf_train_stage2_sim${SIMILARITY}_${LOSS_FCN} \
             -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/mlptf_sim${SIMILARITY} \
-            -demo
+            -demo \
+        # >generate.out 2>generate.err &
 elif [ ${MODEL} == "tf" ]
 then
     CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
