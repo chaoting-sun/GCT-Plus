@@ -112,11 +112,17 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
     return mlp
 
 
-def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
-    molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
-    model_param_names = [
-        'N', 'd_model', 'd_ff', 'H', 'latent_dim', 'dropout', 'nconds', 'use_cond2dec', 'use_cond2lat'
-    ]
+# def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
+def build_model(args, SRC_vocab_len, TRG_vocab_len, **kwargs):
+    if args.model_type == "transformer":
+        molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
+    elif args.epoch > 0:
+        model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
+
+    if args.model_type == "transformer":
+        print("Model Path:", molgct_model_path)
+    else:
+        print("Model Path:", model_path)
 
     if args.model_type == "transformer":
         # training phase I
@@ -124,7 +130,7 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
                                   args.N, args.d_model, args.d_ff,
                                   args.H, args.latent_dim, args.dropout,
                                   args.nconds, args.use_cond2dec,
-                                  args.use_cond2lat, model_path)
+                                  args.use_cond2lat, molgct_model_path)
     elif args.model_type == "mlp_transformer":
         # training phase II
         model = build_mlptransformer(SRC_vocab_len, TRG_vocab_len,

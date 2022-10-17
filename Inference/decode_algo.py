@@ -134,11 +134,10 @@ class MultinomialSearch(Sampling):
 
 
 class MultinomialSearchFromSource(MultinomialSearch):
-    def __init__(self, z_generator, predictor, latent_dim, TRG,
+    def __init__(self, predictor, latent_dim, TRG,
                  toklen_data, scaler, max_strlen, use_cond2dec, device):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
-        self.z_generator = z_generator
 
     def sample_smiles(self, src, properties):
         toklen = src.size(-1)
@@ -149,7 +148,8 @@ class MultinomialSearchFromSource(MultinomialSearch):
                 src, self.pad_idx, conds[1])  # conds1->dconds
         else:
             src_mask = create_source_mask(src, self.pad_idx, conds)
-        z, mu, logvar, q_k_enc = self.z_generator(src, conds, src_mask)
+        # z, mu, logvar, q_k_enc = self.predictor.encode(src, conds, src_mask)
+        z = self.predictor.encode(src, conds, src_mask)[0]
         pred_seq = self.decode(z, conds, src_mask)
         smiles = self.idx_sequence_to_smiles(pred_seq.cpu().numpy()[0])
         toklen_gen = len(smiles)
@@ -277,11 +277,10 @@ class BeamSearch(Sampling):
 
 
 class BeamSearchFromSource(BeamSearch):
-    def __init__(self, z_generator, predictor, latent_dim, TRG, toklen_data,
+    def __init__(self, predictor, latent_dim, TRG, toklen_data,
                  scaler, max_strlen, use_cond2dec, device, k=4):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device, k)
-        self.z_generator = z_generator
 
     def sample_smiles(self, src, properties):
         conds = self.scaler_transform(properties)
@@ -290,7 +289,8 @@ class BeamSearchFromSource(BeamSearch):
                 src, self.pad_idx, conds[1])  # conds1->dconds
         else:
             src_mask = create_source_mask(src, self.pad_idx, conds)
-        z, mu, logvar, q_k_enc = self.z_generator(src, conds, src_mask)
+        # z, mu, logvar, q_k_enc = self.z_generator(src, conds, src_mask)
+        z = self.predictor.encode(src, conds, src_mask)[0]
         toklen = src.size(-1)
         smiles = self.beam_search(conds, toklen, z)
         toklen_gen = smiles.count(" ") + 1

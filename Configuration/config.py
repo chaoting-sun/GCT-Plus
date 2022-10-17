@@ -103,6 +103,8 @@ def generate_opts(parser):
 
 def evaluation_opts(parser):
     # soft constraints
+    parser.add_argument('-has_source', action='store_true')
+    parser.add_argument('-decode_algo', default="multinomial", choices=["multinomial", "beam_search"])
     parser.add_argument('-epoch', type=int, default=20)
     parser.add_argument('-encode_type', type=str, default='encode')
     parser.add_argument('-decode_type', type=str, default='mlp_decode')

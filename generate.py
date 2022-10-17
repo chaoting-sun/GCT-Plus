@@ -322,7 +322,7 @@ class VaryingZGeneration:
                 writer.write(f"{snnList_start[i]}\t{snnList_prev[i]}\n")
 
                 
-def getSmilesGenerator(model, decode_algo, has_src):
+def getSmilesGenerator(args, model, decode_algo, has_src):
     predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
     z_generator = model.encode
 
@@ -386,10 +386,9 @@ if __name__ == "__main__":
     toklen = 40
     n_samples = 20
     distance = [1, 4, 8, 16, 32]
-    propertyList = [(2.22, 48.81, 0.84), (3.25, 89.95, 0.73), (2.01, 42.51, 0.63)] 
+    propertyList = [(2.22, 48.81, 0.84), (3.25, 89.95, 0.73), (2.01, 42.51, 0.63)]
 
-    smiles_generator = getSmilesGenerator(model, decode_algo, has_src)
-    
+    smiles_generator = getSmilesGenerator(args, model, decode_algo, has_src)
     
     if has_src:
         save_folder =  f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/"
@@ -400,7 +399,7 @@ if __name__ == "__main__":
         batch = next(dataloader)
         
         smiles_generator.sample_smiles(batch.src, propertyList[0])
-        exit()        
+        exit()         
         
         for dist in distance:
             save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/dist{dist}"
