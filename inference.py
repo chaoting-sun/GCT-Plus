@@ -1,4 +1,5 @@
 import os
+import re
 import joblib
 import argparse
 import pandas as pd
@@ -55,6 +56,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
+
+    if os.path.exists(args.storage_path) and not re.search("test", args.storage_path):
+        exit("You may be using a formal folder. Please check it out!")
+    os.makedirs(args.storage_path, exist_ok=True)
 
     logger = ul.get_logger(name="inference",
                            log_path=os.path.join(args.storage_path, 'inference.log'))

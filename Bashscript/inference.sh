@@ -54,7 +54,7 @@ then
             -epoch ${EPOCH} \
             -decode_type ${DECODE_TYPE} \
             -model_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/mlptf_train_stage2_sim${SIMILARITY}_${LOSS_FCN} \
-            -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/mlptf_sim${SIMILARITY}_test \
+            -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/mlptf_sim${SIMILARITY} \
             -demo \
         # >generate.out 2>generate.err &
 elif [ ${MODEL} == "tf" ]
@@ -67,7 +67,7 @@ then
         testing \
             -decode_algo "beam_search" \
             -decode_type ${DECODE_TYPE} \
-            -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL}_sim1.00 \
+            -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL}_sim1.00_test \
         # >${MODEL}_generate.out 2>${MODEL}_generate.err &
 elif [ ${MODEL} == 'mlptf' ]
 then
