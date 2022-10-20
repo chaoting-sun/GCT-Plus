@@ -7,6 +7,63 @@ from moses.metrics import metrics
 from moses.utils import mapper, get_mol
 
 
+def get_valid(smiles, n_jobs=1):
+    return metrics.fraction_valid(smiles, n_jobs)
+
+
+def get_unique(valid_smiles, n_jobs=1):
+    return metrics.fraction_unique(valid_smiles, n_jobs)
+
+
+def get_novelty(valid_smiles, train_smiles, n_jobs):
+    return metrics.novelty(valid_smiles, train_smiles, n_jobs)
+
+
+def get_interval_diversity(valid_smiles, n_jobs=1, p=1):
+    return metrics.internal_diversity(gen=valid_smiles, n_jobs=n_jobs, p=p)
+
+
+def get_errors(smiles_props, target_props):
+    # inputs are pd.Series / pd.DataFrame
+    props_diff = target_props - smiles_props
+    errors = {
+        "mae": props_diff.apply(np.abs).mean(),
+        "mse": props_diff.mean(),
+        "max": props_diff.max(),
+        "min": props_diff.min()
+    }
+    errors["aard"] = (props_diff / target_props).abs().mean()
+    errors["amsd"] = (props_diff / target_props).mean()
+    return errors
+
+
+def get_all_metrics(gen, train_smiles, n_jobs):
+    valid = get_valid(gen["smiles"], n_jobs)
+    unique = get_unique(gen["smiles"], n_jobs)
+    novel = get_novelty(gen["smiles"], train_smiles, n_jobs)
+
+    # with Pool(n_jobs) as pool:
+    #     mols = mapper(pool)(get_mol, gen)
+    valid_smiles = metrics.remove_invalid(gen["smiles"])
+    intDiv = get_interval_diversity(valid_smiles, n_jobs)
+    # intDiv = get_interval_diversity(mols, n_jobs)
+
+    logpErr = get_errors(gen['logp_p'], gen['logp_t'])
+    tpsaErr = get_errors(gen['tpsa_p'], gen['tpsa_t'])
+    qedErr = get_errors(gen['qed_p'], gen['qed_t'])
+    
+    all_metrics = {
+        "valid": valid,
+        "unique": unique,
+        "novel": novel,
+        "intDiv": intDiv,
+        "logpErr": logpErr,
+        "tpsaErr": tpsaErr,
+        "qedErr": qedErr,
+    }
+    return all_metrics
+
+
 # def _valid(valid_preds, preds): return len(valid_preds) / \
 #     len(preds)*100 if len(preds) else 0
 
@@ -80,64 +137,3 @@ from moses.utils import mapper, get_mol
 #            f"{(valid_preds['qed_diff'] / valid_preds['qed_t']).mean()*100:.3f}"           \
 
 #     return header, line
-
-
-def get_valid(smiles, n_jobs=1):
-    return metrics.fraction_valid(smiles, n_jobs)
-
-
-def get_unique(valid_smiles, n_jobs=1):
-    return metrics.fraction_unique(valid_smiles, n_jobs)
-
-
-def get_novelty(valid_smiles, train_smiles, n_jobs):
-    return metrics.novelty(valid_smiles, train_smiles, n_jobs)
-
-
-def get_interval_diversity(valid_smiles, n_jobs=1, p=1):
-    return metrics.internal_diversity(gen=valid_smiles, n_jobs=n_jobs, p=p)
-
-
-def get_errors(smiles_props, target_props):
-    # inputs are pd.Series / pd.DataFrame
-    props_diff = target_props - smiles_props
-    errors = {
-        "mae": props_diff.apply(np.abs).mean(),
-        "mse": props_diff.mean(),
-        "max": props_diff.max(),
-        "min": props_diff.min()
-    }
-    errors["aard"] = (props_diff / target_props).abs().mean()
-    errors["amsd"] = (props_diff / target_props).mean()
-    return errors
-
-
-def get_all_metrics(gen, train_smiles, n_jobs):
-    valid = get_valid(gen["smiles"], n_jobs)
-    unique = get_unique(gen["smiles"], n_jobs)
-    novel = get_novelty(gen["smiles"], train_smiles, n_jobs)
-
-    # with Pool(n_jobs) as pool:
-    #     mols = mapper(pool)(get_mol, gen)
-    valid_smiles = metrics.remove_invalid(gen["smiles"])
-    intDiv = get_interval_diversity(valid_smiles, n_jobs)
-    # intDiv = get_interval_diversity(mols, n_jobs)
-
-    logpErr = get_errors(gen['logp_p'], gen['logp_t'])
-    tpsaErr = get_errors(gen['tpsa_p'], gen['tpsa_t'])
-    qedErr = get_errors(gen['qed_p'], gen['qed_t'])
-    
-    all_metrics = {
-        "valid": valid,
-        "unique": unique,
-        "novel": novel,
-        "intDiv": intDiv,
-        "logpErr": logpErr,
-        "tpsaErr": tpsaErr,
-        "qedErr": qedErr,
-    }
-    return all_metrics
-    
-
-
-

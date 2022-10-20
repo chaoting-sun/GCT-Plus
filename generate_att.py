@@ -19,7 +19,7 @@ from Utils.seed import set_seed
 from Utils.property import property_prediction, get_mol, tanimoto_similarity, logP, tPSA, QED
 from Utils.dataset import to_dataloader
 from Configuration.config import options
-from Inference.beam_search import BeamSearchTool
+from Inference.decode_algo import BeamSearchTool
 from Inference.model_prediction import ModelPrediction
 from Model.modules import create_source_mask
 from Model.att_encoder import decode

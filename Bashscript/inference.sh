@@ -65,6 +65,7 @@ then
             -variational \
             -model_type ${MODEL_TYPE} \
         testing \
+            -has_source \
             -decode_algo "beam_search" \
             -decode_type ${DECODE_TYPE} \
             -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL}_sim1.00_test \

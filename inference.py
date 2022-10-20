@@ -11,6 +11,7 @@ from Model.build_model import build_model
 from Inference.model_prediction import Predictor
 from Inference.decode_algo import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, BeamSearchFromSource
 from Inference.generate_uniformly import generate_uniformly
+from Inference.generate_z import generate_z
 
 
 def getSmilesGenerator(predictor, decode_algo, has_source,
@@ -94,7 +95,10 @@ if __name__ == "__main__":
                                           args.max_strlen,
                                           args.use_cond2dec)
 
-    generate_uniformly(args, logger, smiles_generator, train_smiles)
+    if args.has_source:
+        generate_z(args, logger, smiles_generator, fields, device, TRG)
+    else:
+        generate_uniformly(args, logger, smiles_generator, train_smiles)
     
     
 

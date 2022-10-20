@@ -8,7 +8,7 @@ class Predictor(object):
         self.decoder = decoder
         self.use_cond2dec = use_cond2dec
         if encoder is not None:
-            self.encoder = encoder
+            self.encode = encoder
 
     def predict(self, trg, z, conds, src_mask, trg_mask):
         if self.use_cond2dec == True:

@@ -139,6 +139,12 @@ class MultinomialSearchFromSource(MultinomialSearch):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
 
+    def get_z_from_src(self, src, econds):
+        src_mask = create_source_mask(
+            src, self.pad_idx, econds)  # conds1->dconds
+        z, mu, log_var, _ = self.predictor.encode(src, econds, src_mask)
+        return z, mu, log_var
+
     def sample_smiles(self, src, properties):
         toklen = src.size(-1)
         conds = self.transform_properties(properties)
@@ -281,6 +287,12 @@ class BeamSearchFromSource(BeamSearch):
                  scaler, max_strlen, use_cond2dec, device, k=4):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device, k)
+
+    def get_z_from_src(self, src, econds):
+        src_mask = create_source_mask(
+            src, self.pad_idx, econds)  # conds1->dconds
+        z, mu, log_var, _ = self.predictor.encode(src, econds, src_mask)
+        return z, mu, log_var
 
     def sample_smiles(self, src, properties):
         conds = self.scaler_transform(properties)
