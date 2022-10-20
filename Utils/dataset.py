@@ -177,6 +177,17 @@ def to_dataloader(data_iter, conditions, pad_idx, max_strlen, device):
             for batch in data_iter)
 
 
+def get_dataloader(cond_list, file_path, fields,
+                   pad_idx, max_strlen, device, batch_size):
+    dataset = data.TabularDataset(path=file_path, format='csv',
+                                  fields=fields, skip_header=True)
+    nbatches = int(np.ceil(len(dataset) / batch_size))
+    data_iter = data.BucketIterator(dataset, batch_size=batch_size)
+    dataloader = to_dataloader(data_iter, cond_list,
+                               pad_idx, max_strlen, device)
+    return dataloader, nbatches
+
+
 def adapter(python_type):
     # adapt the Python type into an SQLite type
     out = io.BytesIO()

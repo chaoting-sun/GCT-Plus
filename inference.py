@@ -12,6 +12,7 @@ from Inference.model_prediction import Predictor
 from Inference.decode_algo import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, BeamSearchFromSource
 from Inference.generate_uniformly import generate_uniformly
 from Inference.generate_z import generate_z
+from Inference.varying_z_generate import varying_z_generate
 
 
 def getSmilesGenerator(predictor, decode_algo, has_source,
@@ -52,22 +53,27 @@ def generate_smiles_to_compute_metrics():
     pass
 
 
-if __name__ == "__main__":
+def get_logger(args):
+    def logger(name, log_path):
+        logger = ul.get_logger(name=name, log_path=log_path)
+        logger.info(args)
+        logger.info(f"Get Device: {device}")
+        return logger
+    return logger
 
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
+
+    logger = get_logger(args)
 
     if os.path.exists(args.storage_path) and not re.search("test", args.storage_path):
         exit("You may be using a formal folder. Please check it out!")
     os.makedirs(args.storage_path, exist_ok=True)
 
-    logger = ul.get_logger(name="inference",
-                           log_path=os.path.join(args.storage_path, 'inference.log'))
-    logger.info(args)
-
     device = allocate_gpu()
-    logger.info(f"Get Device: {device}")
 
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
     fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
@@ -83,10 +89,11 @@ if __name__ == "__main__":
     if args.has_source:
         predictor = Predictor(args.use_cond2dec,
                               getattr(model, args.decode_type),
-                              model.encode)        
+                              model.encode)
     else:
         predictor = Predictor(args.use_cond2dec,
-                              getattr(model, args.decode_type))
+                              getattr(model, args.decode_type),
+                              model.encode)
 
     smiles_generator = getSmilesGenerator(predictor,
                                           args.decode_algo,
@@ -95,10 +102,11 @@ if __name__ == "__main__":
                                           args.max_strlen,
                                           args.use_cond2dec)
 
+
     if args.has_source:
-        generate_z(args, logger, smiles_generator, fields, device, TRG)
+        generate_z(args, smiles_generator, fields, device, TRG, logger)
     else:
-        generate_uniformly(args, logger, smiles_generator, train_smiles)
+        generate_uniformly(args, smiles_generator, train_smiles, logger)
     
     
 

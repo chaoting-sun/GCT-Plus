@@ -90,7 +90,10 @@ def print_all_metrics(metrics):
     return header, body
 
 
-def generate_uniformly(args, logger, smiles_generator, train_smiles):
+def generate_uniformly(args, smiles_generator, train_smiles, logger):
+    LOG = logger('generate_uniformly',
+                 log_path=os.path.join(args.storage_path, "generate_uniformly.log"))
+
     target_props = sample_z_uniformly((args.logp_lb, args.logp_ub),
                                       (args.tpsa_lb, args.tpsa_ub),
                                       (args.qed_lb, args.qed_ub))
@@ -98,19 +101,19 @@ def generate_uniformly(args, logger, smiles_generator, train_smiles):
     sample_T = property_T = metrics_T = 0
     total_T = time()
 
-    logger.info(f"Generate SMILES, compute properties/metrics")
+    LOG.info(f"Generate SMILES, compute properties/metrics")
 
     for i, props in enumerate(target_props):
         logp_t, tpsa_t, qed_t = props
 
-        logger.info(
+        LOG.info(
             f"{i:<5} logP,tPSA,QED: {logp_t:.2f}, {tpsa_t:.2f}, {qed_t:.2f}")
         smiles_path = os.path.join(args.storage_path,
                                    f'{logp_t:.2f}_{tpsa_t:.2f}_{qed_t:.2f}.txt')
         metrics_path = os.path.join(args.storage_path,
                                     f'{logp_t:.2f}_{tpsa_t:.2f}_{qed_t:.2f}_mean.txt')
 
-        logger.info("- Sample SMILES...")
+        LOG.info("- Sample SMILES...")
 
         sample_T -= time()
         sampled_smiles = []
@@ -118,29 +121,29 @@ def generate_uniformly(args, logger, smiles_generator, train_smiles):
             smiles, toklen_gen, toklen = smiles_generator.sample_smiles([
                                                                         props])
             sampled_smiles.append(smiles)
-            logger.info(smiles)
+            LOG.info(smiles)
         sample_T += time()
 
-        logger.info("- Store SMILES properties...")
+        LOG.info("- Store SMILES properties...")
 
         property_T -= time()
         store_properties(args.conditions, sampled_smiles, smiles_path,
-                         logp_t, tpsa_t, qed_t, logger)
+                         logp_t, tpsa_t, qed_t, LOG)
         property_T += time()
 
-        logger.info("- Store metrics...")
+        LOG.info("- Store metrics...")
 
         metrics_T -= time()
         store_metrics(logp_t, tpsa_t, qed_t, smiles_path, metrics_path,
-                      train_smiles, args.n_jobs, logger)
+                      train_smiles, args.n_jobs, LOG)
         metrics_T += time()
 
-        logger.info(f"sampleT(s): {sample_T:.1f}\t"
-                    f"propertyT(s): {property_T:.1f}\t"
-                    f"metricsT(s): {metrics_T:.1f}\t"
-                    f"totalT(s): {(time() - total_T):.1f}")
+        LOG.info(f"sampleT(s): {sample_T:.1f}\t"
+                 f"propertyT(s): {property_T:.1f}\t"
+                 f"metricsT(s): {metrics_T:.1f}\t"
+                 f"totalT(s): {(time() - total_T):.1f}")
 
-    logger.info("[ Combine all computed metrics ]")
+    LOG.info("[ Combine all computed metrics ]")
 
     all_metrics = None
     for i, (logp, tpsa, qed) in enumerate(target_props):
@@ -152,7 +155,7 @@ def generate_uniformly(args, logger, smiles_generator, train_smiles):
     all_metrics.to_csv(os.path.join(args.storage_path,
                        'mean.txt'), sep='\t', index=False)
 
-    logger.info("[ Compute metrics for all sampled smiles ]")
+    LOG.info("[ Compute metrics for all sampled smiles ]")
 
     all_gens = None
     for i, (logp, tpsa, qed) in enumerate(target_props):
@@ -167,4 +170,4 @@ def generate_uniformly(args, logger, smiles_generator, train_smiles):
         ptr.write(header+'\n')
         ptr.write(body+'\n')
 
-    logger.info("Finished.")
+    LOG.info("Finished.")

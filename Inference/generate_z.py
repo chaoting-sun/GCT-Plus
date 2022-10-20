@@ -1,9 +1,18 @@
+"""
+Observe the distance of random 2 latent spaces on
+training/validation set.
+"""
+
+import seaborn as sns
+import matplotlib.pyplot as plt
 import os
 import numpy as np
 import torch
 from torchtext import data
+# from multiprocessing import Pool
 
 from Utils.dataset import to_dataloader
+import dill as pickle
 
 
 def distance(z1, z2):
@@ -21,20 +30,15 @@ def get_dataloader(cond_list, file_path, fields,
     return dataloader, nbatches
 
 
-def get_z_from_train_smiles(args, logger, smiles_generator,
-                            fields, device, TRG, nz=100):
-    source_file = os.path.join(
-        args.data_path, 'aug', f'data_sim1.00', 'validation.csv')
-    if not os.path.exists(source_file):
-        exit(f'File path not exists: {source_file}')
-
-    logger.info('Get dataloader')
+def get_z_from_smiles(args, LOG, smiles_generator,
+                      data_path, fields, device, TRG, nz=100):
+    LOG.info('Get dataloader')
     batch_size = 128
-    dataloader, nbatches = get_dataloader(args.conditions, source_file,
+    dataloader, nbatches = get_dataloader(args.conditions, data_path,
                                           fields, TRG.vocab.stoi["<pad>"],
                                           args.max_strlen, device, batch_size)
 
-    logger.info('Start to generate')
+    LOG.info('Start to generate')
     zs_container = torch.empty((nz, args.max_strlen, args.latent_dim),
                                dtype=torch.float32)
 
@@ -43,10 +47,10 @@ def get_z_from_train_smiles(args, logger, smiles_generator,
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             print(f"{(i+1)*batch_size:<5} / {nz}")
-            
+
             batch.src.requires_grad, batch.econds.requires_grad = False, False
             zs, _, _ = smiles_generator.get_z_from_src(batch.src, batch.econds)
-            
+
             for j, z in enumerate(zs):
                 if i*batch_size+j >= nz:
                     break
@@ -59,14 +63,9 @@ def get_z_from_train_smiles(args, logger, smiles_generator,
     return zs_container
 
 
-# Import the libraries
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-
 def plot_dist_figure(data_1d, title, xlabel, ylabel, fig_path):
     # seaborn histogram
-    sns.histplot(data_1d, kde=True, bins=int(data_1d.max()/2), color = 'blue')
+    sns.histplot(data_1d, kde=True, bins=int(data_1d.max()/2), color='blue')
     # Add labels
     plt.title(title)
     plt.xlabel(xlabel)
@@ -74,28 +73,52 @@ def plot_dist_figure(data_1d, title, xlabel, ylabel, fig_path):
     plt.savefig(fig_path)
 
 
-def generate_z(args, logger, smiles_generator, fields, device, TRG):
+def generate_z(args, smiles_generator, fields, device, TRG, logger):
     np.random.seed(0)
 
+    ########################## SETTINGS ##########################
     nz = 10000
     n_pairs = 100000
+    # nz = 100
+    # n_pairs = 10
+    data_type = "train"  # or train
 
-    zs_container = get_z_from_train_smiles(
-        args, logger, smiles_generator, fields, device, TRG, nz)
-    
-    rand_pairs = [np.random.choice(range(nz), 2, replace=False)
+    data_folder = os.path.join(args.data_path, 'aug', 'data_sim1.00')
+    fig_folder = os.path.join(args.data_path, "DistOfRand2Zs")
+    figure_name = f"{data_type}-{args.model_type}.png"
+    ##############################################################
+
+    data_path = os.path.join(data_folder, f'{data_type}.csv')
+    if not os.path.exists(data_path):
+        exit(f'File path not exists: {data_path}')
+
+    LOG = logger('generate_z', log_path=os.path.join(
+        fig_folder, "generate_z.log"))
+
+    zs_container = get_z_from_smiles(args, LOG, smiles_generator,
+                                     os.path.join(
+                                         data_folder, f'{data_type}.csv'),
+                                     fields, device, TRG, nz)
+
+    print(f"Generate {n_pairs} random pairs.")
+    rand_pairs = [tuple(np.random.choice(range(nz), 2, replace=False))
                   for _ in range(n_pairs)]
 
-    collected_distance = np.empty([n_pairs,], dtype=np.float32)
+    print("Compute distance of random two latent space.")
+    collected_distance = np.empty([n_pairs, ], dtype=np.float32)
     for i, p in enumerate(rand_pairs):
         z1, z2 = zs_container[p[0]], zs_container[p[1]]
         collected_distance[i] = distance(z1, z2)
 
-    print("collected distance:", collected_distance)
+    print("Collected distance:", collected_distance)
+
+    os.makedirs(fig_folder, exist_ok=True)
     plot_dist_figure(collected_distance,
-                     title="dist",
-                     xlabel="Distance of random two latent space",
-                     ylabel="y",
-                     fig_path="./k.png")
+                     title=f"Distance of 2 random Zs ({data_type})",
+                     xlabel="Distance",
+                     ylabel="Distribution",
+                     fig_path=os.path.join(fig_folder, figure_name))
 
-
+    print("Store the values")
+    pickle.dump(collected_distance, open(os.path.join(fig_folder,
+                f"dist_{data_type}-{args.model_type}.pkl"), "wb"))
