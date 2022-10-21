@@ -72,6 +72,14 @@ class Sampling(object):
         smi_list = [self.trg_itos[token] for token in idx_sequence][1:-1]
         return ''.join(smi_list)
 
+    def get_z_from_src(self, src, econds):
+        if not getattr(self.predictor, 'encode'):
+            exit(f"Class method not found: {self.predictor}.encode")
+        src_mask = create_source_mask(
+            src, self.pad_idx, econds)  # conds1->dconds
+        z, mu, log_var, q_k_enc = self.predictor.encode(src, econds, src_mask)
+        return z, mu, log_var, q_k_enc
+
 
 class MultinomialSearch(Sampling):
     def __init__(self, predictor, latent_dim, TRG, toklen_data,
@@ -118,8 +126,10 @@ class MultinomialSearch(Sampling):
                     break
         return ys
 
-    def sample_smiles(self, properties, z=None):
-        conds = self.scaler_transform(properties)
+    def sample_smiles(self, conds, z=None, transform=True):
+        if transform:
+            conds = self.scaler_transform(conds)
+
         if z is not None:
             toklen = z.size(1)
         else:
@@ -139,15 +149,10 @@ class MultinomialSearchFromSource(MultinomialSearch):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
 
-    def get_z_from_src(self, src, econds):
-        src_mask = create_source_mask(
-            src, self.pad_idx, econds)  # conds1->dconds
-        z, mu, log_var, _ = self.predictor.encode(src, econds, src_mask)
-        return z, mu, log_var
-
-    def sample_smiles(self, src, properties):
+    def sample_smiles(self, src, conds, transform=True):
         toklen = src.size(-1)
-        conds = self.transform_properties(properties)
+        if transform:
+            conds = self.scaler_transform(conds)
 
         if isinstance(conds, tuple):
             src_mask = create_source_mask(
@@ -218,6 +223,8 @@ class BeamSearch(Sampling):
         # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
 
         outputs, e_outputs, log_scores = self.init_vars(conds, toklen, z)
+        print('init:', outputs.size())
+
         if len(conds) == 2:
             conds = (conds[0].repeat(self.k, 1), conds[1].repeat(self.k, 1))
         else:
@@ -268,8 +275,10 @@ class BeamSearch(Sampling):
             length = (outputs[ind] == self.eos_idx).nonzero()[0]
             return ' '.join([self.trg_itos[tok] for tok in outputs[ind][1:length]])
 
-    def sample_smiles(self, properties, z=None):
-        conds = self.scaler_transform(properties)
+    def sample_smiles(self, conds, z=None, transform=True):
+        if transform:
+            conds = self.scaler_transform(conds)
+
         if z is not None:
             toklen = z.size(1)
         else:
@@ -288,14 +297,10 @@ class BeamSearchFromSource(BeamSearch):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device, k)
 
-    def get_z_from_src(self, src, econds):
-        src_mask = create_source_mask(
-            src, self.pad_idx, econds)  # conds1->dconds
-        z, mu, log_var, _ = self.predictor.encode(src, econds, src_mask)
-        return z, mu, log_var
+    def sample_smiles(self, src, conds, transform=True):
+        if transform:
+            conds = self.scaler_transform(conds)
 
-    def sample_smiles(self, src, properties):
-        conds = self.scaler_transform(properties)
         if isinstance(conds, tuple):
             src_mask = create_source_mask(
                 src, self.pad_idx, conds[1])  # conds1->dconds

@@ -4,11 +4,14 @@ import torch.nn.functional as F
 
 
 class Predictor(object):
-    def __init__(self, use_cond2dec, decoder, encoder=None):
+    def __init__(self, use_cond2dec, decoder, encoder):
         self.decoder = decoder
         self.use_cond2dec = use_cond2dec
-        if encoder is not None:
-            self.encode = encoder
+        self.encoder = encoder
+    
+    def encode(self, src, econds, src_mask):
+        z, mu, log_var, q_k_enc = self.encoder(src, econds, src_mask)
+        return z, mu, log_var, q_k_enc
 
     def predict(self, trg, z, conds, src_mask, trg_mask):
         if self.use_cond2dec == True:

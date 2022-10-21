@@ -1,3 +1,5 @@
+from plot import smilesList_to_img  # in SMILES_plot
+import dill as pickle
 import os
 from re import L
 from time import time
@@ -110,7 +112,8 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
     if model_type == 'transformer':
         model_path = os.path.join(args.molgct_path, 'molgct.pt')
     elif args.epoch > 0:
-        model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
+        model_path = os.path.join(
+            args.model_directory, f'model_{args.epoch}.pt')
         # model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
     else:
         model_path = None
@@ -121,10 +124,10 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
 # def predict_molecules(args, bsTool, predictor, properties, TRG, scaler,
 #                       toklen_data, device, smiles_path, num_samplings=500):
 #     logp, tpsa, qed = properties
-    
+
 #     print(f"\nDesirable Properties (logP, tPSA, QED): "
 #           f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
-    
+
 #     properties = np.array([[logp, tpsa, qed]])
 
 #     if args.decode_type == 'mlp_decode':
@@ -157,7 +160,7 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
 def generate_smiles_from_properties(args, bsTool, predictor, properties, TRG, scaler,
                                     toklen_data, device, num_samplings=500, mu=0, std=0.2):
     logp, tpsa, qed = properties
-    
+
     properties = np.array([[logp, tpsa, qed]])
 
     if args.decode_type == 'mlp_decode':
@@ -168,7 +171,7 @@ def generate_smiles_from_properties(args, bsTool, predictor, properties, TRG, sc
             predictor, TRG, scaler, device)[0] for _ in range(num_samplings)]
 
 
-def store_properties_from_predicted_smiles(args, properties, property_prediction, 
+def store_properties_from_predicted_smiles(args, properties, property_prediction,
                                            generated_smiles, smiles_path):
     logp, tpsa, qed = properties
 
@@ -198,7 +201,7 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
 # def generate_smiles_from_src(args, fields, TRG):
 #     test_file_path = "./test_smiles.csv"
 #     target_smiles = 'CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c1'
-    
+
 #     if not os.path.exists(test_file_path):
 #         df = pd.read_csv(os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}', 'train.csv'))
 #         df = df.loc[df.src == target_smiles]
@@ -212,21 +215,18 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
 
 #     predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
 
-#     demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
-#                 args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
+#     demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim,
+#                 args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG,
 #                 (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
 #                 (args.qed_lb, args.qed_ub), 'beam_search', device)
-    
+
 
 #     for i, batch in enumerate(dataloader):
 #         properties = batch.dconds.cpu().numpy()[0]
 #         demo.inference_from_src_properties(batch.src, properties[0], properties[1], properties[2])
 
-import dill as pickle
-from plot import smilesList_to_img # in SMILES_plot
 
-
-calc_dist = lambda z: torch.sqrt(torch.sum(z**2)).item()
+def calc_dist(z): return torch.sqrt(torch.sum(z**2)).item()
 
 
 def calc_snn_from_mol(molList1, molList2):
@@ -262,7 +262,7 @@ class VaryingZGeneration:
         new_z = self.generate_rand_z(toklen)
         del_new_z = new_z - start_z
         return start_z + del_new_z * self.distance / calc_dist(del_new_z)
-    
+
     def get_z_same_dist_from_start_z(self, toklen, num_z, start_z):
         def take_z(file_path):
             if not os.path.exists(file_path):
@@ -272,14 +272,16 @@ class VaryingZGeneration:
                 z = pickle.load(open(file_path, "rb"))
             return z
 
-        z_list = [take_z(os.path.join(self.zs_path, f"z{i+1}")) for i in range(num_z)]
+        z_list = [
+            take_z(os.path.join(self.zs_path, f"z{i+1}")) for i in range(num_z)]
         return [start_z] + z_list
 
     def sample_molecules_from_varying_z(self, properties, toklen, n_z, n_samples):
         logp, tpsa, qed = properties
         conditions = np.array([[logp, tpsa, qed]])
-        
-        save_path = os.path.join(self.save_folder, f"cond_{logp:.2f}_{tpsa:.2f}_{qed:.2f}")
+
+        save_path = os.path.join(
+            self.save_folder, f"cond_{logp:.2f}_{tpsa:.2f}_{qed:.2f}")
         os.makedirs(save_path, exist_ok=True)
 
         start_z_path = os.path.join(self.zs_path, "start_z.pkl")
@@ -296,13 +298,14 @@ class VaryingZGeneration:
 
         for i, z in enumerate(z_list):
             z = z.to(device)
-            smilesList = [self.generator.sample_smiles(conditions, z)[0] for _ in range(n_samples)]
+            smilesList = [self.generator.sample_smiles(
+                conditions, z)[0] for _ in range(n_samples)]
 
             print("----------- smiles list -----------\n", smilesList)
             with open(os.path.join(save_path, f"{i}.txt"), "w") as writer:
                 for s in smilesList:
                     writer.write(s+"\n")
-            
+
             if len(molList_start) == 0:
                 molList_start = smi_to_mol(smilesList)
             molList = smi_to_mol(smilesList)
@@ -315,13 +318,13 @@ class VaryingZGeneration:
                 snnList_prev.append(snn_prev)
 
             molList_prev = molList
-        
+
         with open(os.path.join(save_path, f"snn.txt"), "w") as writer:
             writer.write("snn_start\tsnn_prev\n")
             for i in range(len(snnList_start)):
                 writer.write(f"{snnList_start[i]}\t{snnList_prev[i]}\n")
 
-                
+
 def getSmilesGenerator(args, model, decode_algo, has_src):
     predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
     z_generator = model.encode
@@ -337,7 +340,7 @@ def getSmilesGenerator(args, model, decode_algo, has_src):
                 z_generator, predictor, args.latent_dim, TRG, toklen_data,
                 scaler, args.max_strlen, args.use_cond2dec, device
             )
-    
+
     elif decode_algo == "beam_search":
         if has_src:
             smiles_generator = BeamSearch(
@@ -350,7 +353,6 @@ def getSmilesGenerator(args, model, decode_algo, has_src):
                 scaler, args.max_strlen, args.use_cond2dec, device
             )
     return smiles_generator
-               
 
 
 if __name__ == "__main__":
@@ -369,15 +371,16 @@ if __name__ == "__main__":
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
     fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
 
-    toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
+    toklen_data = pd.read_csv(os.path.join(
+        args.data_path, 'raw', 'train', 'toklen_list.csv'))
 
-    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv'))
+    train_smiles = pd.read_csv(os.path.join(
+        args.data_path, 'raw', 'train', 'smiles_serial.csv'))
     train_smiles = train_smiles['smiles'].tolist()
 
-    model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab),
                       args.model_type, args.decode_type).to(device)
     model.eval()
-    
 
     decode_algo = "multinomial"
     has_src = True
@@ -386,34 +389,40 @@ if __name__ == "__main__":
     toklen = 40
     n_samples = 20
     distance = [1, 4, 8, 16, 32]
-    propertyList = [(2.22, 48.81, 0.84), (3.25, 89.95, 0.73), (2.01, 42.51, 0.63)]
+    propertyList = [(2.22, 48.81, 0.84), (3.25, 89.95, 0.73),
+                    (2.01, 42.51, 0.63)]
 
     smiles_generator = getSmilesGenerator(args, model, decode_algo, has_src)
-    
+
     if has_src:
-        save_folder =  f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/"
+        save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/"
         dataset = data.TabularDataset(path=os.path.join(save_folder, 'test.csv'),
                                       format='csv', fields=fields, skip_header=True)
         data_iter = data.BucketIterator(dataset, batch_size=1)
-        dataloader = to_dataloader(data_iter, args.conditions, TRG.vocab.stoi["<pad>"], args.max_strlen, device)
+        dataloader = to_dataloader(
+            data_iter, args.conditions, TRG.vocab.stoi["<pad>"], args.max_strlen, device)
         batch = next(dataloader)
-        
+
         smiles_generator.sample_smiles(batch.src, propertyList[0])
-        exit()         
-        
+        exit()
+
         for dist in distance:
             save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/propsrc-{decode_algo}/dist{dist}"
-            obj = VaryingZGeneration(smiles_generator, args.latent_dim, dist, save_folder)
+            obj = VaryingZGeneration(
+                smiles_generator, args.latent_dim, dist, save_folder)
 
             for prop in propertyList:
-                obj.sample_molecules_from_varying_z(prop, toklen, n_z, n_samples)
+                obj.sample_molecules_from_varying_z(
+                    prop, toklen, n_z, n_samples)
     else:
         for dist in distance:
             save_folder = f"/fileserver-gamma/chaoting/ML/molGCT/prop-{decode_algo}/dist{dist}"
-            obj = VaryingZGeneration(smiles_generator, args.latent_dim, dist, save_folder)
+            obj = VaryingZGeneration(
+                smiles_generator, args.latent_dim, dist, save_folder)
 
             for prop in propertyList:
-                obj.sample_molecules_from_varying_z(prop, toklen, n_z, n_samples)
+                obj.sample_molecules_from_varying_z(
+                    prop, toklen, n_z, n_samples)
 
     exit(0)
 
@@ -429,7 +438,7 @@ if __name__ == "__main__":
             if if_continue.upper() == 'Y':
                 # logp = float(input('Enter logP: '))
                 # tpsa = float(input('Enter tPSA: '))
-                # qed = float(input('Enter QED: '))                
+                # qed = float(input('Enter QED: '))
 
                 logp = 2.2
                 tpsa = 28.8
@@ -441,15 +450,17 @@ if __name__ == "__main__":
                 print('Please enter Y/N !!!!')
                 continue
 
-            predictor = Predictor(getattr(model, args.decode_type), args.use_cond2dec)
+            predictor = Predictor(
+                getattr(model, args.decode_type), args.use_cond2dec)
 
-            demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim, 
-                        args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG, 
+            demo = Demo(args.conditions, predictor, args.decode_type, args.latent_dim,
+                        args.max_strlen, args.use_cond2dec, toklen_data, scaler, TRG,
                         (args.logp_lb, args.logp_ub), (args.tpsa_lb, args.tpsa_ub),
                         (args.qed_lb, args.qed_ub), 'beam_search', device)
-            
-            demo.inference_from_properties(logp, tpsa, qed, num_samples=40, mu=0, std=0.2)
-    
+
+            demo.inference_from_properties(
+                logp, tpsa, qed, num_samples=40, mu=0, std=0.2)
+
     elif args.test_random:
         # settings
         std_choices = (0.2, 0.4, 0.6, 0.8, 1.0)
@@ -458,7 +469,8 @@ if __name__ == "__main__":
         total_time = time()
 
         target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=args.num_points),
-                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=args.num_points),
+                                                 np.linspace(
+                                                     args.tpsa_lb, args.tpsa_ub, num=args.num_points),
                                                  np.linspace(args.qed_lb, args.qed_ub, num=args.num_points))) \
             .T.reshape(-1, 3)
 
@@ -466,24 +478,27 @@ if __name__ == "__main__":
 
         bsTool = BeamSearchTool(args.nconds, args.latent_dim,
                                 args.max_strlen, model, args.use_cond2dec)
-        predictor = ModelPrediction(getattr(model, args.decode_type), args.use_cond2dec)
+        predictor = ModelPrediction(
+            getattr(model, args.decode_type), args.use_cond2dec)
 
         for std in std_choices:
             storage_path = args.storage_path + f'_std{std}'
             os.makedirs(storage_path, exist_ok=True)
 
-            for i, (logp, tpsa, qed) in enumerate(target_properties):    
+            for i, (logp, tpsa, qed) in enumerate(target_properties):
                 properties = (logp, tpsa, qed)
 
                 print(f"\n({i}) Desirable Properties (logP, tPSA, QED): "
-                    f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
+                      f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
 
-                smiles_path = os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_pre.txt')
-                smiles_property_path = os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
+                smiles_path = os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_pre.txt')
+                smiles_property_path = os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
 
                 if os.path.exists(smiles_property_path):
-                    continue # filter the files already run
-                
+                    continue  # filter the files already run
+
                 generate_smiles_time -= time()
                 generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties,
                                                                    TRG, scaler, toklen_data, device,
@@ -493,10 +508,10 @@ if __name__ == "__main__":
                 with open(smiles_path, 'w') as sample_file:
                     sample_file.write(f"number\tsmiles\n")
                     for i in range(len(generated_smiles)):
-                        sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")            
+                        sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")
 
                 store_properties_time -= time()
-                store_properties_from_predicted_smiles(args, properties, property_prediction, 
+                store_properties_from_predicted_smiles(args, properties, property_prediction,
                                                        generated_smiles, smiles_property_path)
                 store_properties_time += time()
 
@@ -506,58 +521,70 @@ if __name__ == "__main__":
                 os.remove(smiles_path)
 
             print("Compute metrics for generated smiles of each desirable properties")
-        
+
             for logp, tpsa, qed in target_properties:
-                mean_file_path = os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
+                mean_file_path = os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
 
                 with open(mean_file_path, 'w') as metrics_writer:
-                    preds = pd.read_csv(os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
-                    head, line = generate_metrics_line(preds, train_smiles, args.n_jobs)
+                    preds = pd.read_csv(os.path.join(
+                        storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+                    head, line = generate_metrics_line(
+                        preds, train_smiles, args.n_jobs)
                     metrics_writer.write('logp\ttpsa\tqed\t'+head+'\n')
-                    metrics_writer.write(f'{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t'+line+'\n')
+                    metrics_writer.write(
+                        f'{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t'+line+'\n')
                     print(head+'\n'+line)
 
             print("Combine all of the metrics computed before.")
 
             all_metrics = None
-        
+
             for i, (logp, tpsa, qed) in enumerate(target_properties):
-                preds = pd.read_csv(os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt'), sep='\t')
-                all_metrics = pd.concat([all_metrics, preds], axis=0, ignore_index=True)
+                preds = pd.read_csv(os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt'), sep='\t')
+                all_metrics = pd.concat(
+                    [all_metrics, preds], axis=0, ignore_index=True)
 
             all_metrics = all_metrics.sort_values(by=['logp', 'tpsa', 'qed'])
-            all_metrics.to_csv(os.path.join(storage_path, 'mean.txt'), sep='\t', index=False)
-        
+            all_metrics.to_csv(os.path.join(
+                storage_path, 'mean.txt'), sep='\t', index=False)
+
             print("Compute metrics for smiles of all property combinations")
 
             # if not os.path.exists(os.path.join(args.storage_path, 'output.txt')):
             all_preds = None
             for logp, tpsa, qed in target_properties:
-                preds = pd.read_csv(os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+                preds = pd.read_csv(os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
                 all_preds = pd.concat([all_preds, preds], axis=0)
             all_preds = all_preds.reset_index()
 
             with open(os.path.join(storage_path, 'output.txt'), 'w') as all_metrics_writer:
-                head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
+                head, line = generate_metrics_line(
+                    all_preds, train_smiles, args.n_jobs)
                 all_metrics_writer.write(head+'\n')
                 all_metrics_writer.write(line+'\n')
 
-            print("Compute metrics for smiles of all property combinations except for logP=0.03")
+            print(
+                "Compute metrics for smiles of all property combinations except for logP=0.03")
 
             # if not os.path.exists(os.path.join(args.storage_path, 'output-logp0.03.txt')):
             all_preds = None
             for logp, tpsa, qed in target_properties:
                 if logp == 0.03:
                     continue
-                preds = pd.read_csv(os.path.join(storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+                preds = pd.read_csv(os.path.join(
+                    storage_path, f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
                 all_preds = pd.concat([all_preds, preds], axis=0)
             all_preds = all_preds.reset_index()
 
             with open(os.path.join(storage_path, 'output-logp0.03.txt'), 'w') as all_metrics_writer:
-                head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
+                head, line = generate_metrics_line(
+                    all_preds, train_smiles, args.n_jobs)
                 all_metrics_writer.write(head+'\n')
                 all_metrics_writer.write(line+'\n')
-            
+
             print("Work Finished")
 
     else:
@@ -566,28 +593,30 @@ if __name__ == "__main__":
 
         total_time = time()
         target_properties = np.array(np.meshgrid(np.linspace(args.logp_lb, args.logp_ub, num=args.num_points),
-                                                 np.linspace(args.tpsa_lb, args.tpsa_ub, num=args.num_points),
+                                                 np.linspace(
+                                                     args.tpsa_lb, args.tpsa_ub, num=args.num_points),
                                                  np.linspace(args.qed_lb, args.qed_ub, num=args.num_points))) \
             .T.reshape(-1, 3)
 
         bsTool = BeamSearchTool(args.nconds, args.latent_dim,
                                 args.max_strlen, model, args.use_cond2dec)
-        predictor = ModelPrediction(getattr(model, args.decode_type), args.use_cond2dec)
+        predictor = ModelPrediction(
+            getattr(model, args.decode_type), args.use_cond2dec)
 
-        for i, (logp, tpsa, qed) in enumerate(target_properties):    
+        for i, (logp, tpsa, qed) in enumerate(target_properties):
             properties = (logp, tpsa, qed)
 
             print(f"\n({i}) Desirable Properties (logP, tPSA, QED): "
                   f"{logp:.2f}, {tpsa:.2f}, {qed:.2f}")
 
             smiles_path = os.path.join(args.storage_path,
-                          f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_pre.txt')
+                                       f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_pre.txt')
             smiles_property_path = os.path.join(args.storage_path,
-                                   f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
+                                                f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt')
 
             if os.path.exists(smiles_property_path):
                 continue
-            
+
             generate_smiles_time -= time()
             generated_smiles = generate_smiles_from_properties(args, bsTool, predictor, properties, TRG,
                                                                scaler, toklen_data, device, args.samples_each)
@@ -596,10 +625,10 @@ if __name__ == "__main__":
             with open(smiles_path, 'w') as sample_file:
                 sample_file.write(f"number\tsmiles\n")
                 for i in range(len(generated_smiles)):
-                    sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")            
+                    sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")
 
             store_properties_time -= time()
-            store_properties_from_predicted_smiles(args, properties, property_prediction, 
+            store_properties_from_predicted_smiles(args, properties, property_prediction,
                                                    generated_smiles, smiles_property_path)
             store_properties_time += time()
 
@@ -609,32 +638,36 @@ if __name__ == "__main__":
             os.remove(smiles_path)
 
         print("Compute metrics for generated smiles of each desirable properties")
-        
+
         for logp, tpsa, qed in target_properties:
-            mean_file_path = os.path.join(args.storage_path, 
-                             f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
+            mean_file_path = os.path.join(args.storage_path,
+                                          f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt')
             print(">>>", mean_file_path)
             with open(mean_file_path, 'w') as metrics_writer:
                 preds = pd.read_csv(os.path.join(args.storage_path,
-                        f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
-                head, line = generate_metrics_line(preds, train_smiles, args.n_jobs)
+                                                 f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}.txt'), sep='\t')
+                head, line = generate_metrics_line(
+                    preds, train_smiles, args.n_jobs)
                 metrics_writer.write('logp\ttpsa\tqed\t'+head+'\n')
-                metrics_writer.write(f'{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t'+line+'\n')
+                metrics_writer.write(
+                    f'{logp:.2f}\t{tpsa:.2f}\t{qed:.2f}\t'+line+'\n')
 
         print("Combine all of the metrics computed before.")
 
         all_metrics = None
-        
+
         for i, (logp, tpsa, qed) in enumerate(target_properties):
-            preds = pd.read_csv(os.path.join(args.storage_path, 
-                    f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt'), sep='\t')
-            all_metrics = pd.concat([all_metrics, preds], axis=0, ignore_index=True)
+            preds = pd.read_csv(os.path.join(args.storage_path,
+                                             f'{logp:.2f}_{tpsa:.2f}_{qed:.2f}_mean.txt'), sep='\t')
+            all_metrics = pd.concat(
+                [all_metrics, preds], axis=0, ignore_index=True)
 
         # all_metrics = pd.concat([properties, all_metrics], axis=1)
         # print(all_metrics.head())
         all_metrics = all_metrics.sort_values(by=['logp', 'tpsa', 'qed'])
-        all_metrics.to_csv(os.path.join(args.storage_path, 'mean.txt'), sep='\t', index=False)
-        
+        all_metrics.to_csv(os.path.join(args.storage_path,
+                           'mean.txt'), sep='\t', index=False)
+
         print("Compute metrics for smiles of all property combinations")
 
         # if not os.path.exists(os.path.join(args.storage_path, 'output.txt')):
@@ -646,11 +679,13 @@ if __name__ == "__main__":
         all_preds = all_preds.reset_index()
 
         with open(os.path.join(args.storage_path, 'output.txt'), 'w') as all_metrics_writer:
-            head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
+            head, line = generate_metrics_line(
+                all_preds, train_smiles, args.n_jobs)
             all_metrics_writer.write(head+'\n')
             all_metrics_writer.write(line+'\n')
 
-        print("Compute metrics for smiles of all property combinations except for logP=0.03")
+        print(
+            "Compute metrics for smiles of all property combinations except for logP=0.03")
 
         # if not os.path.exists(os.path.join(args.storage_path, 'output-logp0.03.txt')):
         all_preds = None
@@ -663,8 +698,9 @@ if __name__ == "__main__":
         all_preds = all_preds.reset_index()
 
         with open(os.path.join(args.storage_path, 'output-logp0.03.txt'), 'w') as all_metrics_writer:
-            head, line = generate_metrics_line(all_preds, train_smiles, args.n_jobs)
+            head, line = generate_metrics_line(
+                all_preds, train_smiles, args.n_jobs)
             all_metrics_writer.write(head+'\n')
             all_metrics_writer.write(line+'\n')
-        
+
         print("Work Finished")

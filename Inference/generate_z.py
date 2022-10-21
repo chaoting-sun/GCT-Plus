@@ -6,6 +6,7 @@ training/validation set.
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+import pandas as pd
 import numpy as np
 import torch
 from torchtext import data
@@ -20,26 +21,27 @@ def distance(z1, z2):
 
 
 def get_dataloader(cond_list, file_path, fields,
-                   pad_idx, max_strlen, device, batch_size):
+                   pad_idx, toklen, device, batch_size):
     dataset = data.TabularDataset(path=file_path, format='csv',
                                   fields=fields, skip_header=True)
     nbatches = int(np.ceil(len(dataset) / batch_size))
     data_iter = data.BucketIterator(dataset, batch_size=batch_size)
     dataloader = to_dataloader(data_iter, cond_list,
-                               pad_idx, max_strlen, device)
+                               pad_idx, toklen, device)
     return dataloader, nbatches
 
 
-def get_z_from_smiles(args, LOG, smiles_generator,
-                      data_path, fields, device, TRG, nz=100):
+def get_z_from_smiles(args, LOG, smiles_generator, data_path,
+                      fields, device, TRG, toklen=80, nz=100):
     LOG.info('Get dataloader')
     batch_size = 128
+    
     dataloader, nbatches = get_dataloader(args.conditions, data_path,
                                           fields, TRG.vocab.stoi["<pad>"],
-                                          args.max_strlen, device, batch_size)
+                                          toklen, device, batch_size)
 
     LOG.info('Start to generate')
-    zs_container = torch.empty((nz, args.max_strlen, args.latent_dim),
+    zs_container = torch.empty((nz, toklen, args.latent_dim),
                                dtype=torch.float32)
 
     # ERROR - RuntimeError: CUDA out of memory.
@@ -49,7 +51,7 @@ def get_z_from_smiles(args, LOG, smiles_generator,
             print(f"{(i+1)*batch_size:<5} / {nz}")
 
             batch.src.requires_grad, batch.econds.requires_grad = False, False
-            zs, _, _ = smiles_generator.get_z_from_src(batch.src, batch.econds)
+            zs = smiles_generator.get_z_from_src(batch.src, batch.econds)[0]
 
             for j, z in enumerate(zs):
                 if i*batch_size+j >= nz:
@@ -74,6 +76,18 @@ def plot_dist_figure(data_1d, title, xlabel, ylabel, fig_path):
 
 
 def generate_z(args, smiles_generator, fields, device, TRG, logger):
+    # df = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/toklen_list.csv")
+    # df = df.sample(n=100000)
+    # plot_dist_figure(df["toklen"],
+    #                  title="SMILES token length",
+    #                  xlabel="Token length",
+    #                  ylabel="Distribution",
+    #                  fig_path="/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/toklen.png"
+    #                  )
+        
+    # exit(0)
+
+
     np.random.seed(0)
 
     ########################## SETTINGS ##########################
@@ -82,10 +96,11 @@ def generate_z(args, smiles_generator, fields, device, TRG, logger):
     # nz = 100
     # n_pairs = 10
     data_type = "train"  # or train
+    toklen = 60
 
     data_folder = os.path.join(args.data_path, 'aug', 'data_sim1.00')
     fig_folder = os.path.join(args.data_path, "DistOfRand2Zs")
-    figure_name = f"{data_type}-{args.model_type}.png"
+    figure_name = f"{data_type}-{args.model_type}_toklen{toklen}.png"
     ##############################################################
 
     data_path = os.path.join(data_folder, f'{data_type}.csv')
@@ -98,7 +113,7 @@ def generate_z(args, smiles_generator, fields, device, TRG, logger):
     zs_container = get_z_from_smiles(args, LOG, smiles_generator,
                                      os.path.join(
                                          data_folder, f'{data_type}.csv'),
-                                     fields, device, TRG, nz)
+                                     fields, device, TRG, toklen, nz)
 
     print(f"Generate {n_pairs} random pairs.")
     rand_pairs = [tuple(np.random.choice(range(nz), 2, replace=False))
@@ -111,7 +126,6 @@ def generate_z(args, smiles_generator, fields, device, TRG, logger):
         collected_distance[i] = distance(z1, z2)
 
     print("Collected distance:", collected_distance)
-
     os.makedirs(fig_folder, exist_ok=True)
     plot_dist_figure(collected_distance,
                      title=f"Distance of 2 random Zs ({data_type})",

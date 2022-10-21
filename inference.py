@@ -63,6 +63,18 @@ def get_logger(args):
 
 
 if __name__ == "__main__":
+    # df = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/train.csv")
+    # df = df.sample(n=100000).reset_index()
+    # del df['index']
+    # df.to_csv("/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/train_tiny.csv", index=False)
+
+    # df = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/validation.csv")
+    # df = df.sample(n=10000).reset_index()
+    # del df['index']
+    # df.to_csv("/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/validation_tiny.csv", index=False)
+
+    # exit()    
+    
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
@@ -106,7 +118,8 @@ if __name__ == "__main__":
     if args.has_source:
         generate_z(args, smiles_generator, fields, device, TRG, logger)
     else:
-        generate_uniformly(args, smiles_generator, train_smiles, logger)
+        varying_z_generate(args, smiles_generator, fields, device, logger, SRC, TRG)
+        # generate_uniformly(args, smiles_generator, train_smiles, logger)
     
     
 

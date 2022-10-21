@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-GPU_IDX=1
+GPU_IDX=2
 
 # Original Transformer
 
@@ -65,11 +65,10 @@ then
             -variational \
             -model_type ${MODEL_TYPE} \
         testing \
-            -has_source \
             -decode_algo "beam_search" \
             -decode_type ${DECODE_TYPE} \
             -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL}_sim1.00_test \
-        >${MODEL}_generate.out 2>${MODEL}_generate.err &
+        >${MODEL}_generate_${GPU_IDX}.out 2>${MODEL}_generate_${GPU_IDX}.err &
 elif [ ${MODEL} == 'mlptf' ]
 then
     # mlp_transformer - mlp_decoder
