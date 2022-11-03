@@ -122,6 +122,12 @@ def get_mol(smiles_or_mol):
     return smiles_or_mol
 
 
+def get_smiles(mol):
+    if mol is not None:
+        return MolToSmiles(mol)
+    return mol
+
+
 def get_canonical_smile(smile):
     if smile != 'None':
         mol = MolFromSmiles(smile)

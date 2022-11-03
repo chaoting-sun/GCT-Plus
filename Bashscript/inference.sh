@@ -59,16 +59,16 @@ then
         # >generate.out 2>generate.err &
 elif [ ${MODEL} == "tf" ]
 then
-    CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+    CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
         inference.py \
             -similarity ${SIMILARITY} \
             -variational \
             -model_type ${MODEL_TYPE} \
         testing \
-            -decode_algo "beam_search" \
+            -decode_algo "multinomial" \
             -decode_type ${DECODE_TYPE} \
             -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL}_sim1.00_test \
-        >${MODEL}_generate_${GPU_IDX}.out 2>${MODEL}_generate_${GPU_IDX}.err &
+        # >${MODEL}_generate_${GPU_IDX}.out 2>${MODEL}_generate_${GPU_IDX}.err &
 elif [ ${MODEL} == 'mlptf' ]
 then
     # mlp_transformer - mlp_decoder

@@ -66,11 +66,13 @@ class Sampling(object):
                 properties)).to(self.device)
         return conds
 
-    def idx_sequence_to_smiles(self, idx_sequence):
+    def idx_sequence_to_smiles(self, sequence):
         # only for 1 smiles
-        idx_sequence = [idx for idx in idx_sequence if idx != self.pad_idx]
-        smi_list = [self.trg_itos[token] for token in idx_sequence][1:-1]
-        return ''.join(smi_list)
+        smiles = []
+        for idx in sequence:
+            if idx not in (self.sos_idx, self.eos_idx, self.pad_idx):
+                smiles.append(self.trg_itos[idx])
+        return ''.join(smiles)
 
     def get_z_from_src(self, src, econds):
         if not getattr(self.predictor, 'encode'):
@@ -82,12 +84,11 @@ class Sampling(object):
 
 
 class MultinomialSearch(Sampling):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data,
-                 scaler, max_strlen, use_cond2dec, device):
+    def __init__(self, predictor, latent_dim, TRG, toklen_data, scaler,
+                 max_strlen, use_cond2dec, device, decode_algo="multinomial"):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
-        # self.decode_algo = "greedy"
-        self.decode_algo = "multinomial"
+        self.decode_algo = decode_algo
 
     def decode(self, z, conds, src_mask):
         c = conds[1] if isinstance(conds, tuple) else conds
@@ -127,27 +128,33 @@ class MultinomialSearch(Sampling):
         return ys
 
     def sample_smiles(self, conds, z=None, transform=True):
+        # toklen, toklen_gen 要改
         if transform:
             conds = self.scaler_transform(conds)
-
+        conds = conds.to(self.device)
         if z is not None:
             toklen = z.size(1)
+            z = z.to(self.device)
         else:
             z, toklen = generate_latent_space(self.toklen_data, self.latent_dim, self.device)
-        src_mask = (torch.ones(1, 1, toklen) != 0).to(
-            self.device)  # (bs,1,toklen=nc+src_smi)
-
-        pred_seq = self.decode(z, conds, src_mask)
-        smiles = self.idx_sequence_to_smiles(pred_seq.cpu().numpy()[0])
+        
+        src_mask = (torch.ones(conds.size(0), 1, toklen) != 0).to(self.device)  # (bs,1,nc+src_smi)
+        sequence = self.decode(z, conds, src_mask)
+        sequence = sequence.cpu().numpy()
+        
+        smiles = []
+        for i in range(conds.size(0)):
+            smiles.append(self.idx_sequence_to_smiles(sequence[i]))
         toklen_gen = len(smiles)
         return smiles, toklen_gen, toklen
 
 
 class MultinomialSearchFromSource(MultinomialSearch):
-    def __init__(self, predictor, latent_dim, TRG,
-                 toklen_data, scaler, max_strlen, use_cond2dec, device):
+    def __init__(self, predictor, latent_dim, TRG, toklen_data, scaler, 
+                 max_strlen, use_cond2dec, device, decode_algo="multinomial"):
         super().__init__(predictor, latent_dim, TRG, toklen_data,
                          scaler, max_strlen, use_cond2dec, device)
+        self.decode_algo = decode_algo
 
     def sample_smiles(self, src, conds, transform=True):
         toklen = src.size(-1)
@@ -198,7 +205,6 @@ class BeamSearch(Sampling):
 
         trg_mask = nopeak_mask(1, self.use_cond2dec, self.pad_idx,
                                self.cond_dim).to(self.device)
-
         out_mol = self.predictor.predict(trg_in, z, conds, src_mask, trg_mask)
 
         # return the k elements with the highest probability
@@ -223,7 +229,6 @@ class BeamSearch(Sampling):
         # outputs 维度(beam_size,max_len) e_outputs(beam_size,seq_len,d_model)
 
         outputs, e_outputs, log_scores = self.init_vars(conds, toklen, z)
-        print('init:', outputs.size())
 
         if len(conds) == 2:
             conds = (conds[0].repeat(self.k, 1), conds[1].repeat(self.k, 1))
@@ -281,14 +286,29 @@ class BeamSearch(Sampling):
 
         if z is not None:
             toklen = z.size(1)
+            z = z.to(self.device)
         else:
             z, toklen = generate_latent_space(self.toklen_data, self.latent_dim, self.device)
-        smiles = self.beam_search(conds, toklen, z)
 
-        toklen_gen = smiles.count(" ") + 1
-        smiles = ''.join(smiles).replace(" ", "")
+        def converter(smiles):
+            toklen_gen = smiles.count(" ") + 1
+            smiles = ''.join(smiles).replace(" ", "")
+            return smiles, toklen_gen
 
-        return smiles, toklen_gen, toklen
+        if len(z) > 1:
+            smiles_list = []
+            toklen_gen_list = []
+            for i in range(len(z)):
+                smiles = self.beam_search(torch.unsqueeze(conds[i], 0), toklen,
+                                          torch.unsqueeze(z[i], 0))
+                smiles, toklen_gen = converter(smiles)
+                smiles_list.append(smiles)
+                toklen_gen_list.append(toklen_gen)
+            return smiles_list, toklen_gen_list, toklen
+        else:
+            smiles = self.beam_search(conds, toklen, z)
+            smiles, toklen_gen = converter(smiles)
+            return smiles, toklen_gen, toklen
 
 
 class BeamSearchFromSource(BeamSearch):

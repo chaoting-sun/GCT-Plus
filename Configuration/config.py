@@ -41,9 +41,9 @@ def options(parser):
     train_opts(subparsers)
 
     """ TESTING """
-    evaluation_parser = subparsers.add_parser('testing')
-    evaluation_opts(evaluation_parser)
-
+    evaluation_opts(subparsers)
+    # evaluation_parser = subparsers.add_parser('testing')
+    # evaluation_opts(evaluation_parser)
     return parser
 
 
@@ -102,24 +102,67 @@ def generate_opts(parser):
 
 
 def evaluation_opts(parser):
-    # soft constraints
-    parser.add_argument('-has_source', action='store_true')
-    parser.add_argument('-decode_algo', default="multinomial", choices=["multinomial", "beam_search"])
-    parser.add_argument('-epoch', type=int, default=20)
-    parser.add_argument('-encode_type', type=str, default='encode')
-    parser.add_argument('-decode_type', type=str, default='mlp_decode')
-    parser.add_argument('-samples_each', type=int, default=1000)
-    parser.add_argument('-num_points', type=int, default=5)
-    parser.add_argument('-model_directory', default='train')
-    parser.add_argument('-storage_path', type=str, default='molGCT/inference')    
-
-    parser.add_argument('-demo', action='store_true')
-    parser.add_argument('-test_random', action='store_true')
-
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    
     # hard constraints
-    parser.add_argument('-logp_lb', type=float, default=0.03)
-    parser.add_argument('-logp_ub', type=float, default=4.97)
-    parser.add_argument('-tpsa_lb', type=float, default=17.92)
-    parser.add_argument('-tpsa_ub', type=float, default=112.83)
-    parser.add_argument('-qed_lb', type=float, default=0.58)
-    parser.add_argument('-qed_ub', type=float, default=0.95)
+    parent_parser.add_argument('-logp_lb', type=float, default=0.03)
+    parent_parser.add_argument('-logp_ub', type=float, default=4.97)
+    parent_parser.add_argument('-tpsa_lb', type=float, default=17.92)
+    parent_parser.add_argument('-tpsa_ub', type=float, default=112.83)
+    parent_parser.add_argument('-qed_lb', type=float, default=0.58)
+    parent_parser.add_argument('-qed_ub', type=float, default=0.95)
+
+    # soft constraints - model
+    parent_parser.add_argument('-model_directory', default='train')
+    parent_parser.add_argument('-epoch', type=int, default=20)
+    parent_parser.add_argument('-encode_type', type=str, default='encode')
+    parent_parser.add_argument('-decode_type', type=str, default='mlp_decode')
+
+    # soft constraints - methods to sample smiles
+    parent_parser.add_argument('-has_source', action='store_true')
+    parent_parser.add_argument('-decode_algo', default="multinomial", choices=["greedy", "multinomial", "beam"])
+    parent_parser.add_argument('-samples_each', type=int, default=1000)
+
+    # soft constraints - 
+    parent_parser.add_argument('-storage_path', type=str, default='molGCT/inference')
+    parent_parser.add_argument('-test_random', action='store_true')
+
+    """ Validation on molGCT on the basic metrics:
+    
+    Sample on the decoder of molGCT to validate the model.
+    The metrics are divided into 2 parts:
+    - metrics based on distributions: validity, uniqueness,
+    novelty, diversity
+    - metrics based on property precision: mae, mse, max,
+    min, aard, amsd of logP, tPSA, QED
+    logP, tPSA, and QED are divided into 5 equal-spacing
+    properties between the boundary constraints, which
+    leads to 125 groups, in which the decoder sample 100
+    smiles with z added by a guassian G(0, 0.2)
+    """
+    molgctVal_parser = parser.add_parser('molgct-validation', parents=[parent_parser])
+    molgctVal_parser.add_argument('-num_points', type=int, default=5)
+
+
+    """ Continuity check on the latent space:
+    
+    Test if the latent space of the model is continuous
+    by sampling multiple points on the line between two
+    latent points.
+    """
+    cc_parser = parser.add_parser('continuity-check', parents=[parent_parser])
+    cc_parser.add_argument('-continuity_check', action='store_true')
+    cc_parser.add_argument('-properties', nargs='+', default=[3.075,93.411,0.609])
+    cc_parser.add_argument('-toklen', type=int, default=30)
+    cc_parser.add_argument('-n_steps', type=int, default=40)
+    cc_parser.add_argument('-n_samples', type=int, default=100)
+
+    """ A Demo for model inference:
+    
+    Show a demo for model inference. Properties are to be
+    entered by users, while source smiles can be optionally
+    provided.
+    """
+    demo_parser = parser.add_parser('demo', parents=[parent_parser])
+    demo_parser.add_argument('-demo', action='store_true')
+

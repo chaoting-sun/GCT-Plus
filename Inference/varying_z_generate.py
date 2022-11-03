@@ -158,3 +158,5 @@ def varying_z_generate(args, smiles_generator, fields, device, logger, SRC, TRG)
 
     predict_smi_with_varying_z(
         args, LOG, smiles_generator, all_Zs, Cs, TRG, n_eachZ)
+
+

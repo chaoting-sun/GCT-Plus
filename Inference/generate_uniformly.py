@@ -85,7 +85,7 @@ def print_all_metrics(metrics):
         \
            f"{metrics['logpErr']['min']:.4f}\t"  \
            f"{metrics['tpsaErr']['min']:.4f}\t"  \
-           f"{metrics['qedErr']['mamin']:.4f}"   \
+           f"{metrics['qedErr']['min']:.4f}"   \
 
     return header, body
 

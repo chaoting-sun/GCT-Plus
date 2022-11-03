@@ -171,8 +171,8 @@ def generate_smiles_from_properties(args, bsTool, predictor, properties, TRG, sc
             predictor, TRG, scaler, device)[0] for _ in range(num_samplings)]
 
 
-def store_properties_from_predicted_smiles(args, properties, property_prediction,
-                                           generated_smiles, smiles_path):
+def store_properties_from_predicted_smiles(properties, property_prediction,
+                                           generated_smiles, smiles_path, conditions):
     logp, tpsa, qed = properties
 
     with open(smiles_path, 'w', buffering=10) as sample_file:
@@ -186,7 +186,7 @@ def store_properties_from_predicted_smiles(args, properties, property_prediction
             if mol is not None:
                 valid = 1
                 logp_p, tpsa_p, qed_p = (property_prediction[c](mol)
-                                         for c in args.conditions)
+                                         for c in conditions)
             else:
                 valid = 0
                 logp_p = tpsa_p = qed_p = np.nan
@@ -511,8 +511,11 @@ if __name__ == "__main__":
                         sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")
 
                 store_properties_time -= time()
-                store_properties_from_predicted_smiles(args, properties, property_prediction,
-                                                       generated_smiles, smiles_property_path)
+                store_properties_from_predicted_smiles(properties,
+                                                       property_prediction,
+                                                       generated_smiles,
+                                                       smiles_property_path,
+                                                       args.conditions)
                 store_properties_time += time()
 
                 print(f"generateT(s): {generate_smiles_time}\t"
@@ -628,8 +631,11 @@ if __name__ == "__main__":
                     sample_file.write(f"{i+1}\t{generated_smiles[i]}\n")
 
             store_properties_time -= time()
-            store_properties_from_predicted_smiles(args, properties, property_prediction,
-                                                   generated_smiles, smiles_property_path)
+            store_properties_from_predicted_smiles(properties,
+                                                   property_prediction,
+                                                   generated_smiles,
+                                                   smiles_property_path,
+                                                   args.conditions)
             store_properties_time += time()
 
             print(f"generateT(s): {generate_smiles_time}\t"

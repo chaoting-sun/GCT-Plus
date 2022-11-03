@@ -119,13 +119,14 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, **kwargs):
     elif args.epoch > 0:
         model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
 
-    if args.model_type == "transformer":
-        print("Model Path:", molgct_model_path)
-    else:
-        print("Model Path:", model_path)
+    # if args.model_type == "transformer":
+    #     print("Model Path:", molgct_model_path)
+    # else:
+    #     print("Model Path:", model_path)
 
     if args.model_type == "transformer":
         # training phase I
+        print(f"Build Transformer from {molgct_model_path}")
         model = build_transformer(SRC_vocab_len, TRG_vocab_len,
                                   args.N, args.d_model, args.d_ff,
                                   args.H, args.latent_dim, args.dropout,

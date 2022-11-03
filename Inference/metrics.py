@@ -5,6 +5,13 @@ from multiprocessing import Pool
 # from Utils.property import get_mol
 from moses.metrics import metrics
 from moses.utils import mapper, get_mol
+from moses.metrics import SNNMetric
+
+
+def get_snn_from_mol(molList1, molList2):
+    # Similarity to nearest neighbour
+    # molList1_fp = SNNMetric().precalc()
+    return SNNMetric()(gen=molList1, ref=molList2)
 
 
 def get_valid(smiles, n_jobs=1):
@@ -37,16 +44,28 @@ def get_errors(smiles_props, target_props):
     return errors
 
 
-def get_all_metrics(gen, train_smiles, n_jobs):
-    valid = get_valid(gen["smiles"], n_jobs)
-    unique = get_unique(gen["smiles"], n_jobs)
-    novel = get_novelty(gen["smiles"], train_smiles, n_jobs)
+def get_basic_metrics(gen, train_smiles, n_jobs=1):
+    validsmi = metrics.remove_invalid(gen)
+    valid = get_valid(gen, n_jobs)
+    unique = get_unique(validsmi, n_jobs)
+    novel = get_novelty(validsmi, train_smiles, n_jobs)
+    intDiv = get_interval_diversity(validsmi, n_jobs)    
 
-    # with Pool(n_jobs) as pool:
-    #     mols = mapper(pool)(get_mol, gen)
-    valid_smiles = metrics.remove_invalid(gen["smiles"])
-    intDiv = get_interval_diversity(valid_smiles, n_jobs)
-    # intDiv = get_interval_diversity(mols, n_jobs)
+    all_metrics = {
+        "valid": valid,
+        "unique": unique,
+        "novel": novel,
+        "intDiv": intDiv,
+    }
+    return all_metrics
+    
+
+def get_all_metrics(gen, train_smiles, n_jobs):
+    validsmi = metrics.remove_invalid(gen["smiles"])
+    valid = get_valid(gen["smiles"], n_jobs)
+    unique = get_unique(validsmi, n_jobs)
+    novel = get_novelty(validsmi, train_smiles, n_jobs)
+    intDiv = get_interval_diversity(validsmi, n_jobs)
 
     logpErr = get_errors(gen['logp_p'], gen['logp_t'])
     tpsaErr = get_errors(gen['tpsa_p'], gen['tpsa_t'])
@@ -59,7 +78,7 @@ def get_all_metrics(gen, train_smiles, n_jobs):
         "intDiv": intDiv,
         "logpErr": logpErr,
         "tpsaErr": tpsaErr,
-        "qedErr": qedErr,
+        "qedErr": qedErr
     }
     return all_metrics
 
