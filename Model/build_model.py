@@ -114,15 +114,8 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
 
 # def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
 def build_model(args, SRC_vocab_len, TRG_vocab_len, **kwargs):
-    if args.model_type == "transformer":
-        molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
-    elif args.epoch > 0:
-        model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
-
-    # if args.model_type == "transformer":
-    #     print("Model Path:", molgct_model_path)
-    # else:
-    #     print("Model Path:", model_path)
+    molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
+    model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
 
     if args.model_type == "transformer":
         # training phase I

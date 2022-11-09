@@ -16,7 +16,7 @@ def run_sampling(xc, dxc, myPDF, myCDF, nRuns):
     return np.array(sample_list).reshape(nRuns, 1), X/np.sum(X)
 
 
-def tokenlen_gen_from_data_distribution(data, nBins, size):
+def tokenlen_gen_from_data_distribution(data, size, nBins):
     # obtain the discrete distribution of all the token length
     count_c, bins_c = np.histogram(data, bins=nBins)
 

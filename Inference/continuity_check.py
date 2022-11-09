@@ -14,7 +14,8 @@ from Inference.metrics import get_all_metrics, get_snn_from_mol, get_interval_di
 
 
 def rand_z(n, toklen, latent_dim):
-    return torch.Tensor(np.random.normal(size=(n, toklen, latent_dim)))
+    return torch.Tensor(np.random.normal(
+           size=(n, toklen, latent_dim)))
 
 
 def distance(z1, z2):
@@ -218,7 +219,7 @@ def continuity_check(generator, latent_dim, conditions, storage_path, properties
     save_folder = os.path.join(storage_path, f"toklen{toklen}")
     os.makedirs(save_folder, exist_ok=True)
 
-    store_metrics_of_transvae_gen_smiles(save_folder, n_steps, n_jobs)
+    # store_metrics_of_transvae_gen_smiles(save_folder, n_steps, n_jobs)
 
     LOG = logger('continuity_check', log_path=os.path.join(save_folder, "records.log"))
 
@@ -247,7 +248,10 @@ def continuity_check(generator, latent_dim, conditions, storage_path, properties
         z = zs[0] + (zs_vec / n_steps) * i
         smiles = sample_smiles(z, properties, n_samples, generator, std=std)
         smiles = pd.DataFrame(smiles, columns=['smiles'])
-        props_p = property_from_smiles(smilmes["smiles"], props_predictor, n_jobs)
+        props_p = property_from_smiles(smiles["smiles"], props_predictor, n_jobs)
+        # print(smiles)
+        # print(props_p)
+        # exit()
         smiles_props = pd.concat([smiles, props_t, props_p], axis=1)
         smiles_props.to_csv(os.path.join(save_folder, f"z1z2_{i}.csv"))
         
@@ -256,17 +260,17 @@ def continuity_check(generator, latent_dim, conditions, storage_path, properties
     LOG.info("store metrics from smiles file...")
     store_metrics_from_smiles_file(save_folder, n_steps,
                                    train_smiles, n_jobs)
-    LOG.info("execution finished.x")
+    LOG.info("execution finished.")
 
 
-"""Validation on Transvae:
-
-sample 50 equal-spacing latent spaces between 2 random sampled zs.
-decoder samples 100 smiles by greedy algorithm. Each z adds a gaussian
-with an average 0 and std equal to 0.7 of half of the distance of two
-consecutive zs. (0.7*(distOf2Zs/2))
-"""
 def store_metrics_of_transvae_gen_smiles(save_folder, n_steps, n_jobs):
+    """Validation on Transvae:
+
+    sample 50 equal-spacing latent spaces between 2 random sampled zs.
+    decoder samples 100 smiles by greedy algorithm. Each z adds a gaussian
+    with an average 0 and std equal to 0.7 of half of the distance of two
+    consecutive zs. (0.7*(distOf2Zs/2))
+    """
     data_path = "/fileserver-gamma/chaoting/ML/dataset/zinc_data/zinc_train.txt"
     save_folder = "/fileserver-gamma/chaoting/ML/TransVAE/continuity-check/"
     

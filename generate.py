@@ -29,7 +29,7 @@ from Inference.model_prediction import Predictor
 # from Model.build_model import build_model
 from moses.metrics import SNNMetric
 
-from Inference.decode_algo import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, generate_latent_space
+from Inference.decode_algo3 import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, generate_latent_space
 from Model.build_model import build_model
 
 

@@ -97,7 +97,7 @@ class Batch:
             self.trg_y = trg[:, 1:].to(device)
             self.trg = trg[:, :-1].to(device)
 
-        if src_cond is not None:
+        if None not in (src_cond, dif_cond, trg_cond):
             self.econds = src_cond.to(device)
             self.mconds = torch.cat([src_cond, dif_cond], dim=1).to(device)
             self.dconds = trg_cond.to(device)
@@ -140,7 +140,7 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
                          - len(conditions))), dtype=torch.long) * pad_idx
     src = torch.cat([src, src_pad], dim=1)
     
-    if getattr(batch, 'trg') is not False:
+    if getattr(batch, 'trg', None):
         trg = batch.trg.transpose(0, 1)
         trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - 
                              len(conditions))), dtype=torch.long) * pad_idx
@@ -148,7 +148,7 @@ def rebatch(batch, conditions, pad_idx, max_strlen, device):
     else:
         trg = None
 
-    if getattr(batch, 'trg_en') is not False:
+    if getattr(batch, 'trg_en', None):
         trg_en = batch.trg_en.transpose(0, 1)
         trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1)
                                 - len(conditions))), dtype=torch.long) * pad_idx

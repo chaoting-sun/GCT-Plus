@@ -166,3 +166,13 @@ def evaluation_opts(parser):
     demo_parser = parser.add_parser('demo', parents=[parent_parser])
     demo_parser.add_argument('-demo', action='store_true')
 
+    """ Sampling by decoder with self-attention:
+    
+    
+    """
+    att_parser = parser.add_parser('self-attention', parents=[parent_parser])
+    att_parser.add_argument('-self_attention', action='store_false')
+    att_parser.add_argument('-smiles', type=str)
+    att_parser.add_argument('-toklen', type=int, default=30)
+    att_parser.add_argument('-n_samples', type=int, default=100)
+    att_parser.add_argument('-target_props', nargs='+', default=[3.075,93.411,0.609])

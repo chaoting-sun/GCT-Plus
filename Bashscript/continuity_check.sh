@@ -24,11 +24,29 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
     continuity-check \
         -decode_algo ${DECODE_ALGO} \
         -decode_type ${DECODE_TYPE} \
-        -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL_TYPE}_${CHOICE}_${DECODE_ALGO} \
+        -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/test \
         -continuity_check \
         -properties 2.8421	58.1053	0.8947 \
         -toklen ${TOKLEN} \
-        -n_steps 50 \
-        -n_samples 100 \
+        -n_steps 2 \
+        -n_samples 4 \
     # >>model:${MODEL_TYPE}_toklen:${TOKLEN}_gpu:${GPU_IDX}.out 2>&1 &
+
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+#     inference.py \
+#         -similarity ${SIMILARITY} \
+#         -n_jobs 2 \
+#         -variational \
+#         -model_type ${MODEL_TYPE} \
+#     continuity-check \
+#         -decode_algo ${DECODE_ALGO} \
+#         -decode_type ${DECODE_TYPE} \
+#         -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL_TYPE}_${CHOICE}_${DECODE_ALGO} \
+#         -continuity_check \
+#         -properties 2.8421	58.1053	0.8947 \
+#         -toklen ${TOKLEN} \
+#         -n_steps 50 \
+#         -n_samples 100 \
+#     # >>model:${MODEL_TYPE}_toklen:${TOKLEN}_gpu:${GPU_IDX}.out 2>&1 &
 

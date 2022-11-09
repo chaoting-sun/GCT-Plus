@@ -258,20 +258,22 @@ class ATTEncoder(nn.Module):
         z, mu1, log_var1 = self.sampler(x)
         mu2 = self.att_mu(mu1, mconds)
         log_var2 = self.att_log_var(log_var1, mconds)
-        return self.sampler.sampling(mu2, log_var2), mu2, log_var2, q_k_enc
+        return mu2, mu2, log_var2, q_k_enc
+        # return self.sampler.sampling(mu2, log_var2), mu2, log_var2, q_k_enc
 
     def encode_sample(self, src, econds, src_mask):
         x, _ = self.encoder(src, econds, src_mask)
         z, mu, log_var = self.sampler1(x)
         return z, mu, log_var
 
-    # def att_decode(self, trg, e_outputs, conds, src_mask, trg_mask):
+    # def att_decode(self, trg, z, conds, src_mask, trg_mask):
+    #     assert len(conds) == 2
     #     mconds, dconds = conds[0], conds[1]
     #     self.att_mu(trg)
-    #     x = self.mlp(e_outputs, mconds)
-    #     e_outputs, _, _ = self.sampler2(x)
-    #     return self.out(self.decoder(trg, e_outputs,
-    #                     dconds, src_mask, trg_mask)[0])
+    #     x = self.mlp(z, mconds)
+    #     z, _, _ = self.sampler2(x)
+    #     return self.out(self.decoder(trg, z, dconds,
+    #                                  src_mask, trg_mask)[0])
 
     def encode(self, src, econds, src_mask):
         x, q_k_enc = self.encoder(src, econds, src_mask)

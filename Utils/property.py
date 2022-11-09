@@ -93,6 +93,20 @@ def is_valid(smi):
     return 1 if to_mol(smi) else 0
 
 
+def props_predictor_wrapper(conditions):
+    def props_predictor(smiles):
+        mol = MolFromSmiles(smiles)
+        if mol is not None:
+            valid = 1
+            props = [property_prediction[c](mol)
+                     for c in conditions]
+        else:
+            valid = 0
+            props = [np.nan]*len(conditions)
+        return valid, props
+    return props_predictor
+
+
 def to_mol(smi):
     """
     Creates a Mol object from a SMILES string.
@@ -138,3 +152,5 @@ def get_canonical_smile(smile):
             return None
     else:
         return None
+    
+

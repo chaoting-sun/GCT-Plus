@@ -56,6 +56,17 @@ def get_fields(conditions, smiles_field_path=None):
     return total_fields, SRC, TRG
 
 
+def get_inference_fields(conds, smiles_fields_path):
+    SRC, TRG = smiles_fields(smiles_fields_path)
+    COND = condition_fields(conds)
+    fsmiles = [('src', SRC)]
+    fconds = [(f'src_{conds[i]}', COND[i])
+               for i in range(len(conds))] + \
+              [(f'trg_{conds[i]}', COND[i])
+               for i in range(len(conds))]
+    return fsmiles + fconds, SRC, TRG
+
+
 def save_fields(src_fields, trg_fields, field_path):
     """ save SRC/TRG fields """
     os.makedirs(field_path, exist_ok=True)
