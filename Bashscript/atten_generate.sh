@@ -22,9 +22,9 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
         -n_jobs 2 \
         -variational \
         -model_type ${MODEL_TYPE} \
+        -model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/atttf_train_stage2_sim0.80_kld_v5/ \
+        -use_epoch ${EPOCH} \
     ${CHOICE} \
-        -model_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/atttf_train_stage2_sim0.80_kld_v5/ \
-        -epoch ${EPOCH} \
         -decode_algo ${DECODE_ALGO} \
         -encode_type ${ENCODE_TYPE} \
         -decode_type ${DECODE_TYPE} \

@@ -103,73 +103,32 @@ class Batch:
             self.dconds = trg_cond.to(device)
 
 
-# def rebatch(batch, conditions, pad_idx, max_strlen, device):
-#     src, trg_en, trg = batch.src.transpose(0, 1),    \
-#                        batch.trg_en.transpose(0, 1), \
-#                        batch.trg.transpose(0, 1)
+def rebatch(batch, conds, pad_idx, max_strlen, device):
+    def padding(obj):
+        obj = obj.transpose(0, 1)
+        obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
+                  - len(conds)), dtype=torch.long) * pad_idx
+        return torch.cat([obj, obj_pad], dim=1)
 
-#     src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) - len(conditions))),
-#                          dtype=torch.long) * pad_idx
-#     trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1) - len(conditions))),
-#                             dtype=torch.long) * pad_idx
-#     trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - len(conditions))),
-#                          dtype=torch.long) * pad_idx
-    
-#     src = torch.cat([src, src_pad], dim=1)
-#     trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
-#     trg = torch.cat([trg, trg_pad], dim=1)
+    src = padding(batch.src)
+    trg = trg_en = None
+    if hasattr(batch, 'trg'):
+        trg = padding(batch.trg)
+    if hasattr(batch, 'trg_en'):
+        trg_en = padding(batch.trg_en)
 
-#     # src, trg = batch.src, batch.trg
-#     if len(conditions) > 0:
-#         src_conds = [getattr(batch, f"src_{c}").view(-1, 1) for c in conditions]
-#         trg_conds = [getattr(batch, f"trg_{c}").view(-1, 1) for c in conditions]
-#         # for c in conditions:
-#         #     src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
-#         #     trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-#         src_cond_t = torch.cat(src_conds, dim=1)
-#         trg_cond_t = torch.cat(trg_conds, dim=1)
-#         dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
-#     else:
-#         src_cond_t = trg_cond_t = dif_cond_t = None
-#     return Batch(src, trg_en, trg, pad_idx, device,
-#                  src_cond_t, trg_cond_t, dif_cond_t)
-
-def rebatch(batch, conditions, pad_idx, max_strlen, device):
-    src = batch.src.transpose(0, 1)
-    src_pad = torch.ones((src.size(0), abs(max_strlen - src.size(1) 
-                         - len(conditions))), dtype=torch.long) * pad_idx
-    src = torch.cat([src, src_pad], dim=1)
-    
-    if getattr(batch, 'trg', None):
-        trg = batch.trg.transpose(0, 1)
-        trg_pad = torch.ones((trg.size(0), abs(max_strlen - trg.size(1) - 
-                             len(conditions))), dtype=torch.long) * pad_idx
-        trg = torch.cat([trg, trg_pad], dim=1)
+    if len(conds) > 0:
+        src_conds, trg_conds = [], []
+        for c in conds:
+            src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
+            trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
+        src_conds = torch.cat(src_conds, dim=1)
+        trg_conds = torch.cat(trg_conds, dim=1)
+        del_conds = torch.sub(trg_conds, src_conds)
+        return Batch(src, trg_en, trg, pad_idx, device,
+                     src_conds, trg_conds, del_conds)
     else:
-        trg = None
-
-    if getattr(batch, 'trg_en', None):
-        trg_en = batch.trg_en.transpose(0, 1)
-        trg_en_pad = torch.ones((trg_en.size(0), abs(max_strlen - trg_en.size(1)
-                                - len(conditions))), dtype=torch.long) * pad_idx
-        trg_en = torch.cat([trg_en, trg_en_pad], dim=1)
-    else:
-        trg_en = None
-
-    # src, trg = batch.src, batch.trg
-    if len(conditions) > 0:
-        src_conds = [getattr(batch, f"src_{c}").view(-1, 1) for c in conditions]
-        trg_conds = [getattr(batch, f"trg_{c}").view(-1, 1) for c in conditions]
-        # for c in conditions:
-        #     src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
-        #     trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-        src_cond_t = torch.cat(src_conds, dim=1)
-        trg_cond_t = torch.cat(trg_conds, dim=1)
-        dif_cond_t = torch.sub(trg_cond_t, src_cond_t)
-    else:
-        src_cond_t = trg_cond_t = dif_cond_t = None
-    return Batch(src, trg_en, trg, pad_idx, device,
-                 src_cond_t, trg_cond_t, dif_cond_t)
+        return Batch(src, trg_en, trg, pad_idx, device)
 
 
 def to_dataloader(data_iter, conditions, pad_idx, max_strlen, device):
@@ -177,15 +136,42 @@ def to_dataloader(data_iter, conditions, pad_idx, max_strlen, device):
             for batch in data_iter)
 
 
-def get_dataloader(cond_list, file_path, fields,
-                   pad_idx, max_strlen, device, batch_size):
-    dataset = data.TabularDataset(path=file_path, format='csv',
-                                  fields=fields, skip_header=True)
-    nbatches = int(np.ceil(len(dataset) / batch_size))
-    data_iter = data.BucketIterator(dataset, batch_size=batch_size)
-    dataloader = to_dataloader(data_iter, cond_list,
-                               pad_idx, max_strlen, device)
-    return dataloader, nbatches
+def rebatch2(batch, conds, pad_idx, device):
+    src = batch.src.transpose(0, 1)
+    trg = trg_en = None
+    if getattr(batch, 'trg', None) is not None:
+        trg = batch.trg.transpose(0, 1)
+    if getattr(batch, 'trg_en', None) is not None:
+        trg_en = batch.trg_en.transpose(0, 1)
+    
+    if len(conds) > 0:
+        src_conds, trg_conds = [], []
+        for c in conds:
+            src_conds.append(getattr(batch, f"src_{c}").view(-1, 1))
+            trg_conds.append(getattr(batch, f"trg_{c}").view(-1, 1))
+        src_conds = torch.cat(src_conds, dim=1)
+        trg_conds = torch.cat(trg_conds, dim=1)
+        del_conds = torch.sub(trg_conds, src_conds)
+        return Batch(src, trg_en, trg, pad_idx, device,
+                     src_conds, trg_conds, del_conds)
+    else:
+        return Batch(src, trg_en, trg, pad_idx, device)
+
+
+def get_dataloader(data_iter, conds, pad_idx, device):
+    return (rebatch2(batch, conds, pad_idx, device)
+            for batch in data_iter)
+
+
+# def get_dataloader(cond_list, file_path, fields,
+#                    pad_idx, max_strlen, device, batch_size):
+#     dataset = data.TabularDataset(path=file_path, format='csv',
+#                                   fields=fields, skip_header=True)
+#     nbatches = int(np.ceil(len(dataset) / batch_size))
+#     data_iter = data.BucketIterator(dataset, batch_size=batch_size)
+#     dataloader = to_dataloader(data_iter, cond_list,
+#                                pad_idx, max_strlen, device)
+#     return dataloader, nbatches
 
 
 def adapter(python_type):
@@ -212,6 +198,9 @@ def sqlite_initialize(db_filepath):
     # cur.execute("PRAGMA synchronous = 0")
     # cur.execute("PRAGMA locking_mode = EXCLUSIVE")
     return con, cur
+
+
+
 
 
 @Chrono

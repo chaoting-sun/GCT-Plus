@@ -11,22 +11,32 @@ from moses.metrics import SNNMetric
 def get_snn_from_mol(molList1, molList2):
     # Similarity to nearest neighbour
     # molList1_fp = SNNMetric().precalc()
+    if len(molList1) == 0 or len(molList2) == 0:
+        return 0
     return SNNMetric()(gen=molList1, ref=molList2)
 
 
 def get_valid(smiles, n_jobs=1):
+    if len(smiles) == 0:
+        return 0
     return metrics.fraction_valid(smiles, n_jobs)
 
 
 def get_unique(valid_smiles, n_jobs=1):
-    return metrics.fraction_unique(valid_smiles, n_jobs)
+    if len(valid_smiles) == 0:
+        return 0
+    return metrics.fraction_unique(valid_smiles, n_jobs=n_jobs)
 
 
 def get_novelty(valid_smiles, train_smiles, n_jobs):
+    if len(valid_smiles) == 0:
+        return 0
     return metrics.novelty(valid_smiles, train_smiles, n_jobs)
 
 
 def get_interval_diversity(valid_smiles, n_jobs=1, p=1):
+    if len(valid_smiles) == 0:
+        return 0
     return metrics.internal_diversity(gen=valid_smiles, n_jobs=n_jobs, p=p)
 
 

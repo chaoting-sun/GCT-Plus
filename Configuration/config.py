@@ -33,6 +33,8 @@ def options(parser):
     parser.add_argument('--label_smoothing', type=float, default=0.0, help="see: https://arxiv.org/abs/1512.00567")
     # soft constraints
     parser.add_argument('-model_type', type=str, default='mlp_transformer')
+    parser.add_argument('-model_path', type=str) # new -> model path
+    parser.add_argument('-use_epoch', type=int, default=1) # new -> start epoch for train; epoch for validation
     parser.add_argument('-variational', action='store_true', help="if using variational")
 
     subparsers = parser.add_subparsers(help='Choose to train or test')
@@ -71,7 +73,7 @@ def train_opts(parser):
     train1_parser.add_argument('-train_stage', type=int, default=1)
     train1_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train1_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
-    train1_parser.add_argument('-starting_epoch', type=int, default=1, help="Starting epoch for training")
+    # train1_parser.add_argument('-start_epoch', type=int, default=1, help="Starting epoch for training") -> use "use_epoch"
 
     """ Second-Stage Training """
     train2_parser = parser.add_parser('train-2nd', parents=[parent_parser])
@@ -79,26 +81,26 @@ def train_opts(parser):
     train2_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train2_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
     train2_parser.add_argument('-transfer_path', type=str, default='molGCT/molgct.pt')
-    train2_parser.add_argument('-start_epoch', type=int, default=1, help="Starting epoch for training")
+    # train2_parser.add_argument('-start_epoch', type=int, default=1, help="Starting epoch for training") -> use "use_epoch"
     # train2_parser.add_argument('-save_path', type=str, required=True)
 
 
-def generate_opts(parser):
-    """ INPUT/OUTPUT """
-    group = parser.add_argument_group('Input-Output')
-    group.add_argument('--test_file-name', required=True, help="test file name without .csv")
-    group.add_argument('--save-directory', default='evaluation', help="Result save directory")
+# def generate_opts(parser):
+#     """ INPUT/OUTPUT """
+#     group = parser.add_argument_group('Input-Output')
+#     group.add_argument('--test_file-name', required=True, help="test file name without .csv")
+#     group.add_argument('--save-directory', default='evaluation', help="Result save directory")
 
-    """ MODEL """
-    group = parser.add_argument_group('Model')
-    group.add_argument('--model-path', help="""Model path""", required=True)
-    group.add_argument('--epoch', type=int, help="""Which epoch to use""", required=True)
+#     # """ MODEL """
+#     # group = parser.add_argument_group('Model')
+#     # group.add_argument('--model-path', help="""Model path""", required=True)
+#     # group.add_argument('--epoch', type=int, help="""Which epoch to use""", required=True)
 
-    """ [ GENERAL ] """
-    group = parser.add_argument_group('General')
-    group.add_argument('--batch-size', type=int, default=128, help='Batch size for training')
-    group.add_argument('--num-samples', type=int, default=100, help='Number of molecules to be generated')
-    group.add_argument('--decode-type',type=str, default='multinomial',help='decode strategy')
+#     """ [ GENERAL ] """
+#     group = parser.add_argument_group('General')
+#     group.add_argument('--batch-size', type=int, default=128, help='Batch size for training')
+#     group.add_argument('--num-samples', type=int, default=100, help='Number of molecules to be generated')
+#     group.add_argument('--decode-type',type=str, default='multinomial',help='decode strategy')
 
 
 def evaluation_opts(parser):
@@ -113,13 +115,13 @@ def evaluation_opts(parser):
     parent_parser.add_argument('-qed_ub', type=float, default=0.95)
 
     # soft constraints - model
-    parent_parser.add_argument('-model_directory', default='train')
-    parent_parser.add_argument('-epoch', type=int, default=20)
+    # parent_parser.add_argument('-model_directory', default='train')
+    # parent_parser.add_argument('-epoch', type=int, default=20)
     parent_parser.add_argument('-encode_type', type=str, default='encode')
     parent_parser.add_argument('-decode_type', type=str, default='mlp_decode')
 
     # soft constraints - methods to sample smiles
-    parent_parser.add_argument('-has_source', action='store_true')
+    parent_parser.add_argument('-has_source', action='store_true') # should be removed
     parent_parser.add_argument('-decode_algo', default="multinomial", choices=["greedy", "multinomial", "beam"])
     parent_parser.add_argument('-samples_each', type=int, default=1000)
 
@@ -152,10 +154,11 @@ def evaluation_opts(parser):
     """
     cc_parser = parser.add_parser('continuity-check', parents=[parent_parser])
     cc_parser.add_argument('-continuity_check', action='store_true')
-    cc_parser.add_argument('-properties', nargs='+', default=[3.075,93.411,0.609])
+    cc_parser.add_argument('-properties', type=float, nargs='+', default=[3.075,93.411,0.609])
     cc_parser.add_argument('-toklen', type=int, default=30)
     cc_parser.add_argument('-n_steps', type=int, default=40)
     cc_parser.add_argument('-n_samples', type=int, default=100)
+    cc_parser.add_argument('-test_for', type=str, default="z")
 
     """ A Demo for model inference:
     

@@ -12,7 +12,7 @@ from torchtext import data
 from Utils.mapper import mapper
 from Utils.property import props_predictor_wrapper
 from Utils.property import property_prediction, get_mol, tanimoto_similarity
-from Utils.dataset import to_dataloader
+from Utils.dataset import to_dataloader, get_dataloader
 from Model.att_encoder import decode
 from pandarallel import pandarallel
 
@@ -159,8 +159,6 @@ def plot_smiles(sample_folder, smiles='CNC(=O)c1cccc(NCC(=O)Nc2cccc(C(=O)NC)c2)c
                       molsPerRow=6, hsize=360, vsize=300)
 
 
-
-
 def validate_smiles(smiles, props_predictor):
     valid, src_props = props_predictor(smiles)
     if valid == 0:
@@ -175,19 +173,6 @@ def create_src_file(smiles, props_predictor,
     src_props = scaler.transform([src_props])[0]
     trg_props = scaler.transform([trg_props])[0]
     
-    # print(src_props)
-    # print(trg_props)
-    # print(smiles)
-
-    # instance = [[smiles] + src_props[0] + trg_props[0]]
-    # df = pd.DataFrame(instance, columns=["src",
-    #         "src_logP", "src_tPSA", "src_QED",
-    #         "trg_logP", "trg_tPSA", "trg_QED"
-    #     ])
-    
-    # row = [[smiles],
-    #        [src_props[0]], [src_props[1]], [src_props[2]],
-    #        [target_props[0]], [target_props[1]], [[target_props[2]]]]
     df = pd.DataFrame({
         "src": smiles,
         "src_logP": [src_props[0]],
@@ -200,9 +185,28 @@ def create_src_file(smiles, props_predictor,
     df.to_csv(save_path, index=False)
 
 
+def SmilesFromId(vocab, type):
+    def translate(ids):
+        smiles = ''.join([vocab.itos[i] for i in ids if i != vocab.stoi['<pad>']])
+        if type == 'src':
+            return smiles
+        elif type == 'trg':
+            return smiles[1:-1]
+    return translate
+
+
+def convert_output_into_smiles(idx_sequence, vocab, type='TRG'):
+    idx_sequence = [idx for idx in idx_sequence if idx != vocab.stoi['<pad>']]
+    smi_list = [vocab.itos[token] for token in idx_sequence]
+    if type == 'TRG':
+        return ''.join(smi_list[1:-1])
+    elif type == 'SRC':
+        return ''.join(smi_list)
+
+
 def atten_generate(generator, smiles, trg_props, storage_path,
                    train_smiles, SRC, TRG, fields, toklen,
-                   conditions, n_samples=100, std=0.2,
+                   conditions, n_samples=100, std=0.5,
                    n_jobs=1, logger=None):
     
     """
@@ -234,40 +238,55 @@ def atten_generate(generator, smiles, trg_props, storage_path,
     dataloader = to_dataloader(data_iter, conditions, generator.pad_id,
                                generator.max_strlen, generator.device)
 
+    # dataloader = get_dataloader(data_iter, conditions, 
+    #                             generator.pad_id, generator.device)
+    
     # LOG.info(f"Generate latent space...")
     # zall = z.repeat(n_samples, 1, 1)
     # zall += torch.empty_like(zall).normal_(mean=0, std=std)
 
-    n_samples = 10
+    n_samples = 100
+    src_translator = SmilesFromId(SRC.vocab, type='src')
+    trg_translator = SmilesFromId(TRG.vocab, type='trg')
 
     for i, batch in enumerate(dataloader):
         # sample_path = os.path.join(sample_data_folder, f'{i}.txt')
         # if os.path.exists(sample_path):
         #     continue
-        
+
         LOG.info("Sample z given src & conds")
         z = generator.sample_z_from_src(batch.src, 
                                         batch.econds,
                                         batch.mconds)[0]
-  
-        for i in range(n_samples):        
-            z2 = torch.Tensor(np.random.normal(size=(1, 45, generator.latent_dim)))
+
+        # for i in range(n_samples):        
+        #     z2 = torch.Tensor(np.random.normal(size=(1, 45, generator.latent_dim)))
+        #     smiles = generator.sample_smiles(batch.dconds, z2,
+        #                                      transform=False)[0]
+        #     valid, props = props_predictor(smiles[0])
+        #     print("1. smiles:", smiles[0], valid, props)
+        # exit()
+        # print('distance:', torch.sqrt(torch.sum((z_normal - z)**2)))
+
+        LOG.info("Decode z")
+        
+        src_smi = src_translator(batch.src.cpu().numpy()[0])
+
+        print('src smi:', src_smi)
+
+        for i in range(n_samples):
+            toklen = int(np.random.normal(36, 3, 1)[0])
+            _z = z[:, :toklen, :]
+
+            z2 = _z + torch.empty_like(_z).normal_(mean=0, std=std)
             smiles = generator.sample_smiles(batch.dconds, z2,
                                              transform=False)[0]
             valid, props = props_predictor(smiles[0])
-            print("1. smiles:", smiles[0], valid, props)
+            sim = tanimoto_similarity(src_smi, smiles[0])
+
+            print(f"{i} toklen({toklen}). smiles: {smiles[0]:<50} logP: {props[0]}, tPSA: {props[1]}, QED: {props[2]} | sim: {sim}")
+
         exit()
-        print('distance:', torch.sqrt(torch.sum((z_normal - z)**2)))
-
-        LOG.info("Decode z")
-        z += torch.empty_like(z).normal_(mean=0, std=std)
-
-        for i in range(n_samples):        
-            z2 = z + torch.empty_like(z).normal_(mean=0, std=std)
-            smiles = generator.sample_smiles(batch.dconds, z2,
-                                            transform=False)[0]
-            valid, props = props_predictor(smiles[0])
-            print("2. smiles:", smiles[0], valid, props)
 
         src_smi = convert_output_into_smiles(batch.src.cpu().numpy()[0], SRC.vocab, 'SRC')
         trg_smi = convert_output_into_smiles(batch.trg.cpu().numpy()[0], TRG.vocab, 'TRG')

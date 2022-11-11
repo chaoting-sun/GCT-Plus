@@ -4,7 +4,7 @@ MODEL_TYPE='att_encoder'
 LOSS_FCN=kld
 BATCH_SIZE=128
 
-MODEL_VERSION='v1'
+MODEL_VERSION='v5'
 SIMILARITY=0.80
 GPU_IDX=0
 NUM_EPOCH=40
@@ -27,6 +27,7 @@ START_EPOCH=1
 #         -train_verbose \
 #         -train_stage 2
 
+# unchecked
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
     main_train.py \
         -similarity ${SIMILARITY} \
@@ -34,17 +35,17 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -n_jobs 2 \
         -load_field \
         -load_scaler \
-        -model_type ${MODEL_TYPE} \
         -variational \
+        -model_type ${MODEL_TYPE} \
+        -model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/atttf_sim:${SIMILARITY}_loss:${LOSS_FCN}_${MODEL_VERSION} \
+        -use_epoch ${START_EPOCH} \
     train-2nd \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/atttf_train_stage2_sim${SIMILARITY}_${LOSS_FCN}_${MODEL_VERSION} \
         -batch_size ${BATCH_SIZE} \
         -num_epoch ${NUM_EPOCH} \
-        -start_epoch ${START_EPOCH} \
         -train_verbose \
         -train_stage 2 \
-    >train_${MODEL_TYPE}_sim${SIMILARITY}_${LOSS_FCN}_${MODEL_VERSION}.out \
-    2>train_${MODEL_TYPE}_sim${SIMILARITY}_${LOSS_FCN}_${MODEL_VERSION}.err &
+    >train_${MODEL_TYPE}_sim${SIMILARITY}_${LOSS_FCN}.out \
+    2>train_${MODEL_TYPE}_sim${SIMILARITY}_${LOSS_FCN}.err &
 
 # train
 # CUDA_VISIBLE_DEVICES=3 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \

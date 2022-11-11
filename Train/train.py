@@ -61,16 +61,10 @@ def train(args, debug=False):
 
     print(f'Preparing model with starting epoch: {args.start_epoch}')
 
-    if args.start_epoch > 1:
-        model_path = os.path.join(args.save_directory, f'model_{args.start_epoch-1}.pt')
-    else:
-        model_path = None
-    
     if args.model_type == 'att_encoder':
-        att_type = 'ATT_v3'
-        model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path, att_type=att_type).to(device)
+        model = build_model(args, len(SRC.vocab), len(TRG.vocab), att_type='ATT_v5').to(device)
     elif args.model_type == 'mlp_encoder':
-        model = build_model(args, len(SRC.vocab), len(TRG.vocab), model_path).to(device)
+        model = build_model(args, len(SRC.vocab), len(TRG.vocab)).to(device)
 
     # for n, p in model.named_parameters():
     #     if p.requires_grad:

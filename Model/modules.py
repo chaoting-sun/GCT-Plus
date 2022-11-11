@@ -58,6 +58,13 @@ def create_target_mask(target, pad_idx, conditions, use_cond2dec):
     np_mask = nopeak_mask(target.size(1), use_cond2dec, pad_idx,
                           conditions.size(-1)) # (bs,1,nc+strlen) or (bs,1,strlen)
     np_mask = np_mask.to(target.get_device())
+    
+    # torch.set_printoptions(edgeitems=100)
+    # print(np_mask.size(), np_mask)
+    # print(target_mask.size(), target_mask)
+
+    # exit()
+    
     return target_mask & np_mask
 
 

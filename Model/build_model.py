@@ -80,7 +80,7 @@ def build_attencoder(src_vocab, trg_vocab, N, d_model, d_ff,
     atttf = ATTEncoder(src_vocab, trg_vocab, N, d_model, d_ff, H, latent_dim, dropout,
                        nconds, use_cond2dec, use_cond2lat, variational, att_type)
 
-    if model_path is not None:
+    if model_path:
         atttf.load_state_dict(torch.load(model_path)['model_state_dict'])
     transfer_parameters(tf, atttf)
     freeze_parameters(atttf, pass_keywords=('att_mu', 'att_log_var'))
@@ -115,7 +115,10 @@ def build_mlp(src_vocab, trg_vocab, N, d_model, d_ff,
 # def build_model(args, SRC_vocab_len, TRG_vocab_len, model_path=None, **kwargs):
 def build_model(args, SRC_vocab_len, TRG_vocab_len, **kwargs):
     molgct_model_path = os.path.join(args.molgct_path, 'molgct.pt')
-    model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
+    if args.model_type != 'transformer' and args.use_epoch >= 1:
+        model_path = os.path.join(args.model_path, f'model_{args.use_epoch}.pt')
+    else:
+        model_path = None
 
     if args.model_type == "transformer":
         # training phase I
@@ -143,12 +146,13 @@ def build_model(args, SRC_vocab_len, TRG_vocab_len, **kwargs):
                                  molgct_model_path, model_path)
     elif args.model_type == "att_encoder":
         # training phase II
-        model = build_attencoder(SRC_vocab_len, TRG_vocab_len,
-                                 args.N, args.d_model, args.d_ff, 
-                                 args.H, args.latent_dim, args.dropout,
-                                 args.nconds, args.use_cond2dec,
-                                 args.use_cond2lat, args.variational,
-                                 molgct_model_path, model_path, kwargs['att_type'])
+        model = build_attencoder(
+            SRC_vocab_len, TRG_vocab_len, args.N, args.d_model,
+            args.d_ff, args.H, args.latent_dim, args.dropout,
+            args.nconds, args.use_cond2dec, args.use_cond2lat,
+            args.variational, molgct_model_path, model_path,
+            kwargs['att_type']
+        )
     elif args.model_type == "mlp":
         # training phase II
         if kwargs['train']:

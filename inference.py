@@ -16,37 +16,53 @@ from Inference.decode_algo import MultinomialSearch, MultinomialSearchFromSource
 from Inference.generate_uniformly import generate_uniformly
 from Inference.generate_z import generate_z
 from Inference.varying_z_generate import varying_z_generate
-from Inference.continuity_check import continuity_check
+from Inference.continuity_check import continuity_check_on_z, continuity_check_on_conds
 from Inference.atten_generate import atten_generate
 
 
-def getSmilesGenerator(predictor, decode_algo, has_source,
-                       latent_dim, max_strlen, use_cond2dec):
+def get_smiles_generator(predictor, decode_algo, latent_dim,
+                         max_strlen, use_cond2dec):
     if decode_algo in ("greedy", "multinomial"):
-        if has_source:
-            return MultinomialSearchFromSource(
-                predictor, latent_dim, TRG, toklen_data, scaler,
-                max_strlen, use_cond2dec, device, decode_algo
-            )
-        else:
-            return MultinomialSearch(
-                predictor, latent_dim, TRG, toklen_data, scaler,
-                max_strlen, use_cond2dec, device, decode_algo
-            )
-    
+        return MultinomialSearch(
+            predictor, latent_dim, TRG, toklen_data, scaler,
+            max_strlen, use_cond2dec, device, decode_algo
+        )
     elif decode_algo == "beam":
-        if has_source:
-            return BeamSearchFromSource(
-                predictor, latent_dim, TRG, toklen_data,
-                scaler, max_strlen, use_cond2dec, device
-            )
-        else:
-            return BeamSearch(
-                predictor, latent_dim, TRG, toklen_data,
-                scaler, max_strlen, use_cond2dec, device
-            )
+        return BeamSearch(
+            predictor, latent_dim, TRG, toklen_data,
+            scaler, max_strlen, use_cond2dec, device
+        )
     else:
         exit(f"No such decoding algorithm: {decode_algo}")
+
+
+# def getSmilesGenerator(predictor, decode_algo, has_source,
+#                        latent_dim, max_strlen, use_cond2dec):
+#     if decode_algo in ("greedy", "multinomial"):
+#         if has_source:
+#             return MultinomialSearchFromSource(
+#                 predictor, latent_dim, TRG, toklen_data, scaler,
+#                 max_strlen, use_cond2dec, device, decode_algo
+#             )
+#         else:
+#             return MultinomialSearch(
+#                 predictor, latent_dim, TRG, toklen_data, scaler,
+#                 max_strlen, use_cond2dec, device, decode_algo
+#             )
+    
+#     elif decode_algo == "beam":
+#         if has_source:
+#             return BeamSearchFromSource(
+#                 predictor, latent_dim, TRG, toklen_data,
+#                 scaler, max_strlen, use_cond2dec, device
+#             )
+#         else:
+#             return BeamSearch(
+#                 predictor, latent_dim, TRG, toklen_data,
+#                 scaler, max_strlen, use_cond2dec, device
+#             )
+#     else:
+#         exit(f"No such decoding algorithm: {decode_algo}")
 
 
 def generate_smiles_to_test_z_properties():
@@ -82,12 +98,11 @@ def get_generator(args, SRC, TRG, device):
     predictor = Predictor(args.use_cond2dec,
                           getattr(model, args.decode_type),
                           getattr(model, args.encode_type))
-    generator = getSmilesGenerator(predictor,
-                                   args.decode_algo,
-                                   args.has_source,
-                                   args.latent_dim,
-                                   args.max_strlen,
-                                   args.use_cond2dec)
+    generator = get_smiles_generator(predictor,
+                                     args.decode_algo,
+                                     args.latent_dim,
+                                     args.max_strlen,
+                                     args.use_cond2dec)
     return generator
 
 import torch
@@ -99,6 +114,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
+    print(args)
 
     print("Add the logger...")
     logger = get_logger(args)
@@ -130,17 +146,23 @@ if __name__ == "__main__":
     #     # varying_z_generate(args, smiles_generator, fields, device, logger, SRC, TRG)
     #     # generate_uniformly(args, smiles_generator, train_smiles, logger)
     
-    if getattr(args, 'continuity_check', None):    
+    if hasattr(args, 'continuity_check'):    
         # no source smiles. Don't know how to extend "has_source"
-        print("Run function: continuity_check(...)")
-        continuity_check(generator, args.latent_dim, args.conditions,
-                         args.storage_path, args.properties, args.toklen,
-                         args.n_steps, args.n_samples, args.n_jobs,
-                         train_smiles, logger=logger)
-    
-    elif getattr(args, 'self_attention', None):
-        print("Run function: self_attention(...)")
+        print("[PURPOSE] Check the continuity property...")
+
+        if args.test_for == "z":
+            continuity_check_on_z(generator, args.latent_dim, args.conditions,
+                                args.storage_path, args.properties, args.toklen,
+                            args.n_steps, args.n_samples, args.n_jobs,
+                            train_smiles, logger=logger)
+        elif args.test_for == "conds":
+            continuity_check_on_conds(args, generator, train_smiles, logger)
+
+    elif hasattr(args, 'self_attention'):    
+        print("[PURPOSE] Run Transformer with self-attention...")
         atten_generate(generator, args.smiles, args.target_props,
                        args.storage_path, train_smiles, SRC, TRG,
                        fields, args.toklen, args.conditions,
                        logger=logger)
+
+
