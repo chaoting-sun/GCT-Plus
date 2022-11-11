@@ -27,10 +27,10 @@ def smiles_fields(smiles_field_path=None):
 
     return (SRC, TRG)
 
-
+# torch.float32 is equal to torch.float
 def condition_fields(conditions):
     return [data.Field(use_vocab=False, sequential=False,
-            batch_first=True, dtype=torch.float) for _ in conditions]
+            batch_first=True, dtype=torch.float32) for _ in conditions]
 
 
 # def get_fields(conditions, smiles_field_path=None):
@@ -42,17 +42,29 @@ def condition_fields(conditions):
 #     total_fields.extend([(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
 #     return total_fields
 
+
 def get_fields(conditions, smiles_field_path=None):
     # the orders in the DataFrame
     # src,trg,src_no,src_logP,src_tPSA,src_QED,trg_no,trg_logP,trg_tPSA,trg_QED
     SRC, TRG = smiles_fields(smiles_field_path)
     COND = condition_fields(conditions)
-    total_fields = [('src', SRC), ('trg', TRG)]
-    total_fields.extend([('src_no', None)] + 
+    total_fields = [('src', SRC), ('trg_en', SRC), ('trg', TRG)]
+    total_fields.extend([('src_no', None)] +
                         [(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
     total_fields.extend([('trg_no', None)] +
                         [(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-    return total_fields
+    return total_fields, SRC, TRG
+
+
+def get_inference_fields(conds, smiles_fields_path):
+    SRC, TRG = smiles_fields(smiles_fields_path)
+    COND = condition_fields(conds)
+    fsmiles = [('src', SRC)]
+    fconds = [(f'src_{conds[i]}', COND[i])
+               for i in range(len(conds))] + \
+              [(f'trg_{conds[i]}', COND[i])
+               for i in range(len(conds))]
+    return fsmiles + fconds, SRC, TRG
 
 
 def save_fields(src_fields, trg_fields, field_path):

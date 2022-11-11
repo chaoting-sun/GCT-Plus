@@ -1,7 +1,12 @@
-import rdkit.rdBase as rkrb
-import rdkit.RDLogger as rkl
+import numpy as np
+
+from rdkit import RDLogger, rdBase
 from rdkit.DataStructs import TanimotoSimilarity
-from rdkit.Chem import MolFromSmiles, MolToSmiles, Descriptors, Mol, AllChem
+from rdkit.Chem.rdchem import AtomValenceException
+from rdkit.Chem import MolFromSmiles, MolToSmiles, \
+    Descriptors, Mol, AllChem, SanitizeMol
+
+from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
 
 from moses.metrics.SA_Score import sascorer
 from moses.metrics.NP_Score import npscorer
@@ -11,9 +16,9 @@ def disable_rdkit_logging():
     """
     Disables RDKit whiny logging.
     """
-    logger = rkl.logger()
-    logger.setLevel(rkl.ERROR)
-    rkrb.DisableLog('rdApp.error')
+    logger = RDLogger.logger()
+    logger.setLevel(RDLogger.ERROR)
+    rdBase.DisableLog('rdApp.error')
 
 disable_rdkit_logging()
 
@@ -33,7 +38,11 @@ def tPSA(mol: Mol) -> float:
 
 def QED(mol: Mol) -> float:
     """ RDKit's Quantitative Estimates of Drug-likeness """
-    return Descriptors.qed(mol)
+    try:
+        return Descriptors.qed(mol)
+    except AtomValenceException:
+        print('QED - invalid smiles:', MolToSmiles(mol))
+        return np.nan
 
 
 def SA(mol) -> float:
@@ -53,12 +62,14 @@ property_prediction = {
     "NP": NP
 }
 
+
 def to_fp_ECFP(smi):
     if smi:
         mol = MolFromSmiles(smi)
         if mol is None:
             return None
-        return AllChem.GetMorganFingerprint(mol, 2)
+        return GetMorganFingerprintAsBitVect(mol, 2, 1024)
+        # return AllChem.GetMorganFingerprint(mol, radius=2)
 
 
 def tanimoto_similarity_pool(args):
@@ -82,6 +93,20 @@ def is_valid(smi):
     return 1 if to_mol(smi) else 0
 
 
+def props_predictor_wrapper(conditions):
+    def props_predictor(smiles):
+        mol = MolFromSmiles(smiles)
+        if mol is not None:
+            valid = 1
+            props = [property_prediction[c](mol)
+                     for c in conditions]
+        else:
+            valid = 0
+            props = [np.nan]*len(conditions)
+        return valid, props
+    return props_predictor
+
+
 def to_mol(smi):
     """
     Creates a Mol object from a SMILES string.
@@ -90,6 +115,31 @@ def to_mol(smi):
     """
     if isinstance(smi, str) and smi and len(smi)>0 and smi != 'nan':
         return MolFromSmiles(smi)
+
+
+# https://github.com/molecularsets/moses/blob/master/moses/metrics/metrics.py
+def get_mol(smiles_or_mol):
+    '''
+    Loads SMILES/molecule into RDKit's object
+    '''
+    if isinstance(smiles_or_mol, str):
+        if len(smiles_or_mol) == 0:
+            return None
+        mol = MolFromSmiles(smiles_or_mol)
+        if mol is None:
+            return None
+        try:
+            SanitizeMol(mol)
+        except ValueError:
+            return None
+        return mol
+    return smiles_or_mol
+
+
+def get_smiles(mol):
+    if mol is not None:
+        return MolToSmiles(mol)
+    return mol
 
 
 def get_canonical_smile(smile):
@@ -102,3 +152,5 @@ def get_canonical_smile(smile):
             return None
     else:
         return None
+    
+
