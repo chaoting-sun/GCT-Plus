@@ -152,9 +152,9 @@ if __name__ == "__main__":
 
         if args.test_for == "z":
             continuity_check_on_z(generator, args.latent_dim, args.conditions,
-                                args.storage_path, args.properties, args.toklen,
-                            args.n_steps, args.n_samples, args.n_jobs,
-                            train_smiles, logger=logger)
+                                  args.storage_path, args.properties, args.toklen,
+                                  args.n_steps, args.n_samples, args.n_jobs,
+                                  train_smiles, logger=logger)
         elif args.test_for == "conds":
             continuity_check_on_conds(args, generator, train_smiles, logger)
 

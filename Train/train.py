@@ -15,10 +15,9 @@ from Model.build_model import build_model
 
 
 def train(args, debug=False):
-    set_seed(51)
+    set_seed(100)
 
     print('Getting GPU')
-
     device = allocate_gpu()    
 
     print('Getting feilds / SRC / TRG')

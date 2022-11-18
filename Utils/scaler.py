@@ -8,7 +8,7 @@ def get_scaler(condition, scaler_path=None):
     if scaler_path is not None:
         try:
             scaler = joblib.load(scaler_path)
-            print("- load scaler from", scaler_path)
+            # print("- load scaler from", scaler_path)
         except:
             exit(f"error: {scaler_path} file not found")
     else:
@@ -32,5 +32,6 @@ def scaler_transform(condition, scaler_path=None):
     """
     scaler = get_scaler(condition, scaler_path)
     return pd.DataFrame(scaler.transform(condition),
+                        index=condition.index,
                         columns=condition.columns)
 

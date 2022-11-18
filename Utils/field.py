@@ -23,7 +23,7 @@ def smiles_fields(smiles_field_path=None):
             TRG = pickle.load(open(os.path.join(smiles_field_path, 'TRG.pkl'), 'rb'))
         except:
             print(">>> Files SRC.pkl/TRG.pkl not in:" + smiles_field_path)
-            exit(1)
+            exit(1) 
 
     return (SRC, TRG)
 
@@ -53,6 +53,23 @@ def get_fields(conditions, smiles_field_path=None):
                         [(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
     total_fields.extend([('trg_no', None)] +
                         [(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
+    return total_fields, SRC, TRG
+
+
+def get_tf_fields(conditions, smiles_field_path=None):
+    """
+    order: src_no,src,src_logP,src_tPSA,src_QED,trg_no,trg,trg_logP,trg_tPSA,trg_QE
+    """
+    SRC, TRG = smiles_fields(smiles_field_path)
+    COND = condition_fields(conditions)
+    
+    src_fields = [('src_no', None), ('src', SRC)]
+    for i in range(len(conditions)):
+        src_fields.append((f'src_{conditions[i]}', COND[i]))
+    trg_fields = [('trg_no', None), ('trg', TRG)]
+    for i in range(len(conditions)):
+        trg_fields.append((f'trg_{conditions[i]}', COND[i]))
+    total_fields = src_fields + trg_fields
     return total_fields, SRC, TRG
 
 

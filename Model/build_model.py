@@ -17,13 +17,25 @@ def transfer_parameters(transformer, mlptransformer):
             print('Layer Not Found:', name)
             exit()
 
-
 def freeze_parameters(mlptransformer, pass_keywords):
     for name, param in mlptransformer.named_parameters():
         name_split = name.split('.')
         if name_split[0] in pass_keywords:
             continue
         param.requires_grad = False
+
+
+def freeze_params(model, freeze_names=None, train_names=None):
+    """
+    freeze parameters of a model.
+    freeze_names, train_names are lists
+    """
+    for name, param in model.named_parameters():
+        name_split = name.split('.')
+        if freeze_names and name_split[0] in freeze_names:
+            param.requires_grad = False
+        if train_names and name_split[0] not in train_names:
+            param.requires_grad = False
 
 
 def build_transformer(src_vocab, trg_vocab, N, d_model, d_ff, H,

@@ -16,20 +16,36 @@ class EncoderLayer(nn.Module):
         self.norm_2 = Norm(d_model)
         self.ff = FeedForward(d_model, dff, dropout)
         self.dropout_2 = nn.Dropout(dropout)
-    
+
     def forward(self, x, mask):
         "Follow Figure 1 (left) for connections."
         # 1. multi-head self-attention
         x = self.norm_1(x)
         # dim: -> (batch_size, src_maxstr, d_model)
-        x2, concat_attn = self.attn(x, x, x, mask)
+        x2 = self.attn(x, x, x, mask)
         x = x + self.dropout_1(x2)
         # 2. position-wise feed-forward
         x = self.norm_2(x)
         # dim: -> (batch_size, src_maxstr, d_model)
         x2 = self.ff(x)
         x = x + self.dropout_2(x2)
-        return x, concat_attn
+        # return x, concat_attn
+        return x
+
+    # def forward(self, x, mask):
+    #     "Follow Figure 1 (left) for connections."
+    #     # 1. multi-head self-attention
+    #     x = self.norm_1(x)
+    #     # dim: -> (batch_size, src_maxstr, d_model)
+    #     x2, concat_attn = self.attn(x, x, x, mask)
+    #     x = x + self.dropout_1(x2)
+    #     # 2. position-wise feed-forward
+    #     x = self.norm_2(x)
+    #     # dim: -> (batch_size, src_maxstr, d_model)
+    #     x2 = self.ff(x)
+    #     x = x + self.dropout_2(x2)
+    #     # return x, concat_attn
+    #     return x, concat_attn
 
 
 class DecoderLayer(nn.Module):
@@ -52,13 +68,12 @@ class DecoderLayer(nn.Module):
         self.ff = FeedForward(d_model, dff, dropout)
         self.dropout_3 = nn.Dropout(dropout)
 
+
     def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):
         # 1. masked multi-head self-attention
         x2 = self.norm_1(x)
         # dim: -> (batch_size, trg_maxstr-1, d_model)
-        attn_1, concat_attn_1 = self.attn_1(x2, x2, x2, trg_mask)
-        w = self.dropout_1(attn_1)
-        x = x + w
+        x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         # 2. multi-head self-attention
         x2 = self.norm_2(x)
         if self.use_cond2lat == True:
@@ -66,9 +81,32 @@ class DecoderLayer(nn.Module):
             cond_mask = torch.ones_like(cond_mask, dtype=bool)
             src_mask = torch.cat([cond_mask, src_mask], dim=2)
         # dim: -> (batch_size, trg_maxstr-1, d_model)
-        attn_2, concat_attn_2 = self.attn_2(x2, e_outputs, e_outputs, src_mask)
-        x = x + self.dropout_2(attn_2)
+
+        # print(f'x2:{x2.size()}, e_outputs: {e_outputs.size()}, src_mask: {src_mask.size()}')
+        x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))
         # 3. position-wise feed-forward
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
-        return x, concat_attn_1, concat_attn_2
+        return x
+
+
+    # def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):
+    #     # 1. masked multi-head self-attention
+    #     x2 = self.norm_1(x)
+    #     # dim: -> (batch_size, trg_maxstr-1, d_model)
+    #     attn_1, concat_attn_1 = self.attn_1(x2, x2, x2, trg_mask)
+    #     w = self.dropout_1(attn_1)
+    #     x = x + w
+    #     # 2. multi-head self-attention
+    #     x2 = self.norm_2(x)
+    #     if self.use_cond2lat == True:
+    #         cond_mask = torch.unsqueeze(cond_input, -2)
+    #         cond_mask = torch.ones_like(cond_mask, dtype=bool)
+    #         src_mask = torch.cat([cond_mask, src_mask], dim=2)
+    #     # dim: -> (batch_size, trg_maxstr-1, d_model)
+    #     attn_2, concat_attn_2 = self.attn_2(x2, e_outputs, e_outputs, src_mask)
+    #     x = x + self.dropout_2(attn_2)
+    #     # 3. position-wise feed-forward
+    #     x2 = self.norm_3(x)
+    #     x = x + self.dropout_3(self.ff(x2))
+    #     return x, concat_attn_1, concat_attn_2

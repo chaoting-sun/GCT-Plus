@@ -25,16 +25,23 @@
 #         -variational \
 #         # >preprocess.out 2>preprocess.err&
 
-MODEL_TYPE='mlp_encoder'
-SIMILARITY=0.9
+# MODEL_TYPE='mlp_encoder'
+# SIMILARITY=0.9
+
+# python3 -u \
+#     main_preprocess.py \
+#         -similarity ${SIMILARITY} \
+#         -n_jobs 4 \
+#         -load_field \
+#         -field_path ./molGCT \
+#         -load_scaler \
+#         -model_type ${MODEL_TYPE} \
+#         -variational \
+#     # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
+
 
 python3 -u \
-    main_preprocess.py \
-        -similarity ${SIMILARITY} \
+    preprocess.py \
+        -tolerance 0.01 \
         -n_jobs 4 \
-        -load_field \
-        -field_path ./molGCT \
-        -load_scaler \
-        -model_type ${MODEL_TYPE} \
-        -variational \
     # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
