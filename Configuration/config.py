@@ -35,9 +35,11 @@ def options(parser):
     # parser.add_argument('--label_smoothing', type=float, default=0.0, help="see: https://arxiv.org/abs/1512.00567")
     # soft constraints
     parser.add_argument('-model_type', type=str, default='mlp_transformer')
+    parser.add_argument('-use_molgct', action='store_true')
     parser.add_argument('-model_path', type=str) # new -> model path
-    parser.add_argument('-use_epoch', type=int, default=1) # new -> start epoch for train; epoch for validation
+    parser.add_argument('-use_epoch', type=int, default=0) # new -> start epoch for train; epoch for validation
     parser.add_argument('-variational', type=bool, default=True)
+
     # parser.add_argument('-variational', action='store_true', help="if using variational")
 
     """ PROPERTY BOUNDS """

@@ -259,7 +259,7 @@ def atten_generate(generator, smiles, trg_props, storage_path,
                                         batch.econds,
                                         batch.mconds)[0]
 
-        # for i in range(n_samples):        
+        # for i in range(n_samples):
         #     z2 = torch.Tensor(np.random.normal(size=(1, 45, generator.latent_dim)))
         #     smiles = generator.sample_smiles(batch.dconds, z2,
         #                                      transform=False)[0]

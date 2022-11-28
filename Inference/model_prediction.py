@@ -19,7 +19,7 @@ class Predictor(object):
         else:
             outputs = self.decoder(trg, z, conds,
                                    src_mask, trg_mask)
-        output_mol = outputs[0]
+        output_mol = outputs
         return F.softmax(output_mol, dim=-1)
 
 

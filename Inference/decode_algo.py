@@ -140,6 +140,7 @@ class MultinomialSearch(Sampling):
         if transform:
             conds = self.scaler_transform(conds)
         conds = conds.to(self.device)
+
         if z is not None:
             toklen = z.size(1)
             z = z.to(self.device)

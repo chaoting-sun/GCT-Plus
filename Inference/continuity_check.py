@@ -8,10 +8,11 @@ from pathos.multiprocessing import ProcessingPool as Pool
 
 from Utils.dataset import get_dataloader
 from Utils.property import get_mol, get_smiles, property_prediction
-from Inference.metrics import get_all_metrics, get_snn_from_mol, get_interval_diversity, get_basic_metrics
+from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
 from Utils.property import props_predictor_wrapper
 from Utils.dataset import to_dataloader
 from torchtext import data
+
 
 # pd.to_csv() -> pd.read_csv(.., index_col=[0])
 
@@ -125,7 +126,6 @@ def augment_z(n_samples, z, std=None):
 def sample_smiles(z, props, n_samples, generator, zstd=None, pstd=None):
     assert z.dim() == 3
     
-
     zall = z.repeat(n_samples, 1, 1)
     if zstd:
         zall += torch.empty_like(zall).normal_(mean=0, std=zstd)
@@ -322,11 +322,12 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
     # test logp difference
     def generate(prop_name, pstd, propId):
         all_props = []
+        
         for i in range(args.n_steps+1):
             LOG.info(f"sample smiles {i} / {args.n_steps}")
             save_path = os.path.join(save_folder, f"{prop_name}_{i}.csv")
-            # if os.path.exists(save_path):
-            #     continue
+            if os.path.exists(save_path):
+                continue
 
             if prop_name == "logp":
                 logpi = logp1 + (logp_dist / args.n_steps) * i
@@ -344,6 +345,7 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
             props_t = augment_props(args.n_samples, props, propId,
                                     bound[prop_name], pstd)
             z_all = augment_z(args.n_samples, z)
+            
             smiles = generator.sample_smiles(props_t, z_all, transform=True)[0]
             LOG.info(smiles[:5])
             
@@ -357,6 +359,19 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
             train_smiles, args.n_jobs, prefix=prop_name)
         df.to_csv(os.path.join(save_folder, f"{prop_name}_statistics.csv"))
 
+        LOG.info("compute error...")
+        with open(os.path.join(save_folder, f'{prop_name}_error.csv'), 'w') as ptr:
+            for i in range(args.n_steps+1):
+                data_path = os.path.join(save_folder, f"{prop_name}_{i}.csv")
+                gen = pd.read_csv(data_path)
+                all_metrics = get_all_metrics(gen, train_smiles, args.n_jobs)
+                header, body = print_all_metrics(all_metrics)
+                print(header)
+                print(body)
+                if i == 0:
+                    ptr.write(header+'\n')
+                ptr.write(body+'\n')
+
     logp_std = 0.15
     tpsa_std = 2.50
     qed_std = 0.05
@@ -368,8 +383,7 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
     generate("qed", qed_std, 2)
 
 
-def continuity_check_on_z(generator, latent_dim, conditions, storage_path, properties,
-                          toklen, n_steps, n_samples, n_jobs, train_smiles, logger):
+def continuity_check_on_z(args, generator, train_smiles, logger):
     """Continuity check for the latent space:
     Check if the latent space is continuous by sampling
     from several consecutive equal-spacing points between
@@ -381,56 +395,79 @@ def continuity_check_on_z(generator, latent_dim, conditions, storage_path, prope
     snn_prev: snn between two consecutive smiles groups
     """
         
-    save_folder = os.path.join(storage_path, f"toklen{toklen}")
+    save_folder = os.path.join(args.storage_path, f"toklen{args.toklen}")
     os.makedirs(save_folder, exist_ok=True)
-
-    # store_metrics_of_transvae_gen_smiles(save_folder, n_steps, n_jobs)
 
     LOG = logger('continuity_check', log_path=os.path.join(save_folder, "records.log"))
 
-    zs = get_z_points(toklen, latent_dim, save_folder)
+    zs = get_z_points(args.toklen, args.latent_dim, save_folder)
     zs_vec = zs[1] - zs[0]
     zs_dist = distance(zs[1], zs[0])
     LOG.info(f"Distance between 2 zs: {zs_dist}")
 
-    props_predictor = props_predictor_wrapper(property_prediction, conditions)
+    props_predictor = props_predictor_wrapper(property_prediction, args.conditions)
 
-    props_t = np.reshape(np.array(properties), (1,3))
-    props_t = np.repeat(props_t, n_samples, axis=0)
+    props_t = np.reshape(np.array(args.properties), (1,3))
+    props_t = np.repeat(props_t, args.n_samples, axis=0)
     props_t = pd.DataFrame(props_t, columns=["logp_t","tpsa_t","qed_t"])
 
-    std = (zs_dist/n_steps * 0.5) * 0.5
+    std = (zs_dist / args.n_steps * 0.5) * 0.5
     std = std if std < 1 else 1
     LOG.info(f"std: {std}")
 
     assert (zs[0] + zs_vec == zs[1]).any()
     
-    for i in range(n_steps+1):
-        LOG.info(f"sample smiles {i} / {n_steps}")
+    for i in range(args.n_steps+1):
+        LOG.info(f"sample smiles {i} / {args.n_steps}")
         save_path = os.path.join(save_folder, f"z1z2_{i}.csv")
         if os.path.exists(save_path):
             continue
         
-        z = zs[0] + (zs_vec / n_steps) * i
-        smiles, _, _ = sample_smiles(z, properties, n_samples, generator, zstd=std)
+        z = zs[0] + (zs_vec / args.n_steps) * i
+        smiles, _, _ = sample_smiles(z, args.properties, args.n_samples,
+                                     generator, zstd=std)
         smiles = pd.DataFrame(smiles, columns=['smiles'])
-        props_p = property_from_smiles(smiles["smiles"], props_predictor, n_jobs)
+        props_p = property_from_smiles(smiles["smiles"], props_predictor, args.n_jobs)
         smiles_props = pd.concat([smiles, props_t, props_p], axis=1)
         smiles_props.to_csv(save_path)
-        
         LOG.info("check 5 SMILES: " + ",".join(smiles['smiles'].iloc[:5]))
     
-    LOG.info("store metrics from smiles file...")
-    dist = pd.DataFrame({
-        "distance_start": [zs_dist/n_steps*i for i in range(n_steps+1)],
-        "distance_previous": [np.nan] + [zs_dist/n_steps]*n_steps
-    })
-    df = get_metrics_from_smiles_file(save_folder, n_steps, train_smiles,
-                                      n_jobs, prefix="z1z2")
-    df = pd.concat([dist, df], axis=1)
-    df.to_csv(os.path.join(save_folder, "statistics.csv"))
-    LOG.info("execution finished.")
+    if not os.path.exists(os.path.join(save_folder, "statistics.csv")):
+        LOG.info("store metrics from smiles file...")
+        dist = pd.DataFrame({
+            "distance_start": [zs_dist/args.n_steps*i for i in range(args.n_steps+1)],
+            "distance_previous": [np.nan] + [zs_dist/args.n_steps]*args.n_steps
+        })
+        df = get_metrics_from_smiles_file(save_folder, args.n_steps, train_smiles,
+                                        args.n_jobs, prefix="z1z2")
+        df = pd.concat([dist, df], axis=1)
+        df.to_csv(os.path.join(save_folder, "statistics.csv"))
+        LOG.info("execution finished.")
 
+    LOG.info("compute error...")
+    with open(os.path.join(save_folder, 'error.csv'), 'w') as ptr:
+        for i in range(args.n_steps+1):
+            data_path = os.path.join(save_folder, f'z1z2_{args.n_steps}.csv')
+            gen = pd.read_csv(data_path)
+            all_metrics = get_all_metrics(gen, train_smiles, args.n_jobs)
+            header, body = print_all_metrics(all_metrics)
+            if i == 0:
+                ptr.write(header+'\n')
+            ptr.write(body+'\n')
+            
+    
+
+
+# def compute_error_(save_folder, train_smiles, n_jobs, n_steps):
+#     with open(os.path.join(save_folder, 'error.csv'), 'w') as ptr:
+#         for i in range(n_steps+1):
+#             data_path = os.path.join(save_folder, f'z1z2_{n_steps}.pt')
+#             gen = pd.read_csv(data_path)
+#             header, body = get_all_metrics(gen, train_smiles, n_jobs)
+#             if i == 0:
+#                 ptr.write(header+'\n')
+#             ptr.write(body+'\n')
+    
 
 def store_metrics_of_transvae_gen_smiles(zs_dist, n_steps, n_jobs):
     """Validation on Transvae:

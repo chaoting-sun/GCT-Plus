@@ -8,13 +8,11 @@ import pandas as pd
 from torchtext import data
 import torch.nn.functional as F
 
-from Model.build_model import build_model, freeze_params
+from Model.build_model import build_model, freeze_params, get_model
 from Utils import allocate_gpu, save_fields
 from Utils.field import get_tf_fields
 from Utils.dataset import get_dataloader
 from Model.modules import create_source_mask, create_target_mask
-
-# from Train.tf_trainer import Trainer
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -52,12 +50,11 @@ def save_checkpoint(args, model, optimizer, save_path):
 
 
 def run_epoch(args, model, optimizer, dataloader,
-              current_step, beta, nbatches, LOG):
+              current_step, beta, nbatches, LOG, train):
     n_samples = 0
     n_printevery = 1
     tot_loss = tot_rce = tot_kld = 0
-    history = {'RCE': [], 'KLD': [], 'LOSS': [],
-               'lr': [], 'beta': []}
+    history = { 'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': [] }
     
     model_cost_time = update_cost_time = 0
     cost_time = -time()
@@ -80,6 +77,7 @@ def run_epoch(args, model, optimizer, dataloader,
                                                               src_mask,
                                                               trg_mask
                                                               )
+
         model_cost_time += time()
 
         ys_mol = batch.trg[:, 1:].contiguous().view(-1)
@@ -87,46 +85,56 @@ def run_epoch(args, model, optimizer, dataloader,
         ).view(-1, len(args.conditions), 1)
 
         update_cost_time -= time()
-        optimizer.zero_grad()
+        
+        if train:
+            optimizer.zero_grad()
         loss, RCE_mol, RCE_prop, KLD = loss_function(beta, preds_prop, preds_mol,
                                                      ys_cond, ys_mol, mu, log_var,
                                                      args.use_cond2dec, args.pad_id)
-        loss.backward()
-        optimizer.step()
+        if train:
+            loss.backward()
+            optimizer.step()
+
         update_cost_time += time()
+
+        if args.lr_scheduler == "WarmUpDefault":
+            k1, k2, k3 = 0.5, 1.5, 0.5 # original
+            # k1, k2, k3 = 0.6, 1.6, 0.5 # train decoder & out
+            head = np.float(np.power(np.float(current_step), -k1))
+            tail = np.float(current_step) * \
+                np.power(np.float(args.lr_WarmUpSteps), -k2)
+            lr = np.float(np.power(np.float(args.d_model), -k3)) * \
+                 min(head, tail)
+
+        if train:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
 
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
         
+        tot_loss += loss.item()
         tot_rce += RCE_mol.item()
         tot_kld += KLD.item()
-        tot_loss += loss.item()
         
-        history['RCE'].append(RCE_mol.item())
-        history['KLD'].append(KLD.item())
-        history['LOSS'].append(loss.item())
-        history['lr'].append(current_lr)
-        history['beta'].append(beta)
+        n_onebatch = len(batch.src)
+        n_samples += n_onebatch
 
-        # modify learning rate
-        head = np.float(np.power(np.float(current_step), -0.5))
-        tail = np.float(current_step) * \
-            np.power(np.float(args.lr_WarmUpSteps), -1.5)
-        lr = np.float(np.power(np.float(args.d_model), -0.5)) * min(head, tail)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+        history['RCE'].append(RCE_mol.item() / n_onebatch)
+        history['KLD'].append(KLD.item() / n_onebatch)
+        history['LOSS'].append(loss.item() / n_onebatch)
+        history['BETA'].append(beta)        
+        history['LR'].append(current_lr)
 
         # torch.cuda.empty_cache()
 
-        n_onebatch = len(batch.src)
-        n_samples += n_onebatch
         total_cost_time = time() + cost_time
 
-        details = f'{i+1}/{nbatches:<10}\t' \
-                  f'MSE: {history["RCE"][-1]/n_onebatch:.5f}\t'  \
-                  f'KLD: {history["RCE"][-1]/n_onebatch:.5f}\t'  \
-                  f'LOSS: {history["RCE"][-1]/n_onebatch:.5f}\t' \
-                  f'TIME(s): {total_cost_time:.1f}\t' \
+        details = f'{i+1}/{nbatches:<10}\t'                \
+                  f'RCE: {history["RCE"][-1]:.5f}\t'       \
+                  f'KLD: {history["KLD"][-1]:.5f}\t'       \
+                  f'LOSS: {history["LOSS"][-1]:.5f}\t'     \
+                  f'TIME(s): {total_cost_time:.1f}\t'      \
                   f'MODELTIME(s): {model_cost_time:.1f}\t' \
                   f'UPDATETIME(s): {update_cost_time:.1f}' \
 
@@ -137,12 +145,17 @@ def run_epoch(args, model, optimizer, dataloader,
     avg_loss = tot_loss / n_samples
     avg_rce = tot_rce / n_samples
     avg_kld = tot_kld / n_samples
-    return history, (avg_loss, avg_rce, avg_kld)
+    
+    if train: # training phase
+        return history, (avg_loss, avg_rce, avg_kld), current_step
+    else: # validation phase
+        return history, (avg_loss, avg_rce, avg_kld)
     
 
 def train_model(args, model, optimizer, train_iter,
-                valid_iter, data_path, device, LOG):
-    beta = current_step = 0
+                valid_iter, model_path, device, LOG):
+    beta = 0
+    current_step = args.use_epoch * args.train_nbatches
 
     for epoch in range(args.use_epoch+1, args.num_epoch+1):
         LOG.info(f'run epoch: {epoch}')
@@ -158,26 +171,31 @@ def train_model(args, model, optimizer, train_iter,
 
         LOG.info(f'training start, epoch: {epoch}')
         
-        model.train()
         dataloader = get_dataloader(train_iter, args.conditions,
                                     args.pad_id, device)
-        train_his, avg_loss = run_epoch(args, model, optimizer, dataloader,
-                              current_step, beta, args.train_nbatches, LOG)
+        model.train()
+        train_his, avg_loss, current_step = run_epoch(
+            args, model, optimizer, dataloader, current_step,
+            beta, args.train_nbatches, LOG, train=True
+        )
         df = pd.DataFrame(train_his)
-        df.to_csv(os.path.join(data_path, f'train_{epoch}.csv'))
+        df.to_csv(os.path.join(model_path, f'train_{epoch}.csv'))
         
         LOG.info(f'training end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
         LOG.info(f'validation start, epoch: {epoch}')
         
-        model.eval()
         dataloader = get_dataloader(valid_iter, args.conditions,
                                     args.pad_id, device)
-        valid_hist, avg_loss = run_epoch(args, model, optimizer, dataloader,
-                               current_step, beta, args.valid_nbatches, LOG)
+        model.eval()
+        with torch.no_grad():
+            valid_hist, avg_loss = run_epoch(
+                args, model, optimizer, dataloader, current_step,
+                beta, args.valid_nbatches, LOG, train=False
+            )
         df = pd.DataFrame(valid_hist)
-        df.to_csv(os.path.join(data_path, f'valid_{epoch}.csv'))
+        df.to_csv(os.path.join(model_path, f'valid_{epoch}.csv'))
         
         LOG.info(f'validation end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
@@ -190,10 +208,10 @@ def train_model(args, model, optimizer, train_iter,
 def tf_train(args, logger):
     os.makedirs(args.model_path, exist_ok=True)
     
-    # data_path = os.path.join(args.data_path, 'aug',
-    #                          f'data_tol{args.tolerance:.2f}')
     data_path = os.path.join(args.data_path, 'aug',
                              f'data_tol{args.tolerance:.2f}')
+    # data_path = os.path.join(args.data_path, 'aug',
+    #                          f'data_tol{args.tolerance:.2f}_tiny')
 
     LOG = logger(name='augment data by conditions',
                  log_path=os.path.join(args.model_path, "records.log"))
@@ -206,7 +224,7 @@ def tf_train(args, logger):
 
     LOG.info('prepare train & valid dataset...')
     train, valid = data.TabularDataset.splits(
-        path=data_path, train='train.csv', validation='validation.csv',
+        path=data_path, train='train.csv', validation='validation.csv', # change
         test=None, format='csv', fields=fields, skip_header=True
     )
 
@@ -229,48 +247,39 @@ def tf_train(args, logger):
     args.eos_id = TRG.vocab.stoi['<eos>']
     args.pad_id = SRC.vocab.stoi['<pad>']
 
-    assert SRC.vocab.stoi['<pad>'] == TRG.vocab.stoi['<pad>']
+    assert SRC.vocab.stoi['<pad>'] == TRG.vocab.stoi['<pad>']   
 
     del train, valid
     gc.collect()
 
-    LOG.info(f'prepare model with start epoch: {args.use_epoch}')
+    LOG.info('prepare model...')
     
-    model = build_model(args, len(SRC.vocab), len(TRG.vocab))
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     model = model.to(device)
 
-    freeze_params(model, train_names=['decoder', 'out'])
+    # freeze_params(model, train_names=['decoder', 'out'])
 
     total_params = sum(p.numel() for p in model.parameters())
     train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     LOG.info(f'# total params: {total_params}, # train params: {train_params}')
 
-    assert train_params > 0, f'# trainable parameters = 0'
+    assert train_params > 0, '# trainable parameters = 0'
 
-    LOG.info(f'Get optimizer. Starting epochs is {args.use_epoch}')
+    LOG.info(f'Get optimizer...')
 
-    if args.use_epoch == 1:
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, model.parameters()),
-            lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
-        )
-    else:
+    optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+    )
+    
+    if args.use_epoch > 0:
         cp_path = os.path.join(args.model_path,
-                               f'model_{args.use_epoch-1}.pt')
+                               f'model_{args.use_epoch}.pt')
         checkpoint = torch.load(cp_path, map_location='cuda:0')
         optim_dict = checkpoint['opt_state_dict']
         optimizer.load_state_dict(optim_dict)
         
     LOG.info(f'train model...')
     
-    # for name, params in model.named_parameters():
-    #     print(name, params.size())
-
-    # exit()
-
     train_model(args, model, optimizer, train_iter,
-                valid_iter, data_path, device, LOG)
-
-
-
-    
+                valid_iter, args.model_path, device, LOG)

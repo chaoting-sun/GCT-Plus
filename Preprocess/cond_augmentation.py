@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from datetime import timedelta
+from Utils.property import tanimoto_similarity
 
 
 def debug(smiles, props, similar_pairs, input_data, 
@@ -51,9 +52,10 @@ def find_similar_pairs(props, conds, tols):
             if abs(props[conds[2]].iloc[id2] - props[conds[2]].iloc[id1]) > tols[2]:
                 break
             no1, no2 = props.index[id1], props.index[id2]
-            if no1 > no2:
-                no1, no2 = no2, no1
             similar_pairs.append((no1, no2))
+            break # to be removed
+            if no1 != no2:
+                similar_pairs.append((no2, no1))
             id2 += 1
         if id1 % 2000 == 0 or id1 == len(props)-1:
             print("schedule:", id1, end='\r')
@@ -84,7 +86,7 @@ def prepare_input_data(conds, smiles, props, similar_pairs):
     return input_data
 
 
-def cond_augmentation(args, raw_path, aug_path, rescaler, logger=None):
+def cond_augmentation(args, raw_path, aug_path, rescaler, logger=None, DEBUG=False):
     """
     augmentation by pairing molecules with similar properties
     """
@@ -122,8 +124,9 @@ def cond_augmentation(args, raw_path, aug_path, rescaler, logger=None):
         rescaled_props = rescaler(props)
         input_data = prepare_input_data(args.conditions, smiles, rescaled_props, similar_pairs)
         
-        debug(smiles, props, similar_pairs, input_data,
-              rescaler, args.conditions, [tolP1, tolP2, tolP3])
+        if DEBUG:
+            debug(smiles, props, similar_pairs, input_data,
+                rescaler, args.conditions, [tolP1, tolP2, tolP3])
         
         input_data.to_csv(input_path, index=False)
 

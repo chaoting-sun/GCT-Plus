@@ -39,9 +39,24 @@
 #         -variational \
 #     # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
 
+################### preprocess (condition) ###################
+
+# > tolerance = 0.01
 
 python3 -u \
     preprocess.py \
-        -tolerance 0.01 \
+        -tolerance 0.00 \
         -n_jobs 4 \
+    # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
+
+############ preprocess + (similarity, condition) ############
+
+# > tolerance = 0.00
+# > similarity = 1.00
+
+# python3 -u \
+#     preprocess.py \
+#         -similarity 1.00 \
+#         -tolerance 0.00 \
+#         -n_jobs 4 \
     # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&

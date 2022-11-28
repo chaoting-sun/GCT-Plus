@@ -93,6 +93,47 @@ def get_all_metrics(gen, train_smiles, n_jobs):
     return all_metrics
 
 
+def print_all_metrics(metrics):
+    header = 'valid\tunique\tnovel\tintDiv\t' \
+             'logpMAE\ttpsaMAE\tqedMAE\t'     \
+             'logpMSE\ttpsaMSE\tqedMSE\t'     \
+             'logpMAX\ttpsaMAX\tqedMAX\t'     \
+             'logpMIN\ttpsaMIN\tqedMIN\t'     \
+             'logpAARD\ttpsaAARD\tqedAARD\t'  \
+             'logpAMSD\ttpsaAMSD\tqedAMSD'
+
+    body = f"{metrics['valid']:.4f}\t"   \
+           f"{metrics['unique']:.4f}\t"  \
+           f"{metrics['novel']:.4f}\t"   \
+           f"{metrics['intDiv']:.4f}\t"  \
+        \
+           f"{metrics['logpErr']['mae']:.4f}\t"  \
+           f"{metrics['tpsaErr']['mae']:.4f}\t"  \
+           f"{metrics['qedErr']['mae']:.4f}\t"   \
+        \
+           f"{metrics['logpErr']['mse']:.4f}\t"  \
+           f"{metrics['tpsaErr']['mse']:.4f}\t"  \
+           f"{metrics['qedErr']['mse']:.4f}\t"   \
+        \
+           f"{metrics['logpErr']['max']:.4f}\t"  \
+           f"{metrics['tpsaErr']['max']:.4f}\t"  \
+           f"{metrics['qedErr']['max']:.4f}\t"   \
+        \
+           f"{metrics['logpErr']['min']:.4f}\t"  \
+           f"{metrics['tpsaErr']['min']:.4f}\t"  \
+           f"{metrics['qedErr']['min']:.4f}"     \
+        \
+           f"{metrics['logpErr']['aard']:.4f}\t"  \
+           f"{metrics['tpsaErr']['aard']:.4f}\t"  \
+           f"{metrics['qedErr']['aard']:.4f}"     \
+        \
+           f"{metrics['logpErr']['amsd']:.4f}\t"  \
+           f"{metrics['tpsaErr']['amsd']:.4f}\t"  \
+           f"{metrics['qedErr']['amsd']:.4f}"     \
+
+    return header, body
+
+
 # def _valid(valid_preds, preds): return len(valid_preds) / \
 #     len(preds)*100 if len(preds) else 0
 
