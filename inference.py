@@ -12,8 +12,8 @@ from Utils import allocate_gpu
 from Utils.field import get_inference_fields
 from Model.build_model import build_model, get_model
 from Inference.model_prediction import Predictor
-from Inference.decode_algo import MultinomialSearch, MultinomialSearchFromSource, BeamSearch, BeamSearchFromSource
-from Inference.generate_uniformly import generate_uniformly
+from Inference.decode_algo import MultinomialSearch, BeamSearch, NewBeamSearch
+from Inference.uniform_generation import uniform_generation
 from Inference.generate_z import generate_z
 from Inference.varying_z_generate import varying_z_generate
 from Inference.continuity_check import continuity_check_on_z, continuity_check_on_conds
@@ -32,6 +32,11 @@ def get_smiles_generator(predictor, decode_algo, latent_dim,
             predictor, latent_dim, TRG, toklen_data,
             scaler, max_strlen, use_cond2dec, device
         )
+    elif decode_algo == "newbeam":
+        return NewBeamSearch(
+            predictor, latent_dim, TRG, toklen_data,
+            scaler, max_strlen, use_cond2dec, device
+        )        
     else:
         exit(f"No such decoding algorithm: {decode_algo}")
 
@@ -60,9 +65,11 @@ def get_generator(args, SRC, TRG, device):
 
     model = model.to(device)
     model.eval()
+    print('Get predictor...')
     predictor = Predictor(args.use_cond2dec,
                           getattr(model, args.decode_type),
                           getattr(model, args.encode_type))
+    print('Get generator...')
     generator = get_smiles_generator(predictor,
                                      args.decode_algo,
                                      args.latent_dim,
@@ -78,6 +85,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()
+    print(args)
 
     print("Add the logger...")
     logger = get_logger(args)
@@ -86,6 +94,7 @@ if __name__ == "__main__":
 
     print("Looking for gpu...")
     device = allocate_gpu()
+    print("device:", device)
 
     scaler_path = os.path.join(args.molgct_path, 'scaler.pkl')
     toklen_path = os.path.join(args.data_path, 'raw',
@@ -111,7 +120,7 @@ if __name__ == "__main__":
     #     # varying_z_generate(args, smiles_generator, fields, device, logger, SRC, TRG)
     #     # generate_uniformly(args, smiles_generator, train_smiles, logger)
     
-    if hasattr(args, 'continuity_check'):    
+    if hasattr(args, 'continuity_check'):
         # no source smiles. Don't know how to extend "has_source"
         print("[PURPOSE] Check the continuity property...")
 
@@ -126,3 +135,9 @@ if __name__ == "__main__":
                        args.storage_path, train_smiles, SRC, TRG,
                        fields, args.toklen, args.conditions,
                        logger=logger)
+        
+    elif hasattr(args, 'uniform_generation'):
+        print("[PURPOSE] Generate uniformly over the valid property bounds")
+        uniform_generation(args, generator, train_smiles, logger)
+        
+        

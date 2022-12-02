@@ -13,6 +13,7 @@ from Train.tf_train import tf_train
 from Configuration.config import options
 from Utils.log import get_logger as gl
 from Utils.seed import set_seed
+from Train.plot_results import plot_results
 
 DEBUG = True
 
@@ -31,6 +32,8 @@ if __name__ == "__main__":
     options(parser)
     args = parser.parse_args()    
     logger = get_logger(args)
+
+    print(args)
 
     if args.model_type == 'mlp':
         mlp_train(args, debug=DEBUG)

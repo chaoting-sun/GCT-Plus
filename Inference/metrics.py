@@ -121,11 +121,11 @@ def print_all_metrics(metrics):
         \
            f"{metrics['logpErr']['min']:.4f}\t"  \
            f"{metrics['tpsaErr']['min']:.4f}\t"  \
-           f"{metrics['qedErr']['min']:.4f}"     \
+           f"{metrics['qedErr']['min']:.4f}\t"   \
         \
            f"{metrics['logpErr']['aard']:.4f}\t"  \
            f"{metrics['tpsaErr']['aard']:.4f}\t"  \
-           f"{metrics['qedErr']['aard']:.4f}"     \
+           f"{metrics['qedErr']['aard']:.4f}\t"   \
         \
            f"{metrics['logpErr']['amsd']:.4f}\t"  \
            f"{metrics['tpsaErr']['amsd']:.4f}\t"  \

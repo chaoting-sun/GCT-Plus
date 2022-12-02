@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import torch
+from time import time
 
 from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
 from Model.modules import create_target_mask, create_source_mask, nopeak_mask
@@ -9,7 +10,6 @@ from Model.modules import create_target_mask, create_source_mask, nopeak_mask
 class Sampling(object):
     def __init__(self, predictor, latent_dim, TRG, toklen_data,
                  scaler, max_strlen, use_cond2dec, device):
-        print("initialize Sampling")
         self.predictor = predictor
         self.latent_dim = latent_dim
 
@@ -39,16 +39,17 @@ class Sampling(object):
 
     def sample_z_from_data(self, n=1):
         """2. sample z with toklen from data distribution"""
-        z, toklen = [], []
+        z, toklens = [], []
         for i in range(n):
-            toklen.append(tokenlen_gen_from_data_distribution(
-                data=self.toklen_data, size=1,
-                nBins=int(self.toklen_data.max()
-                        - self.toklen_data.min()),
-            ) + 3)  # three conditions
+            # smiles length + three conditions
+            toklen = int(tokenlen_gen_from_data_distribution(
+                         data=self.toklen_data, size=1,
+                         nBins=int(self.toklen_data.max()
+                                   - self.toklen_data.min()))) + 3
+            toklens.append(toklen)
             z.append(torch.Tensor(np.random.normal(
-                size=(1, toklen[-1], self.latent_dim))))
-        return z, toklen    
+                size=(1, toklen, self.latent_dim))))
+        return z, toklens
 
     def sample_fixed_len_z(self, toklen, n):
         """3. sample z given toklen"""
@@ -63,10 +64,10 @@ class Sampling(object):
             if id != self.sos_id:
                 smiles += self.trg_itos[id]
         return smiles
-    
+
     def transform_props(self, props):
         return self.scaler.transform(props)
-        
+
     def transform(self, properties):
         transformed = self.scaler.transform(properties)
         return torch.Tensor(transformed).to(self.device)
@@ -145,8 +146,8 @@ class MultinomialSearch(Sampling):
             toklen = z.size(1)
             z = z.to(self.device)
         else:
-            z = self.sample_z_from_data()
-            toklen = z.size(1)
+            z, toklen = self.sample_z_from_data()
+            # toklen = z.size(1)
 
         src_mask = (torch.ones(conds.size(0), 1, toklen) !=
                     0).to(self.device)  # (bs,1,nc+src_smi)
@@ -179,14 +180,13 @@ class MultinomialSearchFromSource(MultinomialSearch):
             src_mask = create_source_mask(src, self.pad_id, conds)
 
         z = self.predictor.encode(src, conds, src_mask)[0]
-        print("z:", z.size())
         pred_seq = self.decode(z, conds, src_mask)
-        print("pred_seq:", pred_seq.size())
         smiles = self.seq_to_smiles(pred_seq.cpu().numpy()[0])
         toklen_gen = len(smiles)
         return smiles, toklen_gen, toklen
 
-
+# https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/132907dd272e2cc92e3c10e6c4e783a87ff8893d/transformer/Translator.py
+# https://github.com/dreamgonfly/transformer-pytorch/blob/master/beam.py
 class BeamSearch(Sampling):
     def __init__(self, predictor, latent_dim, TRG, toklen_data,
                  scaler, max_strlen, use_cond2dec, device, k=4):
@@ -212,8 +212,7 @@ class BeamSearch(Sampling):
         return outputs, log_scores
 
     def init_vars(self, conds, toklen, z):
-        trg_in = torch.LongTensor([[self.sos_id]]).to(
-            self.device)  # dim=(1,1)
+        trg_in = torch.LongTensor([[self.sos_id]]).to(self.device)
         src_mask = (torch.ones(1, 1, toklen) != 0).to(self.device)
         # trg_mask = create_target_mask(1, self.pad_id, conds, self.use_cond2dec)
 
@@ -274,6 +273,15 @@ class BeamSearch(Sampling):
                     # Position of first end symbol
                     sentence_lengths[i] = vec[1]
 
+            # if (outputs == self.eos_id).cpu().numpy().argmax(axis=1).nonzero()[0].shape[0] == self.k:
+            #     alpha = 0.7
+            #     div = 1 / \
+            #         (torch.tensor(((outputs == self.eos_id).cpu().numpy().argmax(axis=1))).type_as(
+            #             log_scores) ** alpha)
+            #     _, ind = torch.max(log_scores * div, 1)
+            #     ind = ind.data[0]
+            #     break
+
             num_finished_sentences = len(
                 [s for s in sentence_lengths if s > 0])
 
@@ -288,7 +296,6 @@ class BeamSearch(Sampling):
             length = (outputs[0] == self.eos_id).nonzero()[0]
             outs = ' '.join([self.trg_itos[tok]
                             for tok in outputs[0][1:length]])
-            print(outs)
             return outs
         else:
             length = (outputs[ind] == self.eos_id).nonzero()[0]
@@ -299,21 +306,30 @@ class BeamSearch(Sampling):
         if transform:
             dconds = self.transform_props(dconds)
         if dconds.dtype != torch.float32:
-            dconds = torch.Tensor(dconds)        
+            dconds = torch.Tensor(dconds)
         assert dconds.dim() == 2
         # handle z
         if z is None:
             z, toklen = self.sample_z_from_data(n=dconds.size(0))
         else:
-            toklen = z.size(1)
+            toklen = [z[i].size(1) for i in range(len(z))]
         # sample smiles
         smiles, toklen_gen = [], []
-        for i in range(z.size(0)):
-            prop_in = torch.unsqueeze(dconds[i], 0).to(self.device)
-            z_in = torch.unsqueeze(z[i], 0).to(self.device)
-            smi = self.beam_search(prop_in, toklen, z_in)
+
+        t = -time()
+        for i in range(len(z)):
+            z_in = z[i].to(self.device)
+            props_in = dconds[i].to(self.device)
+
+            if z_in.dim() == 2:
+                z_in = torch.unsqueeze(z_in, 0)
+            if props_in.dim() == 1:
+                props_in = torch.unsqueeze(props_in, 0)
+
+            smi = self.beam_search(props_in, toklen[i], z_in)
             toklen_gen.append(smi.count(" ") + 1)
             smiles.append("".join(smi).replace(" ", ""))
+            # print(f"({i}) {t + time():.2f}", smiles[-1])
         return smiles, toklen_gen, toklen
 
 
@@ -343,5 +359,131 @@ class BeamSearchFromSource(BeamSearch):
         smiles = self.beam_search(conds, toklen, z)
         toklen_gen = smiles.count(" ") + 1
         smiles = ''.join(smiles).replace(" ", "")
-        print(smiles)
+        # print(smiles)
         return smiles, toklen_gen, toklen
+    
+
+# https://kikaben.com/transformers-evaluation-details/
+class NewBeamSearch(Sampling):
+    def __init__(self, predictor, latent_dim, TRG, toklen_data,
+                 scaler, max_strlen, use_cond2dec, device, k=4):
+        super().__init__(predictor, latent_dim, TRG, toklen_data,
+                         scaler, max_strlen, use_cond2dec, device)
+        self.alpha = 0.6
+        self.k = k
+
+    def sample_smiles(self, dconds, z=None, transform=True):
+        # handle properties
+        if transform:
+            dconds = self.transform_props(dconds)
+        if dconds.dtype != torch.float32:
+            dconds = torch.Tensor(dconds)
+        assert dconds.dim() == 2
+        # handle z
+        if z is None:
+            z, toklen = self.sample_z_from_data(n=dconds.size(0))
+        else:
+            toklen = [z[i].size(1) for i in range(len(z))]
+        # sample smiles
+        smiles, toklen_gen = [], []
+
+        t = -time()
+        for i in range(len(z)):
+            z_in = z[i].to(self.device)
+            props_in = dconds[i].to(self.device)
+
+            if z_in.dim() == 2:
+                z_in = torch.unsqueeze(z_in, 0)
+            if props_in.dim() == 1:
+                props_in = torch.unsqueeze(props_in, 0)
+
+            smi = self.beam_search(props_in, toklen[i], z_in)
+            smiles.append(smi)
+            toklen_gen.append(len(smi))
+            # print(f"({i}) {t + time():.2f}", smi)
+        return smiles, toklen_gen, toklen
+    
+    def sequence_length_penalty(self, length):
+        return ((5 + length) / (5 + 1)) ** self.alpha
+
+    def beam_search(self, conds, toklen, z):
+        # A batch of one input for Encoder
+        # encoder_input = torch.Tensor([input_tokens])
+
+        # Generate encoded features
+        # with torch.no_grad():
+        #     encoder_output = model.encode(encoder_input)
+        encoder_output = z
+
+        # Start with SOS
+        decoder_input = torch.Tensor([[self.sos_id]]).long()
+        decoder_input = decoder_input.to(self.device)
+    
+        # Maximum output size
+        # max_output_length = encoder_input.shape[-1] + 50 # give some extra length
+
+        src_mask = (torch.ones(1, 1, toklen) != 0).to(self.device)
+
+        scores = torch.Tensor([0.]).to(self.device)
+        vocab_size = len(self.trg_itos)
+        
+        for i in range(self.max_strlen):
+            trg_mask = nopeak_mask(i+1, self.use_cond2dec,
+                                   self.pad_id, self.cond_dim)
+            trg_mask = trg_mask.to(self.device)
+            
+            if i > 0:
+                trg_mask = trg_mask.repeat(self.k, 1, 1)
+            
+            # Decoder prediction
+            logits = self.predictor.predict(decoder_input, encoder_output,
+                                            conds, src_mask, trg_mask)
+
+            # Softmax
+            log_probs = torch.log_softmax(logits[:, -1], dim=1)
+            log_probs = log_probs / self.sequence_length_penalty(i+1)
+
+            # Set score to zero where EOS has been reached
+            log_probs[decoder_input[:, -1]==self.eos_id, :] = 0
+                                                
+            # scores [beam_size, 1], log_probs [beam_size, vocab_size]
+            scores = scores.unsqueeze(1) + log_probs
+
+            # Flatten scores from [beams, vocab_size]
+            # to [beams * vocab_size] to get top k, 
+            # and reconstruct beam indices and token indices
+            scores, indices = torch.topk(scores.reshape(-1), self.k)
+            beam_indices  = torch.divide(indices, vocab_size, 
+                                         rounding_mode='floor') # indices // vocab_size
+            token_indices = torch.remainder(indices, vocab_size) # indices % vocab_size
+
+            # Build the next decoder input
+            next_decoder_input = []
+            
+            for beam_index, token_index in zip(beam_indices, token_indices):
+                prev_decoder_input = decoder_input[beam_index]
+                
+                if prev_decoder_input[-1] == self.eos_id:
+                    token_index = self.eos_id # once EOS, always EOS
+                token_index = torch.tensor([token_index], device=self.device)
+                token_index = token_index.long()
+                next_decoder_input.append(torch.cat([prev_decoder_input, token_index]))
+            decoder_input = torch.vstack(next_decoder_input).to(self.device)
+
+            # If all beams are finished, exit
+            if (decoder_input[:, -1] == self.eos_id).sum() == self.k:
+                break
+
+            # Encoder output expansion from the second time step to the beam size
+            if i == 0:
+                conds = conds.repeat(self.k, 1)
+                src_mask = src_mask.repeat(self.k, 1, 1)
+                encoder_output = encoder_output.expand(self.k, *encoder_output.shape[1:])
+
+        # convert the top scored sequence to a list of text tokens
+        decoder_output, _ = max(zip(decoder_input, scores), key=lambda x: x[1])
+        decoder_output = decoder_output[1:].cpu().numpy() # remove SOS
+
+        output_text_tokens = [self.trg_itos[i] for i in
+                              decoder_output if i != self.eos_id] # remove EOS if exists
+        return "".join(output_text_tokens)

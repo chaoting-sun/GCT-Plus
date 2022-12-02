@@ -41,15 +41,27 @@ def freeze_params(model, freeze_names=None, train_names=None):
             param.requires_grad = False
 
 
-def build_transformer(hyperParameters, model_path, use_molgct):
-    tf = Transformer(**hyperParameters)
-    if model_path is not None:
+def build_transformer(hyperParameters, model_path):
+    model = Transformer(**hyperParameters)
+    if model_path:
+        print("Use model path:", model_path)
         model_state = torch.load(model_path)
-        if use_molgct:
-            tf.load_state_dict(model_state)
+        if 'molgct.pt' in model_path:
+            model.load_state_dict(model_state)
         else:
-            tf.load_state_dict(model_state['model_state_dict'])
-    return tf
+            model.load_state_dict(model_state['model_state_dict'])
+    return model            
+                    
+
+# def build_transformer(hyperParameters, model_path, use_molgct):
+#     model = Transformer(**hyperParameters)
+#     if model_path is not None:
+#         model_state = torch.load(model_path)
+#         if use_molgct:
+#             model.load_state_dict(model_state)
+#         else:
+#             model.load_state_dict(model_state['model_state_dict'])
+#     return model
 
 
 # def build_transformer(src_vocab_len, trg_vocab_len, N, d_model, d_ff,
@@ -202,27 +214,19 @@ new function for building model. old: biuld_model
 
 
 def get_model(args, SRC_vocab_len, TRG_vocab_len):
-    hyperParameters = { 'src_vocab': SRC_vocab_len,
-                        'trg_vocab': TRG_vocab_len,
-                        'N': args.N, 'd_model': args.d_model,
-                        'dff': args.d_ff, 'h': args.H,
-                        'latent_dim': args.latent_dim,
-                        'dropout': args.dropout,
-                        'nconds': args.nconds,
-                        'use_cond2dec': args.use_cond2dec,
-                        'use_cond2lat': args.use_cond2lat
+    hyperParams = { 'src_vocab': SRC_vocab_len,
+                    'trg_vocab': TRG_vocab_len,
+                    'N': args.N, 'd_model': args.d_model,
+                    'dff': args.d_ff, 'h': args.H,
+                    'latent_dim': args.latent_dim,
+                    'dropout': args.dropout,
+                    'nconds': args.nconds,
+                    'use_cond2dec': args.use_cond2dec,
+                    'use_cond2lat': args.use_cond2lat
                     }
 
     if args.model_type == "transformer":
-        if args.use_molgct:
-            model_path = os.path.join(args.molgct_path, 'molgct.pt')
-        elif args.use_epoch >= 1:
-            model_path = os.path.join(args.model_path, f'model_{args.use_epoch}.pt')
-        elif args.use_epoch == 0:
-            model_path = None
-           
-        print(f"Build transformer with model path: {model_path}")
-        model = build_transformer(hyperParameters, model_path, args.use_molgct)
+        model = build_transformer(hyperParams, args.use_model_path)
         return model
 
 

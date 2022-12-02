@@ -153,11 +153,12 @@ def run_epoch(args, model, optimizer, dataloader,
     
 
 def train_model(args, model, optimizer, train_iter,
-                valid_iter, model_path, device, LOG):
+                valid_iter, device, LOG):
     beta = 0
-    current_step = args.use_epoch * args.train_nbatches
+    # current_step = args.use_epoch * args.train_nbatches
+    current_step = (args.start_epoch-1) * args.train_nbatches
 
-    for epoch in range(args.use_epoch+1, args.num_epoch+1):
+    for epoch in range(args.start_epoch, args.num_epoch+1):
         LOG.info(f'run epoch: {epoch}')
 
         LOG.info('KL anealing...')
@@ -174,12 +175,12 @@ def train_model(args, model, optimizer, train_iter,
         dataloader = get_dataloader(train_iter, args.conditions,
                                     args.pad_id, device)
         model.train()
-        train_his, avg_loss, current_step = run_epoch(
+        train_history, avg_loss, current_step = run_epoch(
             args, model, optimizer, dataloader, current_step,
             beta, args.train_nbatches, LOG, train=True
         )
-        df = pd.DataFrame(train_his)
-        df.to_csv(os.path.join(model_path, f'train_{epoch}.csv'))
+        df = pd.DataFrame(train_history)
+        df.to_csv(os.path.join(args.save_directory, f'train_{epoch}.csv'))
         
         LOG.info(f'training end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
@@ -195,18 +196,18 @@ def train_model(args, model, optimizer, train_iter,
                 beta, args.valid_nbatches, LOG, train=False
             )
         df = pd.DataFrame(valid_hist)
-        df.to_csv(os.path.join(model_path, f'valid_{epoch}.csv'))
+        df.to_csv(os.path.join(args.save_directory, f'valid_{epoch}.csv'))
         
         LOG.info(f'validation end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
         LOG.info(f'save model...')
-        save_path = os.path.join(args.model_path, f'model_{epoch}.pt')
-        save_checkpoint(args, model, optimizer, save_path)
+        model_path = os.path.join(args.save_directory, f'model_{epoch}.pt')
+        save_checkpoint(args, model, optimizer, model_path)
 
 
 def tf_train(args, logger):
-    os.makedirs(args.model_path, exist_ok=True)
+    os.makedirs(args.save_directory, exist_ok=True)
     
     data_path = os.path.join(args.data_path, 'aug',
                              f'data_tol{args.tolerance:.2f}')
@@ -214,7 +215,7 @@ def tf_train(args, logger):
     #                          f'data_tol{args.tolerance:.2f}_tiny')
 
     LOG = logger(name='augment data by conditions',
-                 log_path=os.path.join(args.model_path, "records.log"))
+                 log_path=os.path.join(args.save_directory, "records.log"))
 
     LOG.info('allocate GPU...')
     device = allocate_gpu()
@@ -257,7 +258,8 @@ def tf_train(args, logger):
     model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     model = model.to(device)
 
-    # freeze_params(model, train_names=['decoder', 'out'])
+    if args.train_params:
+        freeze_params(model, train_names=args.train_params)
 
     total_params = sum(p.numel() for p in model.parameters())
     train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -267,19 +269,21 @@ def tf_train(args, logger):
 
     LOG.info(f'Get optimizer...')
 
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
-    )
+    # optimizer = torch.optim.Adam(
+    #     filter(lambda p: p.requires_grad, model.parameters()),
+    #     lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+    # )
     
-    if args.use_epoch > 0:
-        cp_path = os.path.join(args.model_path,
-                               f'model_{args.use_epoch}.pt')
-        checkpoint = torch.load(cp_path, map_location='cuda:0')
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
+        betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+    )
+
+    if args.use_model_path and ('molgct.pt' not in args.use_model_path):
+        checkpoint = torch.load(args.use_model_path, map_location='cuda:0')
         optim_dict = checkpoint['opt_state_dict']
         optimizer.load_state_dict(optim_dict)
         
     LOG.info(f'train model...')
     
     train_model(args, model, optimizer, train_iter,
-                valid_iter, args.model_path, device, LOG)
+                valid_iter, device, LOG)

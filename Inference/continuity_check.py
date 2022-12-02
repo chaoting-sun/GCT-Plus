@@ -2,7 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-from rdkit.Chem import MolFromSmiles, MolToSmiles
+from torchtext import data
+from rdkit.Chem import MolFromSmiles
 from moses.metrics import SNNMetric
 from pathos.multiprocessing import ProcessingPool as Pool
 
@@ -11,10 +12,28 @@ from Utils.property import get_mol, get_smiles, property_prediction
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
 from Utils.property import props_predictor_wrapper
 from Utils.dataset import to_dataloader
-from torchtext import data
+from Inference.utils import augment_props, augment_z
 
 
-# pd.to_csv() -> pd.read_csv(.., index_col=[0])
+# def augment_props(n_samples, props, varId=None,
+#                   bound=None, std=None, toTensor=False):
+#     props = np.array(props).reshape((1,3))
+#     props = np.repeat(props, n_samples, axis=0)
+#     if std:
+#         props[:, varId] += np.random.normal(0, std, (n_samples,))
+#         for i in range(n_samples):
+#             props[i, varId] = min(props[i, varId], bound[1])
+#             props[i, varId] = max(props[i, varId], bound[0])     
+#     return props
+
+
+# def augment_z(n_samples, z, std=None):
+#     assert z.dim() == 3
+#     z = z.repeat(n_samples, 1, 1)
+#     if std:
+#         z += torch.empty_like(z).normal_(mean=0, std=std)
+#         return z
+#     return z
 
 
 def rand_z(n, toklen, latent_dim):
@@ -100,29 +119,6 @@ def get_z_points(toklen, latent_dim, folder, filename=("z1.pt", "z2.pt")):
 
 
 
-def augment_props(n_samples, props, varId=None,
-                  bound=None, std=None, toTensor=False):
-    props = np.array(props).reshape((1,3))
-    props = np.repeat(props, n_samples, axis=0)
-    if std:
-        props[:, varId] += np.random.normal(0, std, (n_samples,))
-        for i in range(n_samples):
-            props[i, varId] = min(props[i, varId], bound[1])
-            props[i, varId] = max(props[i, varId], bound[0])     
-    if toTensor:
-        return torch.Tensor(props)
-    return props
-
-
-def augment_z(n_samples, z, std=None):
-    assert z.dim() == 3
-    z = z.repeat(n_samples, 1, 1)
-    if std:
-        z += torch.empty_like(z).normal_(mean=0, std=std)
-        return z
-    return z
-
-
 def sample_smiles(z, props, n_samples, generator, zstd=None, pstd=None):
     assert z.dim() == 3
     
@@ -156,17 +152,17 @@ def property_from_smiles(smiles, props_predictor, n_jobs=1):
     return props
 
 
-def props_predictor_wrapper(predictor, conditions):
-    def props_predictor(smiles):
-        mol = MolFromSmiles(smiles)
-        if mol is not None:
-            valid = 1
-            props = [predictor[c](mol) for c in conditions]
-        else:
-            valid = 0
-            props = [np.nan]*len(conditions)
-        return valid, props
-    return props_predictor
+# def props_predictor_wrapper(predictor, conditions):
+#     def props_predictor(smiles):
+#         mol = MolFromSmiles(smiles)
+#         if mol is not None:
+#             valid = 1
+#             props = [predictor[c](mol) for c in conditions]
+#         else:
+#             valid = 0
+#             props = [np.nan]*len(conditions)
+#         return valid, props
+#     return props_predictor
 
 
 def percent_not_intersected(smis_groups):
@@ -294,15 +290,10 @@ def continuity_check_given_src(generator, smiles, trg_props, conditions,
             print(smiles[0])
 
 
-def continuity_check_on_conds(args, generator, train_smiles, logger):
+def continuity_check_on_conds(args, generator, train_smiles, save_folder, LOG):
     """Continuity check on the conditions
     Check if the conditions is continuous by sampling...
     """
-    save_folder = os.path.join(args.storage_path, f"toklen{args.toklen}")
-    os.makedirs(save_folder, exist_ok=True)
-
-    LOG = logger('continuity_check', log_path=os.path.join(save_folder, "records.log"))
-
     z = get_z_points(args.toklen, args.latent_dim, save_folder, ('z.pt',))[0]
     props_predictor = props_predictor_wrapper(property_prediction, args.conditions)
     logp_peak, tpsa_peak, qed_peak = args.properties
@@ -342,8 +333,13 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
             all_props.append(props)
             LOG.info(props)
 
-            props_t = augment_props(args.n_samples, props, propId,
-                                    bound[prop_name], pstd)
+            props = augment_props(args.n_samples, props,
+                                  bound[prop_name], propId, pstd)
+            # pstds = [0, 0, 0]
+            # pstds[propId] = pstd
+            # props = augment_props(args.n_samples, props, bound,
+            #                       [propId], pstds)
+            props_t = torch.Tensor(props)
             z_all = augment_z(args.n_samples, z)
             
             smiles = generator.sample_smiles(props_t, z_all, transform=True)[0]
@@ -383,7 +379,7 @@ def continuity_check_on_conds(args, generator, train_smiles, logger):
     generate("qed", qed_std, 2)
 
 
-def continuity_check_on_z(args, generator, train_smiles, logger):
+def continuity_check_on_z(args, generator, train_smiles, save_folder, LOG):
     """Continuity check for the latent space:
     Check if the latent space is continuous by sampling
     from several consecutive equal-spacing points between
@@ -394,21 +390,15 @@ def continuity_check_on_z(args, generator, train_smiles, logger):
     snn_start: snn between the first smiles group and the other ones. 
     snn_prev: snn between two consecutive smiles groups
     """
-        
-    save_folder = os.path.join(args.storage_path, f"toklen{args.toklen}")
-    os.makedirs(save_folder, exist_ok=True)
-
-    LOG = logger('continuity_check', log_path=os.path.join(save_folder, "records.log"))
 
     zs = get_z_points(args.toklen, args.latent_dim, save_folder)
     zs_vec = zs[1] - zs[0]
     zs_dist = distance(zs[1], zs[0])
     LOG.info(f"Distance between 2 zs: {zs_dist}")
 
-    props_predictor = props_predictor_wrapper(property_prediction, args.conditions)
-
-    props_t = np.reshape(np.array(args.properties), (1,3))
-    props_t = np.repeat(props_t, args.n_samples, axis=0)
+    calc_props = props_predictor_wrapper(property_prediction, args.conditions)
+    
+    props_t = augment_props(args.n_samples, args.properties)
     props_t = pd.DataFrame(props_t, columns=["logp_t","tpsa_t","qed_t"])
 
     std = (zs_dist / args.n_steps * 0.5) * 0.5
@@ -426,11 +416,11 @@ def continuity_check_on_z(args, generator, train_smiles, logger):
         z = zs[0] + (zs_vec / args.n_steps) * i
         smiles, _, _ = sample_smiles(z, args.properties, args.n_samples,
                                      generator, zstd=std)
+        props_p = property_from_smiles(smiles, calc_props, args.n_jobs)
         smiles = pd.DataFrame(smiles, columns=['smiles'])
-        props_p = property_from_smiles(smiles["smiles"], props_predictor, args.n_jobs)
         smiles_props = pd.concat([smiles, props_t, props_p], axis=1)
         smiles_props.to_csv(save_path)
-        LOG.info("check 5 SMILES: " + ",".join(smiles['smiles'].iloc[:5]))
+        LOG.info("check 5 SMILES:\n" + "\n".join(smiles['smiles'].iloc[:5]))
     
     if not os.path.exists(os.path.join(save_folder, "statistics.csv")):
         LOG.info("store metrics from smiles file...")
@@ -447,7 +437,7 @@ def continuity_check_on_z(args, generator, train_smiles, logger):
     LOG.info("compute error...")
     with open(os.path.join(save_folder, 'error.csv'), 'w') as ptr:
         for i in range(args.n_steps+1):
-            data_path = os.path.join(save_folder, f'z1z2_{args.n_steps}.csv')
+            data_path = os.path.join(save_folder, f'z1z2_{i}.csv')
             gen = pd.read_csv(data_path)
             all_metrics = get_all_metrics(gen, train_smiles, args.n_jobs)
             header, body = print_all_metrics(all_metrics)
@@ -455,19 +445,22 @@ def continuity_check_on_z(args, generator, train_smiles, logger):
                 ptr.write(header+'\n')
             ptr.write(body+'\n')
             
+
+def check_continuity(args, generator, train_smiles, logger):
+    save_folder = os.path.join(args.storage_path, f"check_{args.test_for}",
+                               f"toklen{args.toklen}", args.decode_algo)
+    os.makedirs(save_folder, exist_ok=True)
+ 
+    LOG = logger(f'continuity check on {args.test_for}',
+                 log_path=os.path.join(save_folder, "records.log"))
+
+    if args.test_for == "z":
+        continuity_check_on_z(args, generator, train_smiles, LOG)
+    elif args.test_for == "conds":
+        continuity_check_on_conds(args, generator, train_smiles, LOG)
+        
     
 
-
-# def compute_error_(save_folder, train_smiles, n_jobs, n_steps):
-#     with open(os.path.join(save_folder, 'error.csv'), 'w') as ptr:
-#         for i in range(n_steps+1):
-#             data_path = os.path.join(save_folder, f'z1z2_{n_steps}.pt')
-#             gen = pd.read_csv(data_path)
-#             header, body = get_all_metrics(gen, train_smiles, n_jobs)
-#             if i == 0:
-#                 ptr.write(header+'\n')
-#             ptr.write(body+'\n')
-    
 
 def store_metrics_of_transvae_gen_smiles(zs_dist, n_steps, n_jobs):
     """Validation on Transvae:

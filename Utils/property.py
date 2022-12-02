@@ -93,6 +93,14 @@ def is_valid(smi):
     return 1 if to_mol(smi) else 0
 
 
+def predict_props(smiles, conditions=['logP', 'tPSA', 'QED']):
+    mol = MolFromSmiles(smiles)
+    if mol:
+        return [property_prediction[c](mol) 
+                for c in conditions]
+    return [np.nan]*3
+
+
 def props_predictor_wrapper(conditions):
     def props_predictor(smiles):
         mol = MolFromSmiles(smiles)

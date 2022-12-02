@@ -15,7 +15,7 @@ def model_opts(parser):
     parser.add_argument('-variational', type=bool, default=True) # should be removed later
 
 
-def props_opts(parser):
+def prop_opts(parser):
     # hard constraints
     parser.add_argument('-logp_lb', type=float, default=0.03)
     parser.add_argument('-logp_ub', type=float, default=4.97)
@@ -27,7 +27,7 @@ def props_opts(parser):
 
 def hard_constraints_opts(parser):
     model_opts(parser) # model-size options
-    props_opts(parser)  # property options
+    prop_opts(parser)  # property options
     
     parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/')
     parser.add_argument('-nconds', type=int, default=3)
@@ -62,14 +62,14 @@ def options(parser):
 def train_opts(parser):
     parent_parser = argparse.ArgumentParser(add_help=False)
 
-    """KL Annealing"""
+    """ KL Annealing """
     parent_parser.add_argument('-use_KLA', type=bool, default=True)
     parent_parser.add_argument('-KLA_ini_beta', type=float, default=0.02)
     parent_parser.add_argument('-KLA_inc_beta', type=float, default=0.02)
     parent_parser.add_argument('-KLA_max_beta', type=float, default=1.0)
     parent_parser.add_argument('-KLA_beg_epoch', type=int, default=1) # KL annealing begin
 
-    """Optimization Tasks"""
+    """ Optimization Tasks """
     parent_parser.add_argument('-lr_scheduler', type=str, default="WarmUpDefault", help="WarmUpDefault, SGDR")
     parent_parser.add_argument('-lr_WarmUpSteps', type=int, default=8000, help="only for WarmUpDefault")
     parent_parser.add_argument('-lr', type=float, default=0.0001)
@@ -77,18 +77,36 @@ def train_opts(parser):
     parent_parser.add_argument('-lr_beta2', type=float, default=0.98)
     parent_parser.add_argument('-lr_eps', type=float, default=1e-9)
 
-    """Others"""
+    # """ KL Divergence """
+    # parent_parser.add_argument('-kl_beta_init', type=float, default=1e-8)
+    # parent_parser.add_argument('-kl_beta', type=float, default=1)
+    # parent_parser.add_argument('-kl_cycle', type=int, default=10)
+    
+    # """ Optimization Tasks """
+    # parent_parser.add_argument('--factor', type=float, default=1.0, help="see https://arxiv.org/pdf/1706.03762.pdf")
+    # parent_parser.add_argument('-warmup_steps', type=int, default=4000, help="Number of warmup steps for custom decay.")
+    # parent_parser.add_argument('-adam_beta1', type=float, default=0.9, help="The beta1 parameter for Adam optimizer")
+    # parent_parser.add_argument('-adam_beta2', type=float, default=0.98, help="The beta2 parameter for Adam optimizer")
+    # parent_parser.add_argument('-adam_eps', type=float, default=1e-9, help="The eps parameter for Adam optimizer")
+
+    """ Others """
     parent_parser.add_argument('-save_directory', type=str, required=True)
     parent_parser.add_argument('-start_epoch', type=int)
     parent_parser.add_argument('-train_params', nargs='+')
 
-    """First-Stage Training"""
+    """
+    First-Stage Training
+    """
     train1_parser = parser.add_parser('train-1st', parents=[parent_parser])
     train1_parser.add_argument('-train_stage', type=int, default=1)
     train1_parser.add_argument('-batch_size', type=int, default=256, help='Batch size for training')
     train1_parser.add_argument('-num_epoch', type=int, default=30, help='Number of training steps')
 
-    """Second-Stage Training"""
+    # train1_parser.add_argument('-start_epoch', type=int, default=1, help="Starting epoch for training") -> use "use_epoch"
+
+    """
+    Second-Stage Training
+    """
     train2_parser = parser.add_parser('train-2nd', parents=[parent_parser])
     train2_parser.add_argument('-train_stage', type=int, default=2)
     # parser.add_argument('-loss_fcn', type=str, default='mse', help="the loss function during training phase")

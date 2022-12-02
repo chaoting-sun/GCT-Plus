@@ -46,7 +46,7 @@ FROM_MOLGCT=False
 # > train from scratch
 # > original data
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python3 -u \
     train.py \
         -tolerance 0.00 \
         -n_jobs 2 \
@@ -56,7 +56,7 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
     train-1st \
         -batch_size 128 \
         -num_epoch 40 \
-    >train_transformer_fromScratch_ori.out 2>&1 &
+    # >train_transformer_fromScratch_ori.out 2>&1 &
 
 
 # CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
