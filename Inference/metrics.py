@@ -94,42 +94,42 @@ def get_all_metrics(gen, train_smiles, n_jobs):
 
 
 def print_all_metrics(metrics):
-    header = 'valid\tunique\tnovel\tintDiv\t' \
-             'logpMAE\ttpsaMAE\tqedMAE\t'     \
-             'logpMSE\ttpsaMSE\tqedMSE\t'     \
-             'logpMAX\ttpsaMAX\tqedMAX\t'     \
-             'logpMIN\ttpsaMIN\tqedMIN\t'     \
-             'logpAARD\ttpsaAARD\tqedAARD\t'  \
-             'logpAMSD\ttpsaAMSD\tqedAMSD'
+    header = 'valid,unique,novel,intDiv,'  \
+             'logpMAE,tpsaMAE,qedMAE,'     \
+             'logpMSE,tpsaMSE,qedMSE,'     \
+             'logpMAX,tpsaMAX,qedMAX,'     \
+             'logpMIN,tpsaMIN,qedMIN,'     \
+             'logpAARD,tpsaAARD,qedAARD,'  \
+             'logpAMSD,tpsaAMSD,qedAMSD'
 
-    body = f"{metrics['valid']:.4f}\t"   \
-           f"{metrics['unique']:.4f}\t"  \
-           f"{metrics['novel']:.4f}\t"   \
-           f"{metrics['intDiv']:.4f}\t"  \
+    body = f"{metrics['valid']:.4f},"   \
+           f"{metrics['unique']:.4f},"  \
+           f"{metrics['novel']:.4f},"   \
+           f"{metrics['intDiv']:.4f},"  \
         \
-           f"{metrics['logpErr']['mae']:.4f}\t"  \
-           f"{metrics['tpsaErr']['mae']:.4f}\t"  \
-           f"{metrics['qedErr']['mae']:.4f}\t"   \
+           f"{metrics['logpErr']['mae']:.4f},"  \
+           f"{metrics['tpsaErr']['mae']:.4f},"  \
+           f"{metrics['qedErr']['mae']:.4f},"   \
         \
-           f"{metrics['logpErr']['mse']:.4f}\t"  \
-           f"{metrics['tpsaErr']['mse']:.4f}\t"  \
-           f"{metrics['qedErr']['mse']:.4f}\t"   \
+           f"{metrics['logpErr']['mse']:.4f},"  \
+           f"{metrics['tpsaErr']['mse']:.4f},"  \
+           f"{metrics['qedErr']['mse']:.4f},"   \
         \
-           f"{metrics['logpErr']['max']:.4f}\t"  \
-           f"{metrics['tpsaErr']['max']:.4f}\t"  \
-           f"{metrics['qedErr']['max']:.4f}\t"   \
+           f"{metrics['logpErr']['max']:.4f},"  \
+           f"{metrics['tpsaErr']['max']:.4f},"  \
+           f"{metrics['qedErr']['max']:.4f},"   \
         \
-           f"{metrics['logpErr']['min']:.4f}\t"  \
-           f"{metrics['tpsaErr']['min']:.4f}\t"  \
-           f"{metrics['qedErr']['min']:.4f}\t"   \
+           f"{metrics['logpErr']['min']:.4f},"  \
+           f"{metrics['tpsaErr']['min']:.4f},"  \
+           f"{metrics['qedErr']['min']:.4f},"   \
         \
-           f"{metrics['logpErr']['aard']:.4f}\t"  \
-           f"{metrics['tpsaErr']['aard']:.4f}\t"  \
-           f"{metrics['qedErr']['aard']:.4f}\t"   \
+           f"{metrics['logpErr']['aard']:.4f}," \
+           f"{metrics['tpsaErr']['aard']:.4f}," \
+           f"{metrics['qedErr']['aard']:.4f},"  \
         \
-           f"{metrics['logpErr']['amsd']:.4f}\t"  \
-           f"{metrics['tpsaErr']['amsd']:.4f}\t"  \
-           f"{metrics['qedErr']['amsd']:.4f}"     \
+           f"{metrics['logpErr']['amsd']:.4f}," \
+           f"{metrics['tpsaErr']['amsd']:.4f}," \
+           f"{metrics['qedErr']['amsd']:.4f}"   \
 
     return header, body
 

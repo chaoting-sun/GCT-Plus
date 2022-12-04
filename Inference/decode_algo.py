@@ -382,25 +382,25 @@ class NewBeamSearch(Sampling):
         # handle z
         if z is None:
             z, toklen = self.sample_z_from_data(n=dconds.size(0))
-        else:
-            toklen = [z[i].size(1) for i in range(len(z))]
+
         # sample smiles
-        smiles, toklen_gen = [], []
+        smiles, toklen_gen, toklen = [], [], []
 
         t = -time()
         for i in range(len(z)):
             z_in = z[i].to(self.device)
             props_in = dconds[i].to(self.device)
-
+            
             if z_in.dim() == 2:
                 z_in = torch.unsqueeze(z_in, 0)
             if props_in.dim() == 1:
                 props_in = torch.unsqueeze(props_in, 0)
 
-            smi = self.beam_search(props_in, toklen[i], z_in)
+            toklen.append(z_in.size(1))
+            smi = self.beam_search(props_in, toklen[-1], z_in)
             smiles.append(smi)
             toklen_gen.append(len(smi))
-            # print(f"({i}) {t + time():.2f}", smi)
+            print(f"({i}) {t + time():.2f}", smi)
         return smiles, toklen_gen, toklen
     
     def sequence_length_penalty(self, length):

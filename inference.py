@@ -16,7 +16,7 @@ from Inference.decode_algo import MultinomialSearch, BeamSearch, NewBeamSearch
 from Inference.uniform_generation import uniform_generation
 from Inference.generate_z import generate_z
 from Inference.varying_z_generate import varying_z_generate
-from Inference.continuity_check import continuity_check_on_z, continuity_check_on_conds
+from Inference.continuity_check import continuity_check
 from Inference.atten_generate import atten_generate
 
 
@@ -43,10 +43,10 @@ def get_smiles_generator(predictor, decode_algo, latent_dim,
 
 def get_logger(args):
     def logger(name, log_path):
-        try:
-            os.remove(log_path)
-        except FileNotFoundError:
-            pass
+        # try:
+        #     os.remove(log_path)
+        # except FileNotFoundError:
+        #     pass
         logger = ul.get_logger(name=name, log_path=log_path)
         logger.info(args)
         return logger
@@ -123,11 +123,7 @@ if __name__ == "__main__":
     if hasattr(args, 'continuity_check'):
         # no source smiles. Don't know how to extend "has_source"
         print("[PURPOSE] Check the continuity property...")
-
-        if args.test_for == "z":
-            continuity_check_on_z(args, generator, train_smiles, logger=logger)
-        elif args.test_for == "conds":
-            continuity_check_on_conds(args, generator, train_smiles, logger)
+        continuity_check(args, generator, train_smiles, logger=logger)
 
     elif hasattr(args, 'self_attention'):
         print("[PURPOSE] Run Transformer with self-attention...")

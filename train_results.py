@@ -17,6 +17,7 @@ def get_train_results(model_path, begin_epoch, end_epoch):
     print('model path:', model_path)
     
     def data_results(data_name):
+        print(f'{data_name}')
         rce, kld, loss = [], [], []
         for i in range(begin_epoch, end_epoch+1):
             data = pd.read_csv(os.path.join(model_path, 
@@ -24,7 +25,7 @@ def get_train_results(model_path, begin_epoch, end_epoch):
             rce.append(data['RCE'].mean())
             kld.append(data['KLD'].mean())
             loss.append(data['LOSS'].mean())
-            print(f'({i}) rce: {rce[-1]:.2f}, kld: {kld[-1]:.2f}, loss: {loss[-1]:.2f}')
+            print(f'{i}\trce: {rce[-1]:.2f}\tkld: {kld[-1]:.2f}\tloss: {loss[-1]:.2f}')
         return rce, kld, loss
 
     train_rce, train_kld, train_loss = data_results('train')
@@ -32,8 +33,8 @@ def get_train_results(model_path, begin_epoch, end_epoch):
 
     data_loss = pd.DataFrame({
         '# Epoch': [i for i in range(begin_epoch, end_epoch+1)],
-        'train RCE': train_rce, 'valid RCE': valid_rce,
-        'train KLD': train_kld, 'valid KLD': valid_kld,
+        'train RCE' : train_rce,  'valid RCE' : valid_rce,
+        'train KLD' : train_kld,  'valid KLD' : valid_kld,
         'train LOSS': train_loss, 'valid LOSS': valid_loss,
     })
     
