@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     if args.model_type == 'mlp':
         mlp_train(args, debug=DEBUG)
-
+        
     elif args.model_type == 'transformer':
         tf_train(args, logger=logger)
 

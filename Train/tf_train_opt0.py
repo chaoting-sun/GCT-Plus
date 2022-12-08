@@ -8,11 +8,11 @@ import pandas as pd
 from torchtext import data
 import torch.nn.functional as F
 
+from Model.build_model import build_model, freeze_params, get_model
 from Utils import allocate_gpu, save_fields
 from Utils.field import get_tf_fields
 from Utils.dataset import get_dataloader
 from Model.modules import create_source_mask, create_target_mask
-from Model.build_model import build_model, freeze_params, get_model
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -97,7 +97,7 @@ def run_epoch(args, model, optimizer, dataloader,
 
         update_cost_time += time()
 
-        if args.optimizer_choice == 'original' and args.lr_scheduler == "WarmUpDefault":
+        if args.lr_scheduler == "WarmUpDefault":
             k1, k2, k3 = 0.5, 1.5, 0.5 # original
             # k1, k2, k3 = 0.6, 1.6, 0.5 # train decoder & out
             head = np.float(np.power(np.float(current_step), -k1))
@@ -106,7 +106,7 @@ def run_epoch(args, model, optimizer, dataloader,
             lr = np.float(np.power(np.float(args.d_model), -k3)) * \
                  min(head, tail)
 
-        if args.optimizer_choice == 'original' and train:
+        if train:
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
 
@@ -273,24 +273,16 @@ def tf_train(args, logger):
     #     filter(lambda p: p.requires_grad, model.parameters()),
     #     lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
     # )
-        
-    if args.optimizer_choice == 'sgd':
-        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
-    elif args.optimizer_choice == 'rmsprop':
-        optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
-    elif args.optimizer_choice == 'adagrad':
-        optimizer = torch.optim.Adagrad(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
-    elif args.optimizer_choice == 'adam' or args.optimizer_choice == 'original':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
-            betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
-        )
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
+        betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+    )
 
-    if args.optimizer_choice == 'original':
-        # if args.use_model_path and ('molgct.pt' not in args.use_model_path):
-        checkpoint = torch.load(args.use_model_path, map_location='cuda:0')
-        optim_dict = checkpoint['opt_state_dict']
-        optimizer.load_state_dict(optim_dict)
-            
+    # if args.use_model_path and ('molgct.pt' not in args.use_model_path):
+    #     checkpoint = torch.load(args.use_model_path, map_location='cuda:0')
+    #     optim_dict = checkpoint['opt_state_dict']
+    #     optimizer.load_state_dict(optim_dict)
+        
     LOG.info(f'train model...')
     
     train_model(args, model, optimizer, train_iter,

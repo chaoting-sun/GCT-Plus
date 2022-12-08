@@ -45,7 +45,7 @@
 
 python3 -u \
     preprocess.py \
-        -tolerance 0.00 \
+        -tolerance 0.01 \
         -n_jobs 4 \
     # >preprocess_${SIMILARITY}.out 2>preprocess_${SIMILARITY}.err&
 

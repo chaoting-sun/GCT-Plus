@@ -1,9 +1,11 @@
 import os
+import swifter
 import numpy as np
 import pandas as pd
 from time import time
 from datetime import timedelta
 from Utils.property import tanimoto_similarity
+import matplotlib.pyplot as plt
 
 
 def debug(smiles, props, similar_pairs, input_data, 
@@ -38,6 +40,28 @@ def debug(smiles, props, similar_pairs, input_data,
         assert (prop2.values == prop2_ori.values).any()
 
 
+def plot_similarity(args, aug_path):
+    print('plot similarity...')
+    data_path = os.path.join(aug_path, f'data_tol{args.tolerance}')
+    df = pd.read_csv(os.path.join(data_path, 'validation.csv'))
+    df = df.loc[df.src_no != df.trg_no]
+    
+    # df['similarity'] = calc_similarity(df['src'].to_numpy(),
+    #                                    df['trg'].to_numpy())
+    df = df[:10000]
+    df['similarity'] = df.apply(lambda r: tanimoto_similarity(r['src'], r['trg']), axis=1)
+    print(df)
+
+    df_low = df.loc[df.similarity < 0.5]
+    print(df_low['src'].iloc[10], df_low['trg'].iloc[10])
+
+    plt.figure(figsize=(10,8))
+    df['similarity'].plot.kde(bw_method=0.2)
+    plt.savefig('./sim.png')
+    
+    exit()
+    
+
 def find_similar_pairs(props, conds, tols):
     props = props.sort_values(by=conds[0])
     similar_pairs = []
@@ -53,7 +77,6 @@ def find_similar_pairs(props, conds, tols):
                 break
             no1, no2 = props.index[id1], props.index[id2]
             similar_pairs.append((no1, no2))
-            break # to be removed
             if no1 != no2:
                 similar_pairs.append((no2, no1))
             id2 += 1
@@ -129,5 +152,3 @@ def cond_augmentation(args, raw_path, aug_path, rescaler, logger=None, DEBUG=Fal
                 rescaler, args.conditions, [tolP1, tolP2, tolP3])
         
         input_data.to_csv(input_path, index=False)
-
-        

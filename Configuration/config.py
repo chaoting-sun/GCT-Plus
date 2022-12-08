@@ -45,6 +45,8 @@ def soft_constraints_opts(parser):
     parser.add_argument('-tolerance', type=float, default=0.01)
     parser.add_argument('-n_jobs', type=int, default=1)
     parser.add_argument('-use_model_path', type=str)
+    parser.add_argument('-uninit_optimizer', action='store_true')
+    parser.add_argument('-optimizer_choice', default='original', choices=['sgd', 'rmsprop', 'adagrad', 'adam', 'original'])
 
 
 def options(parser):

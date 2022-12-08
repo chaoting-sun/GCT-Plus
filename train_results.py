@@ -32,7 +32,7 @@ def get_train_results(model_path, begin_epoch, end_epoch):
     valid_rce, valid_kld, valid_loss = data_results('valid')
 
     data_loss = pd.DataFrame({
-        '# Epoch': [i for i in range(begin_epoch, end_epoch+1)],
+        '# Epoch'   : [i for i in range(begin_epoch, end_epoch+1)],
         'train RCE' : train_rce,  'valid RCE' : valid_rce,
         'train KLD' : train_kld,  'valid KLD' : valid_kld,
         'train LOSS': train_loss, 'valid LOSS': valid_loss,
@@ -43,12 +43,17 @@ def get_train_results(model_path, begin_epoch, end_epoch):
     
 def plot(epoch, loss, name_list,
          title_name, lengend_name, save_path):
-    plt.figure(figsize=(10, 8))
-    plt.scatter(x=epoch, y=loss[name_list[0]], label=name_list[0], color='green')
-    plt.scatter(x=epoch, y=loss[name_list[1]], label=name_list[1], color='steelblue')
-    plt.scatter(x=epoch, y=loss[name_list[2]], label=name_list[2], color='purple')
+    plt.figure(figsize=(8, 6.5))
+    
+    # plt.scatter(x=epoch, y=loss[name_list[0]], label=name_list[0], color='green')
+    # plt.scatter(x=epoch, y=loss[name_list[1]], label=name_list[1], color='steelblue')
+    # plt.scatter(x=epoch, y=loss[name_list[2]], label=name_list[2], color='purple')
 
-    plt.legend(title=title_name)
+    plt.plot(epoch, loss[name_list[0]], label=name_list[0], linestyle='-', marker='X', color='#c42f2f', markersize=7)
+    plt.plot(epoch, loss[name_list[1]], label=name_list[1], linestyle='-.', marker='D', color='#31733b', markersize=7)
+    plt.plot(epoch, loss[name_list[2]], label=name_list[2], linestyle=':', marker='o', color='#4f6482', markersize=7)
+
+    plt.legend()
     
     plt.xlabel('# Epoch', fontsize=14)
     plt.ylabel('Loss', fontsize=14)
@@ -76,9 +81,39 @@ def plot_results(model_folder, begin_epoch, end_epoch):
          )
     
     
+def plot_train_results(model_folder, begin_epoch, end_epoch):
+    data_loss = get_train_results(model_folder, begin_epoch, end_epoch)
+
+    plt.figure(figsize=(7.5, 6))
+    
+    plt.plot(data_loss['# Epoch'], data_loss['train RCE'], 
+             label='train RCE', linestyle='-', marker='^', color='#3c28ed', markersize=5)
+    plt.plot(data_loss['# Epoch'], data_loss['train KLD'], 
+             label='train KLD', linestyle='-', marker='x', color='#3c28ed', markersize=5)
+
+    plt.plot(data_loss['# Epoch'], data_loss['valid RCE'], 
+             label='valid RCE', linestyle='-', marker='^', color='#29dff0', markersize=5)
+    plt.plot(data_loss['# Epoch'], data_loss['valid KLD'], 
+             label='valid KLD', linestyle='-.', marker='x', color='#29dff0', markersize=5)
+
+    plt.legend()
+    
+    plt.title('Training/Validation Loss', fontsize=19)
+    plt.xlabel('# Epoch', fontsize=17)
+    plt.ylabel('Loss', fontsize=17)
+    plt.xticks(fontsize=16.5)
+    plt.yticks(fontsize=16.5)
+    plt.legend(fontsize=16)
+    
+    plt.savefig(os.path.join(model_folder, 'train_loss.png'))
+
+    
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     options(parser)
     args = parser.parse_args()
+    
+    plot_train_results(args.model_folder, args.begin_epoch, args.end_epoch)
 
-    plot_results(args.model_folder, args.begin_epoch, args.end_epoch)
+    # plot_results(args.model_folder, args.begin_epoch, args.end_epoch)

@@ -133,7 +133,7 @@ def save_metrics(target_props, save_path, train_smiles, n_jobs):
 
 
 def uniform_generation(args, sampler, train_smiles, logger):
-    save_folder = os.path.join(args.storage_path, "uniform_generation")
+    save_folder = os.path.join(args.storage_path, "uniform_generation", args.decode_algo)
     os.makedirs(save_folder, exist_ok=True)
 
     log_path = os.path.join(save_folder, "record.log")
@@ -145,7 +145,7 @@ def uniform_generation(args, sampler, train_smiles, logger):
     props_bounds = {
         "logp": [args.logp_lb, args.logp_ub],
         "tpsa": [args.tpsa_lb, args.tpsa_ub],
-        "qed":  [args.qed_lb, args.qed_ub]
+        "qed" : [args.qed_lb,   args.qed_ub]
     }
 
     target_props = np.array(np.meshgrid(

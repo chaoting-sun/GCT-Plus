@@ -142,22 +142,41 @@ class MultinomialSearch(Sampling):
             conds = self.scaler_transform(conds)
         conds = conds.to(self.device)
 
-        if z is not None:
-            toklen = z.size(1)
+        if z is None:
+            z, _ = self.sample_z_from_data()
+        
+        toklen_gen, toklen, sequence = [], [], []
+        
+        if isinstance(z, torch.Tensor):
+            toklen = [z.size(1) for i in range(len(z))]
             z = z.to(self.device)
+            src_mask = (torch.ones(conds.size(0), 1, toklen[0]) !=
+                0).to(self.device)  # (bs,1,nc+src_smi)
+            sequence = self.decode(z, conds, src_mask)
+            sequence = sequence.cpu().numpy()            
         else:
-            z, toklen = self.sample_z_from_data()
-            # toklen = z.size(1)
+            for i in range(len(z)):
+                z_in = z[i].to(self.device)
+                props_in = conds[i].to(self.device)
+                toklen.append(z_in.size(1))
 
-        src_mask = (torch.ones(conds.size(0), 1, toklen) !=
+                if z_in.dim() == 2:
+                    z_in = torch.unsqueeze(z_in, 0)
+                if props_in.dim() == 1:
+                    props_in = torch.unsqueeze(props_in, 0)
+                src_mask = (torch.ones(1, 1, toklen[-1]) !=
                     0).to(self.device)  # (bs,1,nc+src_smi)
-        sequence = self.decode(z, conds, src_mask)
-        sequence = sequence.cpu().numpy()
+                                
+                seq = self.decode(z_in, props_in, src_mask)
+                sequence.append(seq.cpu().numpy()[0])
+                print(f'{i} seq:', seq)
 
         smiles = []
         for i in range(conds.size(0)):
-            smiles.append(self.seq_to_smiles(sequence[i]))
-        toklen_gen = len(smiles)
+            smi = self.seq_to_smiles(sequence[i])
+            smiles.append(smi)
+            toklen_gen.append(len(smi))
+            
         return smiles, toklen_gen, toklen
 
 
@@ -381,7 +400,7 @@ class NewBeamSearch(Sampling):
         assert dconds.dim() == 2
         # handle z
         if z is None:
-            z, toklen = self.sample_z_from_data(n=dconds.size(0))
+            z, _ = self.sample_z_from_data(n=dconds.size(0))
 
         # sample smiles
         smiles, toklen_gen, toklen = [], [], []

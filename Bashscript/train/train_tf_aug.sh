@@ -38,11 +38,11 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -model_type transformer \
         -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_${USE_EPOCH}.pt \
     train-1st \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer-ep${USE_EPOCH}_all_aug \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer-ep${USE_EPOCH}_aug-decoderout \
         -start_epoch $((${USE_EPOCH}+1)) \
         -batch_size 128 \
         -num_epoch ${N_EPOCH} \
-    >train_tf-ep${USE_EPOCH}_all_aug_tol${TOLERENCE}.out 2>&1 &
+    >transformer-ep${USE_EPOCH}_aug-decoderout.out 2>&1 &
 
 
 ### train an untrained transformer

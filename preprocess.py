@@ -11,7 +11,7 @@ import joblib
 
 from Preprocess.preprocess import preprocess
 from Preprocess.mlp_preprocess import mlp_preprocess
-from Preprocess.cond_augmentation import cond_augmentation
+from Preprocess.cond_augmentation import cond_augmentation, plot_similarity
 from Configuration.config import options
 from Utils.scaler import get_scaler
 from Utils.log import get_logger as gl
@@ -53,6 +53,8 @@ if __name__ == "__main__":
 
     raw_path = os.path.join(args.data_path, 'raw')
     aug_path = os.path.join(args.data_path, 'aug')
+
+    plot_similarity(args, aug_path)
 
     rescaler = props_rescaler(os.path.join(args.molgct_path, 'scaler.pkl'))
     cond_augmentation(args, raw_path, aug_path, rescaler, logger=logger)
