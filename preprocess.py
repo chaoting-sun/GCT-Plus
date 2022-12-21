@@ -11,8 +11,8 @@ import joblib
 
 from Preprocess.preprocess import preprocess
 from Preprocess.mlp_preprocess import mlp_preprocess
-from Preprocess.cond_augmentation import cond_augmentation, plot_similarity
-from Configuration.config import options
+from Preprocess.data_augmentation import data_augmentation, plot_similarity
+from Configuration.config import options 
 from Utils.scaler import get_scaler
 from Utils.log import get_logger as gl
 from Utils.seed import set_seed
@@ -54,10 +54,9 @@ if __name__ == "__main__":
     raw_path = os.path.join(args.data_path, 'raw')
     aug_path = os.path.join(args.data_path, 'aug')
 
-    plot_similarity(args, aug_path)
-
     rescaler = props_rescaler(os.path.join(args.molgct_path, 'scaler.pkl'))
-    cond_augmentation(args, raw_path, aug_path, rescaler, logger=logger)
+    data_augmentation(args, 'train', raw_path, aug_path, rescaler, logger)
+    data_augmentation(args, 'validation', raw_path, aug_path, rescaler, logger)
 
 
     # if args.model_type == 'mlp':

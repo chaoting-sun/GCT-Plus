@@ -1,13 +1,13 @@
 #!/usr/bin/env bash 
 
 ################ SETTINGS ################
-
-MODEL_TYPE=transformer
-GPU_IDX=2
-BATCH_SIZE=128
-NUM_EPOCH=40
-START_EPOCH=1
-FROM_MOLGCT=False
+    
+# MODEL_TYPE=transformer
+# GPU_IDX=2
+# BATCH_SIZE=128
+# NUM_EPOCH=40
+# START_EPOCH=1
+# FROM_MOLGCT=False
 
 ###########################################
 
@@ -46,44 +46,29 @@ FROM_MOLGCT=False
 # > train from scratch
 # > original data
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python3 -u \
-    train.py \
-        -tolerance 0.00 \
-        -n_jobs 2 \
-        -model_type transformer \
-        -model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/train_transformer_fromScratch_ori \
-        -use_epoch 0 \
-    train-1st \
-        -batch_size 128 \
-        -num_epoch 40 \
-    # >train_transformer_fromScratch_ori.out 2>&1 &
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     train.py \
+#         -tolerance 0.20  \
+#         -similarity 0.00 \
+#         -n_jobs 4 \
+#         -model_type transformer \
+#     train-1st \
+#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer3 \
+#         -batch_size 128 \
+#         -start_epoch 1 \
+#         -num_epoch 30 \
+#     >train_transformer3.out 2>&1 &
 
 
-# CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-#                                               train.py -n_jobs 2 -variational -verbose \
-#                                               training --train_verbose >train_test.out 2>train_test.err&
+GPU_IDX=3
+TOLERANCE=0.10
+SIMILARITY=0.50
 
-
-##########################################
-########### Multi-GPU Training ###########
-##########################################
-
-# export NGPUs=2
-
-##### multiple GPUs on a single node #####
-# https://pytorch.org/docs/master/elastic/run.html#transitioning-from-torch-distributed-launch-to-torchrun
-
-# CUDA_VISIBLE_DEVICES=1,2 torchrun \
-#                          --standalone --nnodes 1 --nproc_per_node=2 \
-#                          train.py -n_jobs 2 -variational -verbose \
-#                          training --train_verbose \
-                        #  >train_test.out 2>train_test.err&
-                         
-
-##### multiple GPUs on multiple nodes #####
-
-# python3 -m torch.distributed.launch --nproc_per_node=2 --nnodes=2 --node_rank=0 \
-#                          train.py -n_jobs 2 -variational -verbose \
-#                          training --train_verbose \
-#                          >train_test.out 2>train_test.err&
-# 2 nodes are both in the 0th node.
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+    train.py                        \
+        -tolerance    ${TOLERANCE}  \
+        -similarity   ${SIMILARITY} \
+        -start_epoch  1             \
+        -num_epoch    30            \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_aug-s${SIMILARITY}-t${TOLERANCE}/   \
+    >>train_aug_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &

@@ -5,8 +5,8 @@ import torch.nn.functional as F
 
 class Predictor(object):
     def __init__(self, use_cond2dec, decoder, encoder):
-        self.decoder = decoder
         self.use_cond2dec = use_cond2dec
+        self.decoder = decoder
         self.encoder = encoder
     
     def encode(self, src, econds, src_mask):

@@ -2,7 +2,7 @@ import argparse
 
 
 def model_opts(parser):
-    # soft constraints
+    # hard constraints
     parser.add_argument('-model_type', type=str, default='transformer')
     parser.add_argument('-N', type=int, default=6, help="# of encoder/decoder")
     parser.add_argument('-d_model', type=int, default=512, help="embedding dimension")
@@ -30,12 +30,14 @@ def hard_constraints_opts(parser):
     props_opts(parser)  # property options
     
     parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/')
+    parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/')
+    parser.add_argument('-molgct_path', type=str, default='/fileserver-gamma/chaoting/ML/molGCT/')
+
     parser.add_argument('-nconds', type=int, default=3)
     parser.add_argument('-conditions', nargs='+', default=['logP', 'tPSA', 'QED'])
     parser.add_argument('-max_strlen', type=int, default=80)
     parser.add_argument('-lang_format', type=str, default='SMILES')
     parser.add_argument('-data_name', type=str, default='moses')
-    parser.add_argument('-molgct_path', type=str, default='/fileserver-gamma/chaoting/ML/molGCT/')
     parser.add_argument('-load_field', type=bool, default=True)
     parser.add_argument('-load_scaler', type=bool, default=True)
 

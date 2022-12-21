@@ -174,35 +174,6 @@ def get_dataloader(data_iter, conds, pad_idx, device):
 #     return dataloader, nbatches
 
 
-def adapter(python_type):
-    # adapt the Python type into an SQLite type
-    out = io.BytesIO()
-    np.save(out, python_type)
-    return sqlite3.Binary(out.getvalue())
-
-
-def converter(sqlite_object):
-    # convert SQLite objects into a Python object
-    return np.load(io.BytesIO(sqlite_object))
-
-
-def sqlite_initialize(db_filepath):
-    sqlite3.register_adapter(np.ndarray, adapter)
-    sqlite3.register_converter("array", converter)
-    con = sqlite3.connect(db_filepath, detect_types=sqlite3.PARSE_DECLTYPES)
-    cur = con.cursor()
-    # cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-    # cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx integer, arr array)")
-    cur.execute("PRAGMA cache_size = -163840") # kb
-    # cur.execute("PRAGMA journal_mode = OFF")
-    # cur.execute("PRAGMA synchronous = 0")
-    # cur.execute("PRAGMA locking_mode = EXCLUSIVE")
-    return con, cur
-
-
-
-
-
 @Chrono
 def torch_load(file_path):
     tensor = torch.load(file_path)

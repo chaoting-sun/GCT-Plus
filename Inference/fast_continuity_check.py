@@ -11,30 +11,34 @@ from Utils.property import get_mol, get_smiles
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
 from Utils.property import predict_props
 from Utils.dataset import to_dataloader
+from Model.build_model import get_model
+from Inference.model_prediction import Predictor
+from Inference.utils import prepare_generator
 
 
 class ContinuityCheck:
     def __init__(self, args, generator, train_smiles, LOG):
-        self.LOG = LOG
-        self.n_jobs = args.n_jobs
-        self.toklen = args.toklen
-        self.latent_dim = args.latent_dim
-        self.generator = generator
+        self.LOG          = LOG
+        self.n_jobs       = args.n_jobs
+        self.toklen       = args.toklen
+        self.latent_dim   = args.latent_dim
+        self.generator    = generator
         self.train_smiles = train_smiles
 
-        self.props = args.conditions
-        self.props_peak = args.properties
-        self.props_bound = { "logP": [args.logp_lb, args.logp_ub],
-                             "tPSA": [args.tpsa_lb, args.tpsa_ub],
-                             "QED" : [args.qed_lb,  args.qed_ub ]
+        self.props        = args.conditions
+        self.props_peak   = args.properties
+        self.props_bound  = { "logP": [args.logp_lb, args.logp_ub],
+                              "tPSA": [args.tpsa_lb, args.tpsa_ub],
+                              "QED" : [args.qed_lb,  args.qed_ub ]
                              }
-        self.props_std = { "logP": 0.15,
-                           "tPSA": 2.50,
-                           "QED" : 0.05 
-                           }
+        self.props_std    = { "logP": 0.15,
+                              "tPSA": 2.50,
+                              "QED" : 0.05 
+                            }
 
-        self.n_steps = args.n_steps
-        self.n_samples = args.n_samples
+        self.n_steps      = args.n_steps
+        self.n_samples    = args.n_samples
+        
         print("init:", self.n_steps, self.n_samples)
 
     def _snn_start(self, mol_groups):
@@ -68,17 +72,6 @@ class ContinuityCheck:
             else:
                 not_intersected.append(1-len(intersected_part)/len(adj_smi))
         return not_intersected
-    
-    def _rand_z(self, n, toklen, latent_dim):
-        return torch.Tensor(np.random.normal(
-            size=(n, toklen, latent_dim)))
-        
-    def _get_z(self, toklen, latent_dim, file_path):
-        if not os.path.exists(file_path):
-            z = self._rand_z(1, toklen, latent_dim)
-            torch.save(z, file_path)
-        z = torch.load(file_path)
-        return z
         
     def _augment_props(self, n, props, var_prop=None):
         props = np.array(props).reshape((1, 3))
@@ -201,10 +194,7 @@ class ContinuityCheckOnConds(ContinuityCheck):
                              save_folder, f"{var_prop}_{i}.csv"))
             
             
-    def generate(self, save_folder):
-        z = self._get_z(self.toklen, self.latent_dim, 
-                        os.path.join(save_folder, 'z.pt'))
-
+    def generate(self, save_folder, z):
         for p in self.props:
             props_t = self._get_consecutive_props(p)
             self._generate_on_var_props(z, props_t, p, save_folder)
@@ -233,11 +223,7 @@ class ContinuityCheckOnZ(ContinuityCheck):
         std = std if std < upperbound else upperbound
         return std
 
-    def _get_consecutive_zs(self, save_folder):
-        z1 = self._get_z(self.toklen, self.latent_dim, 
-                         os.path.join(save_folder, 'z1.pt'))
-        z2 = self._get_z(self.toklen, self.latent_dim, 
-                         os.path.join(save_folder, 'z2.pt'))
+    def _get_consecutive_zs(self, z1, z2):
         z_vec = z2 - z1
         z_dist_each = self._distance(z1, z2) / self.n_steps
         
@@ -246,8 +232,8 @@ class ContinuityCheckOnZ(ContinuityCheck):
             zs.append(z1 + (z_vec / self.n_steps) * i)
         return zs, z_dist_each
 
-    def generate(self, save_folder):
-        zs, z_dist_each = self._get_consecutive_zs(save_folder)
+    def generate(self, save_folder, z1, z2):
+        zs, z_dist_each = self._get_consecutive_zs(z1, z2)
 
         props_t = self._augment_props(self.n_samples, self.props_peak)
         props_in = torch.Tensor(props_t)
@@ -258,7 +244,7 @@ class ContinuityCheckOnZ(ContinuityCheck):
         
         for i in range(self.n_steps + 1):
             self.LOG.info(f"sample smiles {i} / {self.n_steps}")
-            save_path = os.path.join(save_folder, f"z1z2_{i}.csv")
+            save_path = os.path.join(save_folder, f"z_{i}.csv")
             # if os.path.exists(save_path):
             #     continue
 
@@ -270,10 +256,10 @@ class ContinuityCheckOnZ(ContinuityCheck):
             self._save_props(smiles, props_in, save_path)
             
         self.LOG.info("calculate statistics...")
-        self.calc_statistics(save_folder, self.n_steps, 'z1z2')
+        self.calc_statistics(save_folder, self.n_steps, 'z')
         
         self.LOG.info("calculate errors...")
-        self.calc_errors(save_folder, 'z1z2')
+        self.calc_errors(save_folder, 'z')
 
 
 def build_save_path(args):
@@ -283,6 +269,9 @@ def build_save_path(args):
                                args.decode_algo)
     os.makedirs(save_folder, exist_ok=True)
     return save_folder
+
+
+# def plot_metric():
 
 
 def continuity_check(args, generator, train_smiles, logger):
@@ -298,4 +287,64 @@ def continuity_check(args, generator, train_smiles, logger):
     elif args.test_for == "conds":
         ccoc = ContinuityCheckOnConds(args, generator, train_smiles, LOG)
         ccoc.generate(save_folder)
-    
+
+
+def random_z(n, toklen, latent_dim):
+    return torch.Tensor(np.random.normal(size=(n, toklen, latent_dim)))
+
+
+def prepare_random_z(toklen, latent_dim, save_path):
+    if not os.path.exists(save_path):
+        z = random_z(1, toklen, latent_dim)
+        torch.save(z, save_path)
+        return z
+    return torch.load(save_path)
+
+
+def fast_continuity_check(args, toklen_data, train_smiles, 
+                          scaler, SRC, TRG, device, logger):
+    os.makedirs(args.inference_path, exist_ok=True)
+    os.makedirs(os.path.join(args.inference_path, 'check_z'), exist_ok=True)
+    os.makedirs(os.path.join(args.inference_path, 'check_conds'), exist_ok=True)
+
+    z1 = prepare_random_z(args.toklen, args.latent_dim,
+                          os.path.join(args.inference_path, 'check_z', 'z1.pt'))
+    z2 = prepare_random_z(args.toklen, args.latent_dim,
+                          os.path.join(args.inference_path, 'check_z', 'z2.pt'))
+
+    torch.sqrt(torch.sum((z2 - z1)**2)).item()
+
+    z = prepare_random_z(args.toklen, args.latent_dim,
+                         os.path.join(args.inference_path, 'check_conds', 'z.pt'))
+
+    for epoch in args.epoch_list:
+        """ 
+        prepare generator
+        """
+        args.use_model_path = os.path.join(args.train_path, args.model_name, f'model_{epoch}.pt')
+        generator = prepare_generator(args, SRC, TRG, toklen_data, scaler, device)
+
+        """
+        check continuity on Z
+        """
+        save_folder = os.path.join(args.inference_path, 'check_z', args.model_name, str(epoch))
+        os.makedirs(save_folder, exist_ok=True)
+        LOG = logger(name='continuity check on Z',
+                     log_path=os.path.join(save_folder, "records.log"))
+
+        ccoz = ContinuityCheckOnZ(args, generator, train_smiles, LOG)
+        ccoz.generate(save_folder, z1, z2)
+
+        """
+        check continuity on properties
+        """
+        save_folder = os.path.join(args.inference_path, 'check_conds', args.model_name, str(epoch))
+        os.makedirs(save_folder, exist_ok=True)
+
+        LOG = logger(name='continuity check on properties',
+                     log_path=os.path.join(save_folder, "records.log"))
+
+        ccoc = ContinuityCheckOnConds(args, generator, train_smiles, LOG)
+        ccoc.generate(save_folder, z)
+
+        # del generator

@@ -9,10 +9,14 @@ import numpy as np
 
 
 _model_input_to_subpath = {
-    'transformer': 'transformer',
-    'aug_all-tf': 'transformer_ep25_aug-all',
-    'aug-eo-tf': 'transformer_ep25_aug-decoderout',
-    'aug-eo-opt0-tf': 'transformer_ep25_aug-decoderout-opt0'
+    'tf': 'transformer',
+    'all-tf': 'transformer_ep25_aug-all',
+    'eo-tf': 'transformer_ep25_aug-decoderout',
+    'eo-opt0-tf': 'transformer_ep25_aug-decoderout-opt0',
+    'eo-adam-tf': 'transformer_ep25_aug-decoderout-adam',
+    'eo-adam_ori-tf': 'transformer_ep25_aug-decoderout',
+    'eo-adagrad-tf': 'transformer_ep25_aug-decoderout-adagrad',
+    'eo-rmsprop-tf': 'transformer_ep25_aug-decoderout-rmsprop',
 }
 
 
@@ -44,7 +48,7 @@ def _get_legend_name_list(query_list):
     legend_name_list = [] 
     for query in query_list:
         for ep in query['epoch']:
-            legend_name_list.append(f"{query['model']} - ep{ep}")
+            legend_name_list.append(f"{query['model']}-{ep}")
     return legend_name_list
 
 
@@ -75,23 +79,26 @@ def get_metric_results(metric, file_paths, legend_names):
         df = pd.read_csv(path, index_col=[0])
         statistics[legend_names[i]] = df[metric]
     
-    return pd.DataFrame(statistics)
+    statistics = pd.DataFrame(statistics)
+    statistics['# Steps'] = [i for i in range(len(statistics))]
+    statistics = statistics.set_index('# Steps')
+    return statistics
 
 
 def line_plot(dataframe, title, xlabel,
               ylabel, figpath='./test.png'):
-    plt.figure(figsize=(10,8))
+    plt.figure(figsize=(6,5))
     
     sns.lineplot(data=dataframe, palette="cubehelix")
     # sns.scatterplot(data=dataframe, palette="cubehelix", s=47)
     
     plt.ylim((0,1))
-    plt.title(title, fontsize=30)
-    plt.xlabel(xlabel, fontsize=22)
-    plt.ylabel(ylabel, fontsize=22)
-    plt.xticks(fontsize=20)
-    plt.yticks(fontsize=20)
-    plt.legend(fontsize=18)
+    plt.title(title, fontsize=24)
+    plt.xlabel(xlabel, fontsize=18)
+    plt.ylabel(ylabel, fontsize=18)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.legend(fontsize=16)
     plt.tight_layout()
     plt.savefig(figpath, dpi=200)
     
@@ -101,15 +108,15 @@ def plot_on_average(dataframe, title, xlabel, ylabel, figpath):
     
     means = dataframe.mean(axis=0).T
     
-    plt.figure(figsize=(10,8))
-    means.plot(rot=15)
+    plt.figure()
+    means.plot(figsize=(6, 5), marker='o', rot=15)
 
     plt.ylim((0,1))
-    plt.title(title, fontsize=26)
-    plt.xlabel(xlabel, fontsize=20)
-    plt.ylabel(ylabel, fontsize=20)
-    plt.xticks(fontsize=18)
-    plt.yticks(fontsize=18)
+    plt.title(title, fontsize=24)
+    plt.xlabel(xlabel, fontsize=18)
+    plt.ylabel(ylabel, fontsize=18)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
     plt.tight_layout()
     plt.savefig(figpath, dpi=200)
 
@@ -120,39 +127,37 @@ def plot_metric(args, metric, query_list):
     
     print("get metric results...")
     results = get_metric_results(metric, file_path_list, legend_name_list)
-    results['# Steps'] = [i for i in range(len(results))]
-    results = results.set_index('# Steps')
 
     if args.plot_by_steps:
         print("plot by steps...")
+        
         line_plot(dataframe=results,
-                  title=f'{metric.capitalize()} by Steps',
+                  title=f'{metric.capitalize()} by Steps ({args.check_on})',
                   xlabel='# Steps',
                   ylabel=metric,
-                  figpath=_figure_path(args.check_on, query_list, 'line', metric))
+                  figpath=_figure_path(args.check_on, query_list, 'line', metric)
+                  )
     
     if args.plot_on_average:
         print("plot on average...")
         plot_on_average(dataframe=results,
-                        title=f'{metric.capitalize()} on Models',
+                        title=f'{metric.capitalize()} on Models ({args.check_on})',
                         xlabel='Models',
                         ylabel=metric,
-                        figpath=_figure_path(args.check_on, query_list, 'avg', metric))
+                        figpath=_figure_path(args.check_on, query_list, 'avg', metric)
+                        )
 
-
-def snn_start_value(snn_start): # 越低越好
-    product = 1
-    for i in range(1, len(snn_start)):
-        product *= (snn_start[i] - snn_start[i-1])
-    return product**(1.0 / (len(snn_start)-1))
-        
-
-def snn_prev_value(snn_prev): # 越高越好
-    product = 1
-    for i in range(len(snn_prev)):
-        product *= snn_prev[i]
-    return product**(1.0 / len(snn_prev))
+def snn_start_index(snn_start):
+    # 越小越好 (smooth)
+    slopes = []
+    for i in range(len(snn_start)):
+        slopes.append(snn_start[i+1] - snn_start[i])
+    return np.std(slopes)
     
+
+def snn_prev_index(snn_prev):
+    # 越高越好
+    return np.average(snn_prev)
 
 # def get_query():
 #     # query = [query1, quer2, ...], figname
@@ -187,12 +192,13 @@ if __name__ == '__main__':
     
     metric = 'snn_previous'
     query = [
-        { 'model': 'transformer', 'epoch': np.arange(21, 26) },
-        # { 'model': 'transformer', 'epoch': np.arange(21, 26) },
+        { 'model': 'tf', 'epoch': np.arange(25, 31) },
+        # { 'model': 'all-tf', 'epoch': np.arange(26, 31) },
         # { 'model': 'aug-eo-tf', 'epoch': np.arange(26, 36) },
-        # { 'model': 'aug-eo-opt0-tf', 'epoch': np.arange(26, 30) }
+        # { 'model': 'eo-adam_ori-tf', 'epoch': np.arange(26, 31) }
+        # { 'model': 'eo-adagrad-tf', 'epoch': np.arange(26, 31) }
+        # { 'model': 'eo-rmsprop-tf', 'epoch': np.arange(26, 31) }
     ]
     
     # continuity_check_plot(args, config)
-    
     plot_metric(args, metric, query)

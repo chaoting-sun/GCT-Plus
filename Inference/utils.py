@@ -1,5 +1,8 @@
 import numpy as np
 import torch
+from Model.build_model import build_model, get_model
+from Inference.model_prediction import Predictor
+from Inference.decode_algo import get_generator
 
 
 def augment_props(n, props, bound=None, varid=None, std=None):
@@ -29,3 +32,38 @@ def augment_z(n, z, std=None):
         z += torch.empty_like(z).normal_(mean=0, std=std)
         return z
     return z
+
+
+def prepare_model(args, SRC, TRG):
+    if args.model_type == 'transformer':
+        print("get model...")
+        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
+    elif args.model_type == "att_encoder":
+        model = build_model(args, len(SRC.vocab),
+                            len(TRG.vocab), att_type='ATT_v5')
+    else:
+        model = build_model(args, len(SRC.vocab), len(TRG.vocab))
+    return model
+
+
+def prepare_generator(args, SRC, TRG, toklen_data, scaler, device):
+    model = prepare_model(args, SRC, TRG)
+    model = model.to(device)
+    model.eval()
+
+    predictor = Predictor(args.use_cond2dec,
+                          getattr(model, args.decode_type),
+                          getattr(model, args.encode_type))
+
+    kwargs = {
+        'latent_dim'  : args.latent_dim,
+        'max_strlen'  : args.max_strlen,
+        'use_cond2dec': args.use_cond2dec,
+        'decode_algo' : args.decode_algo,
+        'toklen_data' : toklen_data,
+        'scaler'      : scaler,
+        'device'      : device,
+        'TRG'         : TRG,
+    }
+
+    return get_generator(predictor, args.decode_algo, kwargs)

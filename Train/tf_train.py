@@ -201,7 +201,7 @@ def train_model(args, model, optimizer, train_iter,
         LOG.info(f'validation end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
-        LOG.info(f'save model...')
+        LOG.info(f'save model...')  
         model_path = os.path.join(args.save_directory, f'model_{epoch}.pt')
         save_checkpoint(args, model, optimizer, model_path)
 
@@ -209,10 +209,15 @@ def train_model(args, model, optimizer, train_iter,
 def tf_train(args, logger):
     os.makedirs(args.save_directory, exist_ok=True)
     
-    data_path = os.path.join(args.data_path, 'aug',
-                             f'data_tol{args.tolerance:.2f}')
-    # data_path = os.path.join(args.data_path, 'aug',
-    #                          f'data_tol{args.tolerance:.2f}_tiny')
+    if args.tolerance > 0:    
+        data_path = os.path.join(args.data_path, 'aug',
+                                 f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
+        # data_path = os.path.join(args.data_path, 'aug',
+        #                         f'data_tol0.01_tiny')
+    else:
+        data_path = os.path.join(args.data_path, 'aug', 'data')
+        # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
+        
 
     LOG = logger(name='augment data by conditions',
                  log_path=os.path.join(args.save_directory, "records.log"))
@@ -269,24 +274,32 @@ def tf_train(args, logger):
 
     LOG.info(f'Get optimizer...')
 
-    # optimizer = torch.optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()),
-    #     lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
-    # )
+    # model_folder, model_path, start_epoch
         
+    model_train_params = filter(lambda p: p.requires_grad, model.parameters())
+    
     if args.optimizer_choice == 'sgd':
-        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
+        optimizer = torch.optim.SGD(model_train_params, lr=1E-4)
     elif args.optimizer_choice == 'rmsprop':
-        optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
+        optimizer = torch.optim.RMSprop(model_train_params, lr=1E-4)
     elif args.optimizer_choice == 'adagrad':
-        optimizer = torch.optim.Adagrad(filter(lambda p: p.requires_grad, model.parameters()), lr=1E-4)
-    elif args.optimizer_choice == 'adam' or args.optimizer_choice == 'original':
+        optimizer = torch.optim.Adagrad(model_train_params, lr=1E-4)
+    elif args.optimizer_choice == 'adam':
+        optimizer = torch.optim.Adam(model_train_params, lr=args.lr,
+            betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+        )
+    elif args.optimizer_choice == 'original':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
             betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
         )
 
-    if args.optimizer_choice == 'original':
-        # if args.use_model_path and ('molgct.pt' not in args.use_model_path):
+    # if args.use_model_path and ('molgct.pt' not in args.use_model_path):
+    #         optimizer = torch.optim.Adam(
+    #     filter(lambda p: p.requires_grad, model.parameters()),
+    #     lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
+    # )
+
+    if args.use_model_path and args.optimizer_choice == 'original':
         checkpoint = torch.load(args.use_model_path, map_location='cuda:0')
         optim_dict = checkpoint['opt_state_dict']
         optimizer.load_state_dict(optim_dict)
@@ -295,3 +308,5 @@ def tf_train(args, logger):
     
     train_model(args, model, optimizer, train_iter,
                 valid_iter, device, LOG)
+
+

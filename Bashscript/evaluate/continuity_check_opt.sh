@@ -7,14 +7,14 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 # > model: transformer_ep25_aug-decoderout_ep${EPOCH}
 
-GPU_IDX=1
+GPU_IDX=3
 MODEL_TYPE=transformer
 DECODE_TYPE=decode
 CHOICE="continuity-check"
 DECODE_ALGO="greedy"
 TOKLEN=30
-EPOCH=29
-OPTIM=adagrad
+EPOCH=30
+OPTIM=rmsprop
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
@@ -31,5 +31,5 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
         -toklen ${TOKLEN} \
         -n_steps 50 \
         -n_samples 100 \
-        -test_for z \
+        -test_for conds \
     >>${MODEL_TYPE}_ep25_aug-decoderout-${OPTIM}_ep${EPOCH}.out 2>&1 &

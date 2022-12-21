@@ -8,23 +8,23 @@ from Model.modules import create_target_mask, create_source_mask, nopeak_mask
 
 
 class Sampling(object):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data,
-                 scaler, max_strlen, use_cond2dec, device):
+    def __init__(self, predictor, kwargs):
         self.predictor = predictor
-        self.latent_dim = latent_dim
+        self.latent_dim   = kwargs['latent_dim']
+        self.max_strlen   = kwargs['max_strlen']
+        self.use_cond2dec = kwargs['use_cond2dec']
+        self.decode_algo  = kwargs['decode_algo']
+        self.toklen_data  = kwargs['toklen_data']
+        self.scaler       = kwargs['scaler']
+        self.device       = kwargs['device']
 
-        self.pad_id = TRG.vocab.stoi['<pad>']
-        self.eos_id = TRG.vocab.stoi['<eos>']
-        self.sos_id = TRG.vocab.stoi['<sos>']
-        self.trg_itos = TRG.vocab.itos
+        TRG               = kwargs['TRG']
+        self.pad_id       = TRG.vocab.stoi['<pad>']
+        self.eos_id       = TRG.vocab.stoi['<eos>']
+        self.sos_id       = TRG.vocab.stoi['<sos>']
+        self.trg_itos     = TRG.vocab.itos
 
-        self.toklen_data = toklen_data
-        self.scaler = scaler
-        self.max_strlen = max_strlen
-        self.use_cond2dec = use_cond2dec
-        self.device = device
-
-        self.cond_dim = 3
+        self.cond_dim     = 3
 
     def sample_z_from_src(self, src, econds, mconds=None):
         """1. sample z from source and properties"""
@@ -91,13 +91,24 @@ class Sampling(object):
                 properties)).to(self.device)
         return conds
 
+    def encode_smiles(self, src, props, transform=True):
+        if transform:
+            props = self.transform_props(props)
+        if props.dtype != torch.float32:
+            props = torch.Tensor(props)
+        
+        src_mask = create_source_mask(src, self.pad_id, props)
+
+        src = src.to(self.device)
+        props = props.to(self.device)
+        src_mask = src_mask.to(self.device)
+        z = self.predictor.encode(src, props, src_mask)
+        return z
+
 
 class MultinomialSearch(Sampling):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data, scaler,
-                 max_strlen, use_cond2dec, device, decode_algo="multinomial"):
-        super().__init__(predictor, latent_dim, TRG, toklen_data,
-                         scaler, max_strlen, use_cond2dec, device)
-        self.decode_algo = decode_algo
+    def __init__(self, predictor, kwargs):
+        super().__init__(predictor, kwargs)
 
     def decode(self, z, conds, src_mask):
         c = conds[1] if isinstance(conds, tuple) else conds
@@ -143,7 +154,7 @@ class MultinomialSearch(Sampling):
         conds = conds.to(self.device)
 
         if z is None:
-            z, _ = self.sample_z_from_data()
+            z, _ = self.sample_z_from_data(len(conds))
         
         toklen_gen, toklen, sequence = [], [], []
         
@@ -169,7 +180,7 @@ class MultinomialSearch(Sampling):
                                 
                 seq = self.decode(z_in, props_in, src_mask)
                 sequence.append(seq.cpu().numpy()[0])
-                print(f'{i} seq:', seq)
+                # print(f'{i} seq:', seq)
 
         smiles = []
         for i in range(conds.size(0)):
@@ -180,39 +191,12 @@ class MultinomialSearch(Sampling):
         return smiles, toklen_gen, toklen
 
 
-class MultinomialSearchFromSource(MultinomialSearch):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data, scaler,
-                 max_strlen, use_cond2dec, device, decode_algo="multinomial"):
-        super().__init__(predictor, latent_dim, TRG, toklen_data,
-                         scaler, max_strlen, use_cond2dec, device)
-        self.decode_algo = decode_algo
-
-    def sample_smiles(self, src, conds, std=0.2, transform=True):
-        toklen = src.size(-1)
-        if transform:
-            conds = self.scaler_transform(conds)
-
-        if isinstance(conds, tuple):
-            src_mask = create_source_mask(
-                src, self.pad_id, conds[1])  # conds1->dconds
-        else:
-            src_mask = create_source_mask(src, self.pad_id, conds)
-
-        z = self.predictor.encode(src, conds, src_mask)[0]
-        pred_seq = self.decode(z, conds, src_mask)
-        smiles = self.seq_to_smiles(pred_seq.cpu().numpy()[0])
-        toklen_gen = len(smiles)
-        return smiles, toklen_gen, toklen
-
 # https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/132907dd272e2cc92e3c10e6c4e783a87ff8893d/transformer/Translator.py
 # https://github.com/dreamgonfly/transformer-pytorch/blob/master/beam.py
 class BeamSearch(Sampling):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data,
-                 scaler, max_strlen, use_cond2dec, device, k=4):
-        super().__init__(predictor, latent_dim, TRG, toklen_data,
-                         scaler, max_strlen, use_cond2dec, device)
-        self.k = k
-        print("initialize BeamSearch")
+    def __init__(self, predictor, kwargs):
+        super().__init__(predictor, kwargs)
+        self.k = 4
 
     def k_best_outputs(self, outputs, out, log_scores, i):
         probs, ix = out[:, -1].data.topk(self.k)
@@ -352,44 +336,12 @@ class BeamSearch(Sampling):
         return smiles, toklen_gen, toklen
 
 
-class BeamSearchFromSource(BeamSearch):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data,
-                 scaler, max_strlen, use_cond2dec, device, k=4):
-        super().__init__(predictor, latent_dim, TRG, toklen_data,
-                         scaler, max_strlen, use_cond2dec, device, k)
-
-    def sample_smiles(self, src, conds, std=0.2, transform=True):
-        if len(conds) == 2:
-            econds, dconds = conds[0], conds[1]
-            if transform:
-                econds = self.n_transform(econds)
-                dconds = self.n_transform(dconds)
-            mconds = torch.cat((econds, torch.sub(dconds, econds)), axis=1)
-            conds = (mconds, dconds)
-        else:
-            if transform:
-                econds = self.n_transform(conds)
-
-        src_mask = create_source_mask(src, self.pad_id, econds)
-        z = self.predictor.encode(src, econds, src_mask)[0]
-
-        toklen = src.size(-1)
-
-        smiles = self.beam_search(conds, toklen, z)
-        toklen_gen = smiles.count(" ") + 1
-        smiles = ''.join(smiles).replace(" ", "")
-        # print(smiles)
-        return smiles, toklen_gen, toklen
-    
-
 # https://kikaben.com/transformers-evaluation-details/
 class NewBeamSearch(Sampling):
-    def __init__(self, predictor, latent_dim, TRG, toklen_data,
-                 scaler, max_strlen, use_cond2dec, device, k=4):
-        super().__init__(predictor, latent_dim, TRG, toklen_data,
-                         scaler, max_strlen, use_cond2dec, device)
+    def __init__(self, predictor, kwargs):
+        super().__init__(predictor, kwargs)
         self.alpha = 0.6
-        self.k = k
+        self.k     = 4
 
     def sample_smiles(self, dconds, z=None, transform=True):
         # handle properties
@@ -419,7 +371,7 @@ class NewBeamSearch(Sampling):
             smi = self.beam_search(props_in, toklen[-1], z_in)
             smiles.append(smi)
             toklen_gen.append(len(smi))
-            print(f"({i}) {t + time():.2f}", smi)
+            # print(f"({i}) {t + time():.2f}", smi)
         return smiles, toklen_gen, toklen
     
     def sequence_length_penalty(self, length):
@@ -506,3 +458,14 @@ class NewBeamSearch(Sampling):
         output_text_tokens = [self.trg_itos[i] for i in
                               decoder_output if i != self.eos_id] # remove EOS if exists
         return "".join(output_text_tokens)
+
+
+def get_generator(predictor, decode_algo, kwargs):
+    if decode_algo in ("greedy", "multinomial"):
+        return MultinomialSearch(predictor, kwargs)
+    elif decode_algo == "beam":
+        return BeamSearch(predictor, kwargs)
+    elif decode_algo == "newbeam":
+        return NewBeamSearch(predictor, kwargs)
+    else:
+        exit(f"No such decoding algorithm: {decode_algo}")

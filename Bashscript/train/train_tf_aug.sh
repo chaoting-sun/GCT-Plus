@@ -27,22 +27,22 @@ MODEL_TYPE=transformer
 
 
 ### train a trained transformer - all
-TOLERENCE=0.01
-USE_EPOCH=25
-N_EPOCH=40
+# TOLERENCE=0.01
+# USE_EPOCH=25
+# N_EPOCH=40
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-    train.py \
-        -tolerance ${TOLERENCE} \
-        -n_jobs 4 \
-        -model_type transformer \
-        -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_${USE_EPOCH}.pt \
-    train-1st \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer-ep${USE_EPOCH}_aug-decoderout \
-        -start_epoch $((${USE_EPOCH}+1)) \
-        -batch_size 128 \
-        -num_epoch ${N_EPOCH} \
-    >transformer-ep${USE_EPOCH}_aug-decoderout.out 2>&1 &
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     train.py \
+#         -tolerance ${TOLERENCE} \
+#         -n_jobs 4 \
+#         -model_type transformer \
+#         -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_${USE_EPOCH}.pt \
+#     train-1st \
+#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer-ep${USE_EPOCH}_aug-decoderout \
+#         -start_epoch $((${USE_EPOCH}+1)) \
+#         -batch_size 128 \
+#         -num_epoch ${N_EPOCH} \
+#     >transformer-ep${USE_EPOCH}_aug-decoderout.out 2>&1 &
 
 
 ### train an untrained transformer
@@ -98,3 +98,38 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
 #         -batch_size ${BATCH_SIZE} \
 #         -num_epoch ${N_EPOCH} \
 #     >train_molgctAll_aug_ep${USE_EPOCH}_tol${TOLERENCE}.out 2>&1 &
+
+# aug train decoder and out
+
+# GPU_IDX=3
+# TOLERANCE=0.20
+# SIMILARITY=0.80
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     train.py                        \
+#         -tolerance    ${TOLERANCE}  \
+#         -similarity   ${SIMILARITY} \
+#         -start_epoch  26            \
+#         -num_epoch    30            \
+#         -train_params decoder out   \
+#         -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_25.pt \
+#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_ep25_aug-s${SIMILARITY}-t${TOLERANCE}/   \
+#     >>train_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
+
+
+
+# aug train all
+
+GPU_IDX=0
+TOLERANCE=0.10
+SIMILARITY=0.80
+
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+    train.py                        \
+        -tolerance    ${TOLERANCE}  \
+        -similarity   ${SIMILARITY} \
+        -start_epoch  26            \
+        -num_epoch    30            \
+        -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_25.pt \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_ep25_aug-all-s${SIMILARITY}-t${TOLERANCE}/   \
+    >>train-all_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &

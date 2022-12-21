@@ -214,16 +214,18 @@ new function for building model. old: biuld_model
 
 
 def get_model(args, SRC_vocab_len, TRG_vocab_len):
-    hyperParams = { 'src_vocab': SRC_vocab_len,
-                    'trg_vocab': TRG_vocab_len,
-                    'N': args.N, 'd_model': args.d_model,
-                    'dff': args.d_ff, 'h': args.H,
-                    'latent_dim': args.latent_dim,
-                    'dropout': args.dropout,
-                    'nconds': args.nconds,
+    hyperParams = { 'src_vocab'   : SRC_vocab_len,
+                    'trg_vocab'   : TRG_vocab_len,
+                    'N'           : args.N, 
+                    'd_model'     : args.d_model,
+                    'dff'         : args.d_ff, 
+                    'h'           : args.H,
+                    'latent_dim'  : args.latent_dim,
+                    'dropout'     : args.dropout,
+                    'nconds'      : args.nconds,
                     'use_cond2dec': args.use_cond2dec,
                     'use_cond2lat': args.use_cond2lat
-                    }
+                }
 
     if args.model_type == "transformer":
         model = build_transformer(hyperParams, args.use_model_path)

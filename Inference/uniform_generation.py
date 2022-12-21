@@ -8,25 +8,12 @@ from rdkit.Chem import MolFromSmiles
 import torch
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.property import get_mol, property_prediction
+from Utils.property import get_mol, property_prediction, predict_props
 from Inference.metrics import get_all_metrics, print_all_metrics
 from Inference.utils import augment_props
+from Inference.utils import prepare_generator
 
-
-# def augment_props(n, props, bound, varid=None, std=None):
-#     props = np.array(props).reshape((1, 3))
-#     props = np.repeat(props, n, axis=0)
-#     if std is None:
-#         return props
-
-#     for id in varid:
-#         props[:, id] = np.random.normal(0, std, (n,))
-#         for i in range(n):
-#             props[i, id] = min(props[i, id], bound[id][1])
-#             props[i, id] = max(props[i, id], bound[id][0])
-#     return props
-
-
+# should test if this is right
 
 def property_from_smiles(smiles, props_predictor, n_jobs=1):
     """
@@ -160,3 +147,110 @@ def uniform_generation(args, sampler, train_smiles, logger):
 
     LOG.info(f"Compute errors...")    
     save_metrics(target_props, save_folder, train_smiles, args.n_jobs)
+
+
+class UniformGeneration:
+    def __init__(self, args, generator, train_smiles, LOG):
+        self.LOG = LOG
+        self.n_jobs = args.n_jobs
+        self.generator = generator
+        self.train_smiles = train_smiles
+
+        self.props = args.conditions
+        self.bound = { "logP": [args.logp_lb, args.logp_ub],
+                       "tPSA": [args.tpsa_lb, args.tpsa_ub],
+                       "QED" : [args.qed_lb,   args.qed_ub]
+                     }
+
+        self.n_each_prop = args.n_each_prop
+        self.n_each_sampling = args.n_each_sampling
+
+    def _get_uniform_props(self):
+        target_props = np.array(np.meshgrid(
+            np.linspace(self.bound['logP'][0], self.bound['logP'][1], num=self.n_each_prop),
+            np.linspace(self.bound['tPSA'][0], self.bound['tPSA'][1], num=self.n_each_prop),
+            np.linspace(self.bound['QED'][0], self.bound['QED'][1], num=self.n_each_prop))) \
+            .T.reshape(-1, 3)
+        return target_props
+
+    def _augment_props(self, props, n):
+        props = np.array(props).reshape((1, 3))
+        props = np.repeat(props, n, axis=0)
+        return props
+
+    def _save_props(self, smiles, props_t, save_path):
+        with Pool(self.n_jobs) as pool:
+            props_p = np.array(pool.map(predict_props, smiles))
+        valids = [0 if np.nan in p else 1 for p in props_p]
+        smiles_props = pd.DataFrame({
+            "smiles": smiles, "logp_t": props_t[:, 0],
+                              "tpsa_t": props_t[:, 1],
+                              "qed_t" : props_t[:, 2],
+            "valids": valids, "logp_p": props_p[:, 0],
+                              "tpsa_p": props_p[:, 1],
+                              "qed_p" : props_p[:, 2]
+        })
+        smiles_props.to_csv(save_path)
+        
+
+    def generate(self, save_folder):
+        uniform_props = self._get_uniform_props()
+        """
+        generate SMILES
+        """
+        for i, props in enumerate(uniform_props):
+            file_name = f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}'
+            gen_path = os.path.join(save_folder, f'{file_name}.csv')
+            stat_path = os.path.join(save_folder, f'{file_name}_stat.csv')
+            
+            if not os.path.exists(gen_path):
+                props_t = self._augment_props(props, self.n_each_sampling)
+                smiles, *_ = self.generator.sample_smiles(props_t)
+                self._save_props(smiles, props_t, gen_path)
+                        
+            if not os.path.exists(stat_path):
+                gen = pd.read_csv(gen_path, index_col=[0])
+                metrics = get_all_metrics(gen, self.train_smiles, self.n_jobs)
+                header, body = print_all_metrics(metrics)
+                with open(stat_path, 'w') as ptr:
+                    ptr.write(header+'\n')
+                    ptr.write(body+'\n')
+ 
+        """
+        compute each and overall statistics
+        """
+        all_gen = None
+        for i, props in enumerate(uniform_props):
+            save_path = os.path.join(save_folder, 
+                f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}.csv')
+
+            gen = pd.read_csv(save_path, index_col=[0])
+            all_gen = pd.concat([all_gen, gen], axis=0)
+        
+        all_gen = all_gen.reset_index()
+
+        all_metrics = get_all_metrics(all_gen, self.train_smiles, self.n_jobs)
+        header, body = print_all_metrics(all_metrics)
+
+        with open(os.path.join(save_folder, 'statistics.csv'), 'w') as ptr:
+            ptr.write(header+'\n')
+            ptr.write(body+'\n')
+
+
+def fast_uniform_generation(args, train_smiles, SRC, TRG, 
+                            toklen_data, scaler, device, logger):
+    for epoch in args.epoch_list:
+        args.use_model_path = os.path.join(args.train_path, args.model_name, f'model_{epoch}.pt')
+        generator = prepare_generator(args, SRC, TRG, toklen_data, scaler, device)
+
+        save_folder = os.path.join(args.inference_path, 
+                      'uniform_generation', args.model_name, str(epoch))
+        os.makedirs(save_folder, exist_ok=True)
+
+        LOG = logger(name='uniform generation',
+                     log_path=os.path.join(save_folder, "records.log"))
+        
+        ufgt = UniformGeneration(args, generator, train_smiles, LOG)
+        ufgt.generate(save_folder)
+
+        del generator
