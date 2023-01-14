@@ -1,9 +1,9 @@
 import numpy as np
 import rdkit.Chem as Chem
 
-from Inference.beam_search import MultinomialSearch, BeamSearch
+from Inference.decode_algo import MultinomialSearch, BeamSearch
 from Utils.property import property_prediction
-from Model.mlp_encoder import decode
+from Model.mlpcvaetf_encoder import decode
 
 
 class Demo(object):

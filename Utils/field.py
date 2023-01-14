@@ -43,7 +43,7 @@ def condition_fields(conditions):
 #     return total_fields
 
 
-def get_fields(conditions, smiles_field_path=None):
+def get_cvaetfencoder_fields(conditions, smiles_field_path=None):
     # the orders in the DataFrame
     # src,trg,src_no,src_logP,src_tPSA,src_QED,trg_no,trg_logP,trg_tPSA,trg_QED
     SRC, TRG = smiles_fields(smiles_field_path)

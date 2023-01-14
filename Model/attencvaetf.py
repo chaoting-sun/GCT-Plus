@@ -21,10 +21,10 @@ from .modules import Norm, nopeak_mask, create_source_mask, get_clones, create_t
 
 
 """ATT-v1"""
-class ATT_v3(nn.Module):
+class ATTEN1(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True):
-        super(ATT_v3, self).__init__()
+        super(ATTEN1, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         self.linear_in = nn.Linear(latent_dim+cond_dim, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
@@ -47,9 +47,9 @@ class ATT_v3(nn.Module):
         L = max_strlen+mconds.size(-1)
         Eq = Ek = Ev = latent_dim
         """ 
-
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([mconds, x], dim=2)
+
         x1 = self.linear_in(x)
         attn_out, attn_out_weights = self.att(x1, x1, x1)
         x1 = x1 + attn_out
@@ -63,10 +63,10 @@ class ATT_v3(nn.Module):
 
 
 """ATT-v2"""
-class ATT_v4(nn.Module):
+class ATTEN2(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
-        super(ATT_v4, self).__init__()
+        super(ATTEN2, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         self.linear_in = nn.Linear(cond_dim+max_strlen, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
@@ -89,10 +89,11 @@ class ATT_v4(nn.Module):
         L = max_strlen+mconds.size(-1)
         Eq = Ek = Ev = latent_dim
         """ 
-
+        print('x size:', x.size())
         x = torch.transpose(x, 1, 2)
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([mconds, x], dim=2)
+        print('mconds size:', mconds.size())
     
         x1 = self.linear_in(x)
         attn_out, attn_out_weights = self.att(x1, x1, x1)
@@ -107,21 +108,20 @@ class ATT_v4(nn.Module):
         return x
 
 
-"""ATT-v3"""
-class ATT_v5(nn.Module):
+class BI_ATTEN(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
-        super(ATT_v5, self).__init__()
+        super(BI_ATTEN, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
 
-        self.att_v3 = ATT_v3(latent_dim, n_heads, cond_dim, d_in,
+        self.atten1 = ATTEN1(latent_dim, n_heads, cond_dim, d_in,
                              d_mid, dropout, batch_first)
-        self.att_v4 = ATT_v4(latent_dim, n_heads, cond_dim, d_in,
+        self.atten2 = ATTEN2(latent_dim, n_heads, cond_dim, d_in,
                              d_mid, dropout, batch_first, max_strlen)
 
     def forward(self, x, mconds):
-        x1 = self.att_v3(x, mconds)
-        x2 = self.att_v4(x, mconds)
+        x1 = self.atten1(x, mconds)
+        x2 = self.atten2(x, mconds)
        
         return x1 + x2
 
@@ -155,15 +155,9 @@ class Encoder(nn.Module):
         x = self.pe(x)
         for i in range(self.N):
             # dim: -> (batch_size, src_maxstr, d_model)
-            x, q_k_enc_tmp = self.layers[i](x, mask)
-            q_k_enc_tmp = q_k_enc_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            if i == 0:
-                q_k_enc = q_k_enc_tmp
-            else:
-                q_k_enc = np.concatenate((q_k_enc, q_k_enc_tmp), axis=1)
-
+            x = self.layers[i](x, mask)
         x = self.norm(x)
-        return x, q_k_enc
+        return x
 
 
 class Decoder(nn.Module):
@@ -204,22 +198,14 @@ class Decoder(nn.Module):
         x = self.pe(x)
 
         for i in range(self.N):
-            x, q_k_dec1_tmp, q_k_dec2_tmp = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
-            q_k_dec1_tmp = q_k_dec1_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            q_k_dec2_tmp = q_k_dec2_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            if i != 0:
-                q_k_dec1 = np.concatenate((q_k_dec1, q_k_dec1_tmp), axis=1)
-                q_k_dec2 = np.concatenate((q_k_dec2, q_k_dec2_tmp), axis=1)
-            else:
-                q_k_dec1 = q_k_dec1_tmp
-                q_k_dec2 = q_k_dec2_tmp
-        return self.norm(x), q_k_dec1, q_k_dec2
+            x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
+        return self.norm(x)
     
 
-class ATTEncoder(nn.Module):
+class ATTENCVAETF(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True, att_type='ATT_v1'):
-        super(ATTEncoder, self).__init__()
+        super(ATTENCVAETF, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -229,13 +215,9 @@ class ATTEncoder(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
-        self.att_mu = globals()[att_type](latent_dim)
-        self.att_log_var = globals()[att_type](latent_dim)
+        self.att_mu = BI_ATTEN(latent_dim)
+        self.att_log_var = BI_ATTEN(latent_dim)
 
-        # self.att_mu = ATT(latent_dim)
-        # self.att_log_var = ATT(latent_dim)
-    
-        # self.sampler2 = Sampler(d_model, latent_dim, variational)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
@@ -254,46 +236,45 @@ class ATTEncoder(nn.Module):
     def encode_att_sample(self, src, conds, src_mask):
         assert len(conds) == 2
         econds, mconds = conds[0], conds[1]
-        x, q_k_enc = self.encoder(src, econds, src_mask)
+        x = self.encoder(src, econds, src_mask)
         z, mu1, log_var1 = self.sampler(x)
         mu2 = self.att_mu(mu1, mconds)
         log_var2 = self.att_log_var(log_var1, mconds)
-        return mu2, mu2, log_var2, q_k_enc
+        return mu2, mu2, log_var2
         # return self.sampler.sampling(mu2, log_var2), mu2, log_var2, q_k_enc
 
     def encode_sample(self, src, econds, src_mask):
-        x, _ = self.encoder(src, econds, src_mask)
+        x = self.encoder(src, econds, src_mask)
         z, mu, log_var = self.sampler1(x)
         return z, mu, log_var
 
-    # def att_decode(self, trg, z, conds, src_mask, trg_mask):
-    #     assert len(conds) == 2
-    #     mconds, dconds = conds[0], conds[1]
-    #     self.att_mu(trg)
-    #     x = self.mlp(z, mconds)
-    #     z, _, _ = self.sampler2(x)
-    #     return self.out(self.decoder(trg, z, dconds,
-    #                                  src_mask, trg_mask)[0])
-
     def encode(self, src, econds, src_mask):
-        x, q_k_enc = self.encoder(src, econds, src_mask)
-        return x, q_k_enc
+        x = self.encoder(src, econds, src_mask)
+        return x
     
     def decode(self, trg, z, dconds, src_mask, trg_mask):
-        x, q_k_dec1, q_k_dec2 = self.decoder(trg, z, dconds, src_mask, trg_mask)
-        return self.out(x), q_k_dec1, q_k_dec2
+        x = self.decoder(trg, z, dconds, src_mask, trg_mask)
+        return self.out(x)
 
-    def forward(self, src, trg_en, econds, mconds, dconds, src_pad_mask, trg_pad_mask):
-        x, _ = self.encoder(src, econds, src_pad_mask)
+    def forward(self, src, trg, econds, mconds,
+                dconds, src_mask, trg_mask):
+        x = self.encode(src, econds, src_mask)
         _, mu, logvar = self.sampler(x)
-
+        print('mu size:', mu.size())
+        print('mconds size:', mconds.size())
         mu_pred = self.att_mu(mu, mconds)
         logvar_pred = self.att_log_var(logvar, mconds)
+        z, mu, logvar = self.sampler.sampling(mu_pred, logvar_pred)
+        output = self.decode(self, trg, z, dconds, src_mask, trg_mask)
 
-        x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
-        _, mu_truth, logvar_truth = self.sampler(x)
+        if self.use_cond2dec == True:
+            output_prop = self.prop_fc(output[:, :self.nconds, :])
+            output_mol = output[:, self.nconds:, :]
+        elif self.use_cond2lat == True:
+            output_prop = torch.zeros(output.size(0), self.nconds, 1)
+            output_mol = output
 
-        return mu_pred, mu_truth, logvar_pred, logvar_truth
+        return output_prop, output_mol, mu, logvar, z
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

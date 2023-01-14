@@ -8,6 +8,27 @@ from Evaluation.plot_config import plot_config
 import numpy as np
 
 
+colors = ["#065cd4", "#0e32c4", "#770cb0", "#ff004c", "#b5070d", "#750509"]
+markers = ['o', '^', 's', 'x', 'v', '|']
+
+
+name_convert = {
+    'validity': 'Validity',
+    'uniqueness': 'Uniquness',
+    'novelty': 'Novelty',
+    'int_div': 'Internal diversity', 
+    'intDiv': 'Internal diversity',
+    'snn_start': 'K (SNN_start)',
+    'snn_previous': 'SNN_prev',
+    'logpAARD': 'AARD_logP (%)',
+    'tpsaAARD': 'AARD_tPSA (%)',
+    'qedAARD': 'AARD_QED (%)',
+    'logpAMSD': 'AMSD_logP (%)',
+    'tpsaAMSD': 'AMSD_tPSA (%)',
+    'qedAMSD': 'AMSD_QED (%)',
+}
+    
+
 _model_input_to_subpath = {
     'tf': 'transformer',
     'aug_all-tf': 'transformer_ep25_aug-all',
@@ -300,17 +321,17 @@ from collections import OrderedDict
 
 
 def plot_metric_every_epoch_one_figure(xticks, yticks, rowLabels, colLabels, figure_data, figpath):
-    colors = ["#065cd4", "#0e32c4", "#770cb0", "#ff004c", "#b5070d"]
+    colors = ["#065cd4", "#0e32c4", "#770cb0", "#ff004c", "#b5070d", "#87070b", "#57181a"]
     markers = ['o', '^', 's', 'x', 'v']
 
     # ep_label, met_label = metric_epoch_list[0].columns
 
     # figure_data -> keys: data, legend, ylimit
 
-    fig = plt.figure(figsize=(16, 12))
-    nrows, ncols = 3, 4
+    fig = plt.figure(figsize=(16, 23))
+    nrows, ncols = len(rowLabels), len(colLabels)
     gs = gridspec.GridSpec(nrows=nrows, ncols=ncols)
-    gs.update(left=0.06, right=0.98, top=0.95, bottom=0.20, wspace=0.24)
+    gs.update(left=0.06, right=0.98, top=0.95, bottom=0.10, wspace=0.24)
     
     legend_list = figure_data[colLabels[0]][rowLabels[0]]['legend']
 
@@ -326,27 +347,31 @@ def plot_metric_every_epoch_one_figure(xticks, yticks, rowLabels, colLabels, fig
             xlabel = metric_epoch_list[0][xheader]
             
             axes = []
-            
+            values = []
             for i, metric_epoch in enumerate(metric_epoch_list):
                 x = metric_epoch[xheader]
                 y = metric_epoch[yheader]
-                
+                values.extend(y.tolist())
                 ax = subplt_ax.plot(x, y, color=colors[i], marker=markers[i], linestyle='--')
                 axes.append(ax[0])
-
+            print(colLabel, rowLabel, sum(values)/len(values))
             if r == 0:
                 subplt_ax.set_title(colLabel, fontsize=22)
             if c == 0:
-                subplt_ax.set_ylabel(rowLabel, fontsize=22)
-
+                subplt_ax.set_ylabel(name_convert[rowLabel], fontsize=22)
+            if r == nrows-1:
+                subplt_ax.set_xlabel("# Epoch", fontsize=22)     
+            
             subplt_ax.set_ylim(ylimit)
             subplt_ax.tick_params(axis='both', labelsize=16)
-            subplt_ax.set_xticklabels(xticks, fontsize=16)
+            subplt_ax.set_xticklabels([i for i in range(16, 25)], fontsize=16)
             # subplt_ax.set_yticklabels(yticks, fontsize=16)
 
+    legend_list = [f'CVAE-TF{i}' for i in (1,2,3)]
     fig.legend(legend_list, fontsize=18, loc='lower center', bbox_to_anchor=(0.5, 0))
     # fig.legend(legend_list, loc='lower left', bbox_to_anchor=(1, -0.1), ncol=len(legend_list), bbox_transform=fig.transFigure)
     
+    print('save figure:', figpath)
     plt.savefig(figpath, dpi=200)
   
   
@@ -386,9 +411,12 @@ def get_data_path_metric(query, check_on, toklen, decode_algo, method, metric):
 
 def plot_all_figures(args):
     metric_method = {
+        "validity"  : 'mean',
         "uniqueness": 'mean',
+        "novelty"   : 'mean',
         "int_div"   : 'mean',
         "snn_start" : 'slope_std',
+        "snn_previous" : 'mean',
     }
 
     check_property = {
@@ -422,10 +450,11 @@ def plot_all_figures(args):
             figure_data[prop] = OrderedDict()
 
             for metric, method in metric_method.items():
-                ref_epoch_metric = get_epoch_metric(args.ref_model_name,
-                                                    args.ref_model_epoch,
-                                                    metric, method)
-                epoch_metric_list = [ref_epoch_metric]
+                # ref_epoch_metric = get_epoch_metric(args.ref_model_name,
+                #                                     args.ref_model_epoch,
+                #                                     metric, method)
+                # epoch_metric_list = [ref_epoch_metric]
+                epoch_metric_list = []
                 for model_name in args.new_model_name:
                     print('calculate:', model_name)
                     new_epoch_metric = get_epoch_metric(model_name,
@@ -433,9 +462,11 @@ def plot_all_figures(args):
                                                         metric, method)
                     epoch_metric_list.append(new_epoch_metric)
 
-                legend_list = [args.ref_model_name] + args.new_model_name
+                legend_list = args.new_model_name
+                # legend_list = [args.ref_model_name] + args.new_model_name
 
-                ylimit = (0, 0.4) if metric == "snn_start" else (0,0.8)
+                # ylimit = (0, 0.4) if metric == "snn_start" else (0,0.8)
+                ylimit = (0, 1)
                 
                 figure_data[prop][metric] = OrderedDict()
                 figure_data[prop][metric]['data'] = epoch_metric_list
@@ -446,14 +477,54 @@ def plot_all_figures(args):
     
     xticks_min = int(min(min(args.ref_model_epoch), min(args.new_model_epoch)))
     xticks_max = int(max(max(args.ref_model_epoch), max(args.new_model_epoch)))
+    
     xticks = [i for i in range(xticks_min, xticks_max+1)]
     yticks = [i*0.1 for i in range(8)]
     
-    rowLabels = ['uniqueness', 'int_div', 'snn_start']
+    rowLabels = list(metric_method.keys())
     colLabels = ['z', 'logP', 'tPSA', 'QED']
     
-    plot_metric_every_epoch_one_figure(xticks, yticks, rowLabels, colLabels, figure_data, './a.png')
+    plot_metric_every_epoch_one_figure(xticks, yticks, rowLabels, colLabels, figure_data, './CVAE-TF_validation/contiCheck.png')
 
+
+
+# def combined_plot():
+#    for check_on in ('check_z', 'check_conds'):
+#         for prop in check_property[check_on]:
+#             figure_data[prop] = OrderedDict()
+
+#             for metric, method in metric_method.items():
+#                 ref_epoch_metric = get_epoch_metric(args.ref_model_name,
+#                                                     args.ref_model_epoch,
+#                                                     metric, method)
+#                 epoch_metric_list = [ref_epoch_metric]
+#                 for model_name in args.new_model_name:
+#                     print('calculate:', model_name)
+#                     new_epoch_metric = get_epoch_metric(model_name,
+#                                                         args.new_model_epoch,
+#                                                         metric, method)
+#                     epoch_metric_list.append(new_epoch_metric)
+
+#                 legend_list = [args.ref_model_name] + args.new_model_name
+
+#                 ylimit = (0, 0.4) if metric == "snn_start" else (0,0.8)
+                
+#                 figure_data[prop][metric] = OrderedDict()
+#                 figure_data[prop][metric]['data'] = epoch_metric_list
+#                 figure_data[prop][metric]['legend'] = legend_list
+#                 figure_data[prop][metric]['ylimit'] = ylimit
+                
+#     print("figure data:\n", figure_data)
+    
+#     xticks_min = int(min(min(args.ref_model_epoch), min(args.new_model_epoch)))
+#     xticks_max = int(max(max(args.ref_model_epoch), max(args.new_model_epoch)))
+#     xticks = [i for i in range(xticks_min, xticks_max+1)]
+#     yticks = [i*0.1 for i in range(8)]
+    
+#     rowLabels = ['uniqueness', 'int_div', 'snn_start']
+#     colLabels = ['z', 'logP', 'tPSA', 'QED']
+    
+#     plot_metric_every_epoch_one_figure(xticks, yticks, rowLabels, colLabels, figure_data, './a.png')
 
 
 """ model settings """
@@ -486,7 +557,7 @@ NEW_MODEL_LIST4 = [
 ]
 
 REF_MODEL_NAME = "transformer"
-NEW_MODEL_NAME = NEW_MODEL_LIST3
+NEW_MODEL_NAME = NEW_MODEL_LIST4
 REF_MODEL_EPOCH = [16,17,18,19,20,21,22,23,24,25]
 NEW_MODEL_EPOCH = [16,17,18,19,20,21,22,23,24,25]
 
@@ -505,7 +576,117 @@ def add_args(parser):
     parser.add_argument('-decode_algo', type=str, default='greedy')
 
 
+def get_results_from_uniform_generation(data_folder, model_name, epoch_list):
+    overall_stat = None
+    for i in range(len(epoch_list)):
+        data_path = os.path.join(data_folder, model_name, str(epoch_list[i]), 'statistics.csv')
+        stat = pd.read_csv(data_path)
+        overall_stat = pd.concat([overall_stat, stat], axis=0)
+    return overall_stat
+
+    
+def plot_results_from_uniform_generation():
+    data_folder = "/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Results/uniform_generation"
+    model_no = [1,2,3]
+    epoch_list = np.arange(16,25+1, dtype=np.int8)
+    
+    save_folder = 'CVAE-TF_validation'
+    os.makedirs(save_folder, exist_ok=True)
+    save_path = os.path.join(save_folder, 'basic_requirement.png')
+    # save_path = os.path.join(save_folder, 'property errors.png')
+    
+    data_list = []
+    for no in model_no:
+        data = get_results_from_uniform_generation(data_folder, f'transformer{no}', epoch_list)
+        data = data.set_index(pd.Index(epoch_list))
+        data_list.append(data)
+        
+    figure_data = OrderedDict()
+    
+    """
+    valid, unique, novel intDiv
+    """
+    
+    legend_list = ['CVAE-TF1', 'CVAE-TF2', 'CVAE-TF3']
+    prop_list = ['valid', 'unique', 'novel', 'intDiv']
+    # prop_list = ['logpAARD', 'tpsaAARD', 'qedAARD', 'logpAMSD', 'tpsaAMSD', 'qedAMSD']
+    
+    for prop in prop_list:
+        figure_data[prop] = OrderedDict()
+        figure_data[prop]['data'] = [data_list[i][[prop]] for i in range(len(model_no))]
+        figure_data[prop]['ylimit'] = (0, 1)
+
+    """ plot """
+
+
+    # figure_data -> keys: data, legend, ylimit
+
+    if len(prop_list) == 2:
+        nrows, ncols = 1, 2
+        figsize=(25, 10)
+    elif len(prop_list) == 4:
+        left, right, top, bottom, wspace = 0.10, 0.98, 0.95, 0.20, 0.24
+        nrows, ncols = 2, 2
+        figsize=(12, 12)
+    elif len(prop_list) == 6:
+        left, right, top, bottom, wspace = 0.08, 0.98, 0.95, 0.20, 0.36
+        nrows, ncols = 2, 3
+        figsize=(16, 12)
+        
+        
+    fig = plt.figure(figsize=figsize)
+    gs = gridspec.GridSpec(nrows=nrows, ncols=ncols)
+    gs.update(left=left, right=right, top=top, bottom=bottom, wspace=wspace)
+    
+    for i in range(len(prop_list)):
+        row = int(i / ncols)
+        col = int(i % ncols)
+        prop = prop_list[i]
+        
+        subplt_ax = plt.subplot(gs[row, col])
+
+        data_list = figure_data[prop]['data']
+
+        # ylimit = figure_data[prop]['ylimit']
+
+        data_pts = []
+        for j, data in enumerate(data_list):
+            data_pts.extend(data[prop].tolist())
+            ax = subplt_ax.plot(epoch_list, data[prop], color=colors[j], marker=markers[j], linestyle='--')
+            subplt_ax.set_ylabel(name_convert[prop], fontsize=22) # y label
+        print(f'average of {prop}:', sum(data_pts) / len(data_pts))
+
+        # subplt_ax.set_ylim(ylimit) # y ticks
+        subplt_ax.tick_params(axis='both', labelsize=16) # x, y ticks
+        # subplt_ax.set_xticklabels(epoch_list, fontsize=16) # x ticks   
+        
+        if row == nrows - 1:
+            subplt_ax.set_xlabel('# Epoch', fontsize=22)
+
+    fig.legend(legend_list, fontsize=18, loc='lower center', bbox_to_anchor=(0.5, 0))
+    plt.savefig(save_path, dpi=200)
+    
+    exit()    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == '__main__':
+    # plot_results_from_uniform_generation()
+    
+    
     # plot(prop='QED', metric='uniqueness')
     
     parser = argparse.ArgumentParser()

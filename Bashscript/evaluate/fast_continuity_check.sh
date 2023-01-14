@@ -25,14 +25,28 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 #         -epoch_list 15 16 17 18 19 20       \
 #     >>ContiCheck_model-${MODEL_NAME}.out 2>&1 &
 
-GPU_IDX=2
+# GPU_IDX=2
+# MODEL_NAME=transformer
+# MODEL_NUM=3
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+#     inference.py \
+#         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat \
+#         -model_type transformer                     \
+#         -model_name ${MODEL_NAME}${MODEL_NUM}       \
+#         -epoch_list 19 20 21 22 23 24 25   \
+#     >>ContiCheck_model-${MODEL_NAME}{MODEL_NUM}.out 2>&1 &
+
+
+GPU_IDX=1
 MODEL_NAME=transformer
-MODEL_NUM=3
+DATA_NUM=140
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
     inference.py \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat \
-        -model_type transformer                     \
-        -model_name ${MODEL_NAME}${MODEL_NUM}       \
-        -epoch_list 19 20 21 22 23 24 25   \
-    >>ContiCheck_model-${MODEL_NAME}{MODEL_NUM}.out 2>&1 &
+    continuity-check                                            \
+        -continuity_check                                       \
+        -model_name ${MODEL_NAME}-${DATA_NUM}                   \
+        -epoch_list 24 25                                       \
+    >>ContiCheck_model-${MODEL_NAME}-${DATA_NUM}.out 2>&1 &

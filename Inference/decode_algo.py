@@ -102,9 +102,9 @@ class Sampling(object):
         src = src.to(self.device)
         props = props.to(self.device)
         src_mask = src_mask.to(self.device)
-        z = self.predictor.encode(src, props, src_mask)
-        return z
-
+        z, mu, log_var = self.predictor.encode(src, props, src_mask)
+        return z, mu, log_var
+    
 
 class MultinomialSearch(Sampling):
     def __init__(self, predictor, kwargs):

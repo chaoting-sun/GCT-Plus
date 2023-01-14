@@ -2,14 +2,17 @@ import os
 import argparse
 import swifter
 from pandarallel import pandarallel
+from pathos.multiprocessing import ProcessingPool as Pool
 import pandas as pd
 import numpy as np
 import joblib
 
 from time import time
 from Configuration.config import options
-from Utils.property import property_prediction, get_mol, tanimoto_similarity, logP, tPSA, QED
+from Utils.property import property_prediction, tanimoto_similarity
+from Utils.field import smiles_fields
 import matplotlib.pyplot as plt
+import dill as pickle
 
 
 def plot_1d_density():
@@ -60,7 +63,61 @@ def df_bar_plot(df, x, y, file_name, xlabel='x label', ylabel='y label'):
     fig.savefig(file_name)
 
 
+def filter_input_data(df, name, center_val, tolerance):
+    return df.loc[(df[name] >= center_val-tolerance) 
+                & (df[name] <= center_val+tolerance)]
+
+def filter_constraints():
+    return {
+        'length': { 'center_val': 35,   'tolerance': 3    },
+        'logP'  : { 'center_val': 2.84, 'tolerance': 0.2  },
+        'tPSA'  : { 'center_val': 58.11,'tolerance': 5    },
+        'QED'   : { 'center_val': 0.89, 'tolerance': 0.08 }
+    }
+
+def data_path():
+    return {
+        'smiles_path': '/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/smiles_serial.csv',
+        'prop_path'  : '/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/prop_serial.csv',
+        'src_path'   : '/fileserver-gamma/chaoting/ML/molGCT/SRC.pkl'
+    }
+
+
+def get_analysis_input():
+    path_list = data_path()
+    smiles = pd.read_csv(path_list['smiles_path'])
+    prop = pd.read_csv(path_list['prop_path'])
+    
+    SRC = pickle.load(open(path_list['src_path'], 'rb'))
+
+    def get_toklen(smiles):
+        return len(SRC.tokenize(smiles))
+
+    with Pool(4) as pool:
+        smiles['length'] = pool.map(get_toklen, smiles['smiles'])
+    df = pd.concat([smiles, prop], axis=1)
+    
+    constraints = filter_constraints()
+    for name, v in constraints.items():
+        df = filter_input_data(df, name, v['center_val'], v['tolerance'])    
+    
+    return df
+
+
+def select_proper_smiles():
+    df = get_analysis_input()
+
+    df = df.loc[(df.length >= 32) &
+                (df.length <= 38)]
+    
+
+
+
 if __name__ == '__main__':
+    select_proper_smiles()    
+
+    exit()
+
     parser = argparse.ArgumentParser()
     parser = options(parser)
     args = parser.parse_args()

@@ -198,6 +198,7 @@ class UniformGeneration:
         """
         generate SMILES
         """
+
         for i, props in enumerate(uniform_props):
             file_name = f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}'
             gen_path = os.path.join(save_folder, f'{file_name}.csv')
@@ -215,26 +216,42 @@ class UniformGeneration:
                 with open(stat_path, 'w') as ptr:
                     ptr.write(header+'\n')
                     ptr.write(body+'\n')
+
+        """
+        combine
+        """
+        
+        all_stat = None
+        for i, props in enumerate(uniform_props):
+            file_name = f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}'
+            stat_path = os.path.join(save_folder, f'{file_name}_stat.csv')
+            stat = pd.read_csv(stat_path)            
+            all_stat = pd.concat([all_stat, stat], axis=0)
+        all_stat = all_stat.reset_index(drop=True)
+        target_props = pd.DataFrame(uniform_props, columns=self.props)
+        all_stat = pd.concat([target_props, all_stat], axis=1)        
+        all_stat.to_csv(os.path.join(save_folder, 'all_stat.csv'))
  
         """
-        compute each and overall statistics
+        compute overall statistics
         """
-        all_gen = None
-        for i, props in enumerate(uniform_props):
-            save_path = os.path.join(save_folder, 
-                f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}.csv')
-
-            gen = pd.read_csv(save_path, index_col=[0])
-            all_gen = pd.concat([all_gen, gen], axis=0)
         
-        all_gen = all_gen.reset_index()
+        if not os.path.exists(os.path.join(save_folder, 'statistics.csv')):
+            all_gen = None
+            for i, props in enumerate(uniform_props):
+                save_path = os.path.join(save_folder, 
+                    f'{props[0]:.2f}_{props[1]:.2f}_{props[2]:.2f}.csv')
 
-        all_metrics = get_all_metrics(all_gen, self.train_smiles, self.n_jobs)
-        header, body = print_all_metrics(all_metrics)
+                gen = pd.read_csv(save_path, index_col=[0])
+                all_gen = pd.concat([all_gen, gen], axis=0)
 
-        with open(os.path.join(save_folder, 'statistics.csv'), 'w') as ptr:
-            ptr.write(header+'\n')
-            ptr.write(body+'\n')
+            all_metrics = get_all_metrics(all_gen, self.train_smiles, self.n_jobs)
+            header, body = print_all_metrics(all_metrics)
+
+            with open(os.path.join(save_folder, 'statistics.csv'), 'w') as ptr:
+                ptr.write(header+'\n')
+                ptr.write(body+'\n')
+            
 
 
 def fast_uniform_generation(args, train_smiles, SRC, TRG, 

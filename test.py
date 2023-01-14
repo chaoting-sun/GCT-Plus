@@ -363,6 +363,96 @@ def multihead_attention():
     print(k.size())
 
 
+def test_if_different():
+    import argparse
+    from Model.build_model import get_model
+    from Configuration.config import hard_constraints_opts
+    from Utils.field import get_tf_fields
+    
+    parser = argparse.ArgumentParser()
+    hard_constraints_opts(parser)
+    
+    args = parser.parse_args()
+
+    fields, SRC, TRG = get_tf_fields(args.conditions, args.molgct_path)
+    # args.use_model_path = '/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer1/model_10.pt'
+    args.use_model_path = '/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_10.pt'
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab))
+
+    for name, params in model.named_parameters():
+        if name == 'decoder.layers.2.attn_2.out.weight':
+            print(params)
+
+
+def smoothness_plot():
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    def arrowed_spines(fig, ax):
+
+        xmin, xmax = ax.get_xlim() 
+        ymin, ymax = ax.get_ylim()
+
+        # removing the default axis on all sides:
+        for side in ['bottom','right','top','left']:
+            ax.spines[side].set_visible(False)
+
+        # removing the axis ticks
+        plt.xticks([]) # labels 
+        plt.yticks([])
+        ax.xaxis.set_ticks_position('none') # tick markers
+        ax.yaxis.set_ticks_position('none')
+
+        # get width and height of axes object to compute 
+        # matching arrowhead length and width
+        dps = fig.dpi_scale_trans.inverted()
+        bbox = ax.get_window_extent().transformed(dps)
+        width, height = bbox.width, bbox.height
+
+        # manual arrowhead width and length
+        hw = 1./20.*(ymax-ymin) 
+        hl = 1./20.*(xmax-xmin)
+        lw = 1. # axis line width
+        ohg = 0.3 # arrow overhang
+
+        # compute matching arrowhead length and width
+        yhw = hw/(ymax-ymin)*(xmax-xmin)* height/width 
+        yhl = hl/(xmax-xmin)*(ymax-ymin)* width/height
+
+        # draw x and y axis
+        ax.arrow(xmin, 0, xmax-xmin, 0., fc='k', ec='k', lw = lw, 
+                head_width=hw, head_length=hl, overhang = ohg, 
+                length_includes_head= True, clip_on = False) 
+
+        ax.arrow(0, ymin, 0., ymax-ymin, fc='k', ec='k', lw = lw, 
+                head_width=yhw, head_length=yhl, overhang = ohg, 
+                length_includes_head= True, clip_on = False)
+
+    # plot
+    x = np.arange(-2., 10.0, 0.01)
+    plt.plot(x, x**2)
+    fig = plt.gcf()
+    fig.set_facecolor('white') 
+    ax = plt.gca()
+
+    arrowed_spines(fig, ax)
+
+    plt.savefig('aa.png')
+    
+    
+def tokenize_smiles():
+    from Utils.field import smiles_fields
+    
+    smiles = 'CC1C2CCC(C2)C1CN(CCO)C(=O)c1ccc(Cl)cc1'
+    field_path = '/fileserver-gamma/chaoting/ML/cvae-transformer/molGCT/fields/'
+    
+    SRC, _ = smiles_fields(field_path)
+    tokens = SRC.tokenize(smiles)
+    
+    print([SRC.vocab.stoi[t] for t in tokens])
+    
+
+
 if __name__ == '__main__':
     # test_intdiv()
     # test_speed_of_open_binaryfiles()
@@ -376,4 +466,8 @@ if __name__ == '__main__':
     # test_rdkit()
     # test_novelty()
     # bar_plot()
-    multihead_attention()
+    # multihead_attention()
+    # test_if_different()
+    # smoothness_plot()
+    
+    tokenize_smiles()

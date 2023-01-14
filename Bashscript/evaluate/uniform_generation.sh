@@ -36,12 +36,12 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 # > model: transformer + fromScratch
 # > no src
 
-GPU_IDX=3
+GPU_IDX=2
 MODEL_NAME=transformer
-MODEL_NUM=3
+MODEL_NUM=1
 # <<<<<<<<<<<<<<<<<<<<<<<<<
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
     inference.py \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat \
         -model_type transformer                     \
@@ -49,7 +49,7 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
         -uniform_generation                         \
         -epoch_list 16 17 18 19 20 21 22 23 24 25   \
         -model_name ${MODEL_NAME}${MODEL_NUM}       \
-    # >>ContiCheck_model-${MODEL_NAME}{MODEL_NUM}.out 2>&1 &
+    >>ContiCheck_model-${MODEL_NAME}${MODEL_NUM}.out 2>&1 &
 
 
 # <<<<<<<<<<<<<<<<<<<<<<<<<

@@ -83,18 +83,12 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
+
         for i in range(self.N):
             # dim: -> (batch_size, src_maxstr, d_model)
-            x, q_k_enc_tmp = self.layers[i](x, mask)
-            q_k_enc_tmp = q_k_enc_tmp.cpu().detach().numpy()[
-                :, np.newaxis, :, :]
-            if i == 0:
-                q_k_enc = q_k_enc_tmp
-            else:
-                q_k_enc = np.concatenate((q_k_enc, q_k_enc_tmp), axis=1)
-
+            x = self.layers[i](x, mask)
         x = self.norm(x)
-        return x, q_k_enc
+        return x
 
 
 class Decoder(nn.Module):
@@ -156,10 +150,10 @@ class Decoder(nn.Module):
         return self.norm(x), q_k_dec1, q_k_dec2
 
 
-class MLPEncoder(nn.Module):
+class MLPCVAETFEncoder(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64,
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPEncoder, self).__init__()
+        super(MLPCVAETFEncoder, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -221,14 +215,14 @@ class MLPEncoder(nn.Module):
         return self.out(x), q_k_dec1, q_k_dec2
 
     def forward(self, src, trg_en, econds, mconds, dconds, src_pad_mask, trg_pad_mask):
-        x, _ = self.encoder(src, econds, src_pad_mask)
+        x = self.encoder(src, econds, src_pad_mask)
 
         z, _, _ = self.sampler1(x)
         x = self.mlp(z, mconds)
         trg_z_pred, _, _ = self.sampler2(x)  # output of mlp
         trg_z_pred = F.log_softmax(trg_z_pred, dim=-1)
 
-        x, _ = self.encoder(trg_en, dconds, trg_pad_mask)
+        x = self.encoder(trg_en, dconds, trg_pad_mask)
         trg_z_truth, _, _ = self.sampler2(x)
 
         return trg_z_pred, trg_z_truth

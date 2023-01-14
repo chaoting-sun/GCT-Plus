@@ -17,7 +17,7 @@ from Tokenize import moltokenize
 
 
 # from Model.mlp_transformer import decode
-from Model.mlp_encoder import decode
+from Model.mlpcvaetf_encoder import decode
 from Model.loss import LossCompute, MSE_KLDiv, MSE, KLDiv, JSD
 from Model.modules import NoamOpt as moptim
 from Utils.dataset import to_dataloader

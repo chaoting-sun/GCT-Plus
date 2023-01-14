@@ -11,7 +11,7 @@ from Utils.seed import set_seed
 from Configuration.config import options, hard_constraints_opts
 from Utils import allocate_gpu
 from Utils.field import get_inference_fields, smiles_fields, condition_fields
-from Model.build_model import build_model, get_model
+from Model.build_model import get_model
 from Inference.model_prediction import Predictor
 from Inference.decode_algo import MultinomialSearch, BeamSearch, NewBeamSearch
 from Inference.uniform_generation import uniform_generation, fast_uniform_generation
@@ -20,6 +20,9 @@ from Inference.uniform_generation import uniform_generation, fast_uniform_genera
 from Inference.continuity_check import continuity_check
 from Inference.fast_continuity_check import fast_continuity_check
 from Inference.src_generation import fast_src_generation
+from Inference.test_encoder import fast_test_encoder
+from Utils.property import tanimoto_similarity as similarity_fcn
+
 # from Inference.atten_generate import atten_generate
 
 
@@ -105,6 +108,7 @@ def calc_distance(args):
 
 def main():
     set_seed(0)
+    
     
     print("Parse the arguments...")
 
@@ -199,22 +203,27 @@ def add_args(parser):
     ug_parser = subparsers.add_parser('uniform-generation', parents=[parent_parser])
     ug_parser.add_argument('-uniform_generation', action='store_true')
     ug_parser.add_argument('-n_each_sampling', type=int, default=100)
-    ug_parser.add_argument('-n_each_prop', type=int, default=50)
+    ug_parser.add_argument('-n_each_prop', type=int, default=5)
     """
     Source generation
     """
     sg_parser = subparsers.add_parser('src-generation', parents=[parent_parser])
     sg_parser.add_argument('-src_generation', action='store_true')
-    sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[2])
+    sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
     sg_parser.add_argument('-n_samples', type=int, default=10)
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
+    """
+    encoder test
+    """
+    et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
+    et_parser.add_argument('-encoder_test', action='store_true')
 
 
 if __name__ == "__main__":
     set_seed(0)
-    
+
     print("Parse the arguments...")
     parser = argparse.ArgumentParser()
     add_args(parser)
@@ -249,3 +258,5 @@ if __name__ == "__main__":
         fast_src_generation(args, toklen_data, train_smiles, 
                             scaler, SRC, TRG, COND, device, logger)
 
+    if hasattr(args, 'encoder_test'):
+        fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)

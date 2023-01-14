@@ -13,7 +13,7 @@ from Utils.mapper import mapper
 from Utils.property import props_predictor_wrapper
 from Utils.property import property_prediction, get_mol, tanimoto_similarity
 from Utils.dataset import to_dataloader, get_dataloader
-from Model.att_encoder import decode
+from Model.attencvaetf import decode
 from pandarallel import pandarallel
 
 from Model.build_model import build_model

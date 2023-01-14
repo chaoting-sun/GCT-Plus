@@ -19,6 +19,12 @@ _model_input_to_subpath = {
     'eo-rmsprop-tf': 'transformer_ep25_aug-decoderout-rmsprop',
 }
 
+name_convert = {
+    'transformer1': 'CVAE-TF1',
+    'transformer2': 'CVAE-TF2',
+    'transformer3': 'CVAE-TF3',
+}
+
 
 def _get_sub_file_folders(query):
     sub_file_folders = []
@@ -47,27 +53,28 @@ def _figure_path(check_on, query_list, method, metric):
 def _get_legend_name_list(query_list):
     legend_name_list = [] 
     for query in query_list:
+        legend = name_convert[query['model']]
         for ep in query['epoch']:
-            legend_name_list.append(f"{query['model']}-{ep}")
+            legend_name_list.append(f"{legend} {ep}")
     return legend_name_list
 
 
 def _get_file_path_list(args, query_list):
     if args.check_on == 'z':
-        prop = 'z'
-        file_name = 'z1z2_statistics.csv'
+        suffix = 'z'
     else:
-        prop = 'conds'
-        file_name = f'{args.check_on}_statistics.csv'
-    
+        suffix = 'conds'
+        
     file_path_list = []    
     for i, query in enumerate(query_list):
-        sub_file_folders = _get_sub_file_folders(query)
-        for each in sub_file_folders:    
-            file_path = os.path.join(args.main_folder, each, f"check_{prop}",
-                                     f"toklen{args.toklen}", args.decode_algo,
-                                     file_name)
-            file_path_list.append(file_path)
+        model = query['model']
+        epochs = query['epoch']
+        
+        for ep in epochs:
+            file_path_list.append(os.path.join(args.main_folder,
+                                               f'check_{suffix}',
+                                               model, str(ep),
+                                               f'{args.check_on}_statistics.csv'))
     return file_path_list
     
 
@@ -88,18 +95,21 @@ def get_metric_results(metric, file_paths, legend_names):
 def line_plot(dataframe, title, xlabel,
               ylabel, figpath='./test.png'):
     plt.figure(figsize=(6,5))
-    
-    sns.lineplot(data=dataframe, palette="cubehelix")
+
+    ax = sns.lineplot(data=dataframe, palette="cubehelix")
+    ax.get_legend().remove()
+    # sns.move_legend(ax, "lower left")
     # sns.scatterplot(data=dataframe, palette="cubehelix", s=47)
     
     plt.ylim((0,1))
-    plt.title(title, fontsize=24)
+    # plt.title(title, fontsize=24)
     plt.xlabel(xlabel, fontsize=18)
     plt.ylabel(ylabel, fontsize=18)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
-    plt.legend(fontsize=16)
+    plt.legend(fontsize=13)
     plt.tight_layout()
+    print('line plot:', figpath)
     plt.savefig(figpath, dpi=200)
     
 
@@ -112,7 +122,7 @@ def plot_on_average(dataframe, title, xlabel, ylabel, figpath):
     means.plot(figsize=(6, 5), marker='o', rot=15)
 
     plt.ylim((0,1))
-    plt.title(title, fontsize=24)
+    # plt.title(title, fontsize=24)
     plt.xlabel(xlabel, fontsize=18)
     plt.ylabel(ylabel, fontsize=18)
     plt.xticks(fontsize=16)
@@ -134,7 +144,7 @@ def plot_metric(args, metric, query_list):
         line_plot(dataframe=results,
                   title=f'{metric.capitalize()} by Steps ({args.check_on})',
                   xlabel='# Steps',
-                  ylabel=metric,
+                  ylabel='SNN_start',
                   figpath=_figure_path(args.check_on, query_list, 'line', metric)
                   )
     
@@ -143,7 +153,7 @@ def plot_metric(args, metric, query_list):
         plot_on_average(dataframe=results,
                         title=f'{metric.capitalize()} on Models ({args.check_on})',
                         xlabel='Models',
-                        ylabel=metric,
+                        ylabel='SNN_start',
                         figpath=_figure_path(args.check_on, query_list, 'avg', metric)
                         )
 
@@ -176,10 +186,10 @@ def snn_prev_index(snn_prev):
 
 
 def options(parser):
-    parser.add_argument('-main_folder', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference')
+    parser.add_argument('-main_folder', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Results')
     parser.add_argument('-decode_algo', type=str, default='greedy')
     parser.add_argument('-toklen', type=str, default=30)
-    parser.add_argument('-check_on', type=str, default='logP')
+    parser.add_argument('-check_on', type=str, default='QED')
 
     parser.add_argument('-plot_by_steps', type=bool, default=True)
     parser.add_argument('-plot_on_average', type=bool, default=True)
@@ -190,9 +200,9 @@ if __name__ == '__main__':
     options(parser)
     args = parser.parse_args()
     
-    metric = 'snn_previous'
+    metric = 'snn_start'
     query = [
-        { 'model': 'transformer1', 'epoch': np.arange(16, 25) },
+        { 'model': 'transformer2', 'epoch': np.arange(16, 25+1) },
         # { 'model': 'tf', 'epoch': np.arange(25, 31) },
         # { 'model': 'all-tf', 'epoch': np.arange(26, 31) },
         # { 'model': 'aug-eo-tf', 'epoch': np.arange(26, 36) },

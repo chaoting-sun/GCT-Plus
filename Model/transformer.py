@@ -116,7 +116,7 @@ class Transformer(nn.Module):
         # print(f'src: {src.size()}, trg: {trg.size()}, econds: {econds.size()}')
         z, mu, log_var = self.encoder(src, econds, src_mask)
         
-        # print('Decoder:')        
+        # print('Decoder:')
         # print(f'z: {z.size()}, mu: {mu.size()}, log_var: {log_var.size()}')
         # print(f'src_mask: {src_mask.size()}, trg_mask: {trg_mask.size()}')
         d_output = self.decoder(trg, z, dconds, src_mask, trg_mask)
@@ -132,7 +132,7 @@ class Transformer(nn.Module):
 
     def encode(self, src, conds, src_mask):
         z, mu, log_var = self.encoder(src, conds, src_mask)
-        return z
+        return z, mu, log_var
 
     def decode(self, trg, z, conds, src_mask, trg_mask):
         x = self.decoder(trg, z, conds, src_mask, trg_mask)

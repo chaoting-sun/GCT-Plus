@@ -9,8 +9,13 @@ class Predictor(object):
         self.decoder = decoder
         self.encoder = encoder
     
+    # def encode_mu(self, src, econds, src_mask):
+    #     _, mu, _ = self.encoder(src, econds, src_mask)
+    #     return mu
+    
     def encode(self, src, econds, src_mask):
-        return self.encoder(src, econds, src_mask)
+        z, mu, log_var = self.encoder(src, econds, src_mask)
+        return z, mu, log_var
 
     def predict(self, trg, z, conds, src_mask, trg_mask):
         if self.use_cond2dec == True:

@@ -15,7 +15,7 @@ from Train.mlp_trainer import Trainer
 from Utils import set_seed, allocate_gpu, get_fields, save_fields
 from Model.build_model import build_model
 
-from Utils.dataset import mlpDataset, sqlite_initialize
+from Utils.dataset import mlpDataset
 from torch.utils.data import DataLoader
 
 """

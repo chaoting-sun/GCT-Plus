@@ -9,10 +9,11 @@ from torchtext import data
 import torch.nn.functional as F
 
 from Utils import allocate_gpu
-from Utils.field import get_tf_fields, save_fields
+from Utils.field import save_fields, smiles_fields, condition_fields, get_tf_fields
 from Utils.dataset import get_dataloader
 from Model.modules import create_source_mask, create_target_mask
 from Model.build_model import freeze_params, get_model
+from Model.loss import LossCompute, KLDiv
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -70,13 +71,15 @@ def run_epoch(args, model, optimizer, dataloader,
                                       batch.dconds, args.use_cond2dec)
 
         model_cost_time -= time()
-        preds_prop, preds_mol, mu, log_var, _ = model.forward(batch.src,
-                                                              trg_input,
-                                                              batch.econds,
-                                                              batch.dconds,
-                                                              src_mask,
-                                                              trg_mask
-                                                              )
+        preds_prop, preds_mol, mu, log_var, _ = model.forward(
+            src=batch.src,
+            trg=trg_input,
+            econds=batch.econds,
+            mconds=batch.mconds,
+            dconds=batch.dconds,
+            src_mask=src_mask,
+            trg_mask=trg_mask,
+        )
 
         model_cost_time += time()
 
@@ -176,30 +179,42 @@ def train_model(args, model, optimizer, train_iter,
                                     args.pad_id,
                                     device)
         model.train()
-        
-        train_history, avg_loss, current_step = run_epoch(
-            args, model, optimizer, dataloader, current_step,
-            beta, args.train_nbatches, LOG, train=True
-        )
-        df = pd.DataFrame(train_history)
+
+        loss_history, avg_loss, current_step = run_epoch(args,
+                                                         model,
+                                                         optimizer,
+                                                         dataloader,
+                                                         current_step,
+                                                         beta,
+                                                         args.train_nbatches,
+                                                         LOG,
+                                                         train=True
+                                                         )
+        df = pd.DataFrame(loss_history)
         df.to_csv(os.path.join(args.save_directory, f'train_{epoch}.csv'))
-        
         LOG.info(f'training end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
         LOG.info(f'validation start, epoch: {epoch}')
-        
-        dataloader = get_dataloader(valid_iter, args.conditions,
-                                    args.pad_id, device)
+
+        dataloader = get_dataloader(valid_iter,
+                                    args.conditions,
+                                    args.pad_id,
+                                    device)
         model.eval()
         with torch.no_grad():
-            valid_hist, avg_loss = run_epoch(
-                args, model, optimizer, dataloader, current_step,
-                beta, args.valid_nbatches, LOG, train=False
-            )
-        df = pd.DataFrame(valid_hist)
+            loss_history, avg_loss = run_epoch(args,
+                                               model,
+                                               optimizer,
+                                               dataloader,
+                                               current_step,
+                                               beta,
+                                               args.valid_nbatches,
+                                               LOG,
+                                               train=False
+                                               )
+        df = pd.DataFrame(loss_history)
         df.to_csv(os.path.join(args.save_directory, f'valid_{epoch}.csv'))
-        
         LOG.info(f'validation end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
@@ -208,12 +223,11 @@ def train_model(args, model, optimizer, train_iter,
         save_checkpoint(args, model, optimizer, model_path)
 
 
-def tf_train(args, logger):
+def mlpcvaetf_train(args, logger):
     os.makedirs(args.save_directory, exist_ok=True)
-    
+    # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
     data_path = os.path.join(args.data_path, 'aug',
                              f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
-    # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
 
     LOG = logger(name='augment data by conditions',
                  log_path=os.path.join(args.save_directory, "records.log"))
@@ -257,8 +271,11 @@ def tf_train(args, logger):
     LOG.info('prepare model...')
     
     model = get_model(args, len(SRC.vocab), len(TRG.vocab))
-    
     model = model.to(device)
+
+    # for name, params in model.named_parameters():
+    #     print(name, params.size())
+    # exit()
 
     if args.train_params:
         freeze_params(model, train_names=args.train_params)
@@ -290,12 +307,6 @@ def tf_train(args, logger):
             betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
         )
 
-    # if args.use_model_path and ('molgct.pt' not in args.use_model_path):
-    #         optimizer = torch.optim.Adam(
-    #     filter(lambda p: p.requires_grad, model.parameters()),
-    #     lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
-    # )
-
     if args.use_model_path and args.optimizer_choice == 'original':
         checkpoint = torch.load(args.use_model_path, map_location='cuda:0')
         optim_dict = checkpoint['opt_state_dict']
@@ -307,3 +318,91 @@ def tf_train(args, logger):
                 valid_iter, device, LOG)
 
 
+# import os
+# import gc
+
+# from numpy import ceil
+# from time import time
+
+# import torch
+# from torchtext import data
+
+# from Train.mlpcvae_trainer import MLPCVAE_Trainer
+# from Train.att_trainer import ATT_Trainer
+# from Model.modules import NoamOpt as moptim
+# from Utils import set_seed, allocate_gpu, get_fields, save_fields
+# from Model.build_model import build_model
+
+
+# def train(args, debug=False):
+#     set_seed(100)
+
+#     print('Getting GPU')
+#     device = allocate_gpu()    
+
+#     print('Getting feilds / SRC / TRG')
+
+#     fields, SRC, TRG = get_fields(args.conditions, args.molgct_path)
+
+#     print('Preparing training / validation dataset')
+
+#     train_data, valid_data = data.TabularDataset.splits(
+#         path=os.path.join(args.data_path, 'aug', f'data_sim{args.similarity:.2f}'),
+#         train='train.csv', validation='validation.csv', test=None, format='csv',
+#         fields=fields, skip_header=True
+#     )
+
+#     print(f'#pairs in training / validation dataset: {len(train_data)}/{len(valid_data)}')
+
+#     if args.load_field is False:
+#         SRC.build_vocab(train_data)
+#         TRG.build_vocab(valid_data)
+#         save_fields(SRC, TRG, args.molgct_path)
+
+#     args.train_nbatches, args.valid_nbatches = int(ceil(len(train_data) / args.batch_size)), \
+#                                                int(ceil(len(valid_data) / args.batch_size))
+
+#     print('Preparing training / validation dataloader')
+
+#     train_iter, valid_iter = data.BucketIterator.splits(
+#         (train_data, valid_data), batch_sizes=(args.batch_size, args.batch_size),
+#         sort_key=lambda x: (len(x.src), len(x.trg))
+#     )
+
+#     del train_data, valid_data
+#     gc.collect()
+
+#     args.sos_idx = TRG.vocab.stoi['<sos>']
+#     args.eos_idx = TRG.vocab.stoi['<eos>']
+#     args.pad_idx = SRC.vocab.stoi['<pad>']
+
+#     assert SRC.vocab.stoi['<pad>'] == TRG.vocab.stoi['<pad>']
+
+#     print(f'Preparing model with starting epoch: {args.start_epoch}')
+
+#     if args.model_type == 'att_encoder':
+#         model = build_model(args, len(SRC.vocab), len(TRG.vocab), att_type='ATT_v5').to(device)
+#     elif args.model_type == 'mlp_encoder':
+#         model = build_model(args, len(SRC.vocab), len(TRG.vocab)).to(device)
+
+#     # for n, p in model.named_parameters():
+#     #     if p.requires_grad:
+#     #         print(n, p.size())
+
+#     total_parameters = sum(p.numel() for p in model.parameters())
+#     trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+#     assert trainable_parameters > 0
+
+#     print('Parameters / Trainable Parameters:', f'{total_parameters:<11}/{trainable_parameters:<11}\t')
+    
+#     if args.model_type == 'att_encoder':
+#         trainer = ATT_Trainer(args.conditions, args.save_directory, args.pad_idx, args.max_strlen)
+#         trainer.train(args, model, train_iter, valid_iter, SRC, TRG, device)
+#     elif args.model_type == 'mlp_encoder':
+#         trainer = MLPCVAE_Trainer(args)
+#         trainer.train(model, train_iter, valid_iter, SRC, TRG, device)
+
+
+# def mlpcvae_train(args, logger):
+#     pass

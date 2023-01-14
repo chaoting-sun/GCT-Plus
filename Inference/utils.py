@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from Model.build_model import build_model, get_model
+from Model.build_model import get_model
 from Inference.model_prediction import Predictor
 from Inference.decode_algo import get_generator
 

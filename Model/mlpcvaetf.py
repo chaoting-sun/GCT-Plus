@@ -25,7 +25,9 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size
         self.latent_dim = latent_dim
+        # TODO: change the layer settings
         mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
+        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
         # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
         # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
@@ -72,22 +74,16 @@ class Encoder(nn.Module):
         # dim: -> (batch_size, nconds, d_model)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
         # dim: -> (batch_size, src_maxstr, d_model)
-
         x = self.embed_sentence(src)
         # dim: -> (batch_size, nconds+src_maxtr, d_model)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
         for i in range(self.N):
             # dim: -> (batch_size, src_maxstr, d_model)
-            x, q_k_enc_tmp = self.layers[i](x, mask)
-            q_k_enc_tmp = q_k_enc_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            if i == 0:
-                q_k_enc = q_k_enc_tmp
-            else:
-                q_k_enc = np.concatenate((q_k_enc, q_k_enc_tmp), axis=1)
+            x = self.layers[i](x, mask)
 
         x = self.norm(x)
-        return x, q_k_enc
+        return x
 
 
 class Decoder(nn.Module):
@@ -128,22 +124,14 @@ class Decoder(nn.Module):
         x = self.pe(x)
 
         for i in range(self.N):
-            x, q_k_dec1_tmp, q_k_dec2_tmp = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
-            q_k_dec1_tmp = q_k_dec1_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            q_k_dec2_tmp = q_k_dec2_tmp.cpu().detach().numpy()[:, np.newaxis, :, :]
-            if i != 0:
-                q_k_dec1 = np.concatenate((q_k_dec1, q_k_dec1_tmp), axis=1)
-                q_k_dec2 = np.concatenate((q_k_dec2, q_k_dec2_tmp), axis=1)
-            else:
-                q_k_dec1 = q_k_dec1_tmp
-                q_k_dec2 = q_k_dec2_tmp
-        return self.norm(x), q_k_dec1, q_k_dec2
+            x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
+        return self.norm(x)
     
 
-class MLPTransformer(nn.Module):
+class MLPCVAETF(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPTransformer, self).__init__()
+        super(MLPCVAETF, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -175,15 +163,23 @@ class MLPTransformer(nn.Module):
         x = self.mlp(z1, mconds)
         z2, _, _ = self.sampler2(x)
         return z2
+    
+    def encode(self, src, econds, src_mask):
+        x = self.encoder(src, econds, src_mask)
+        return x
 
-    def forward(self, src, trg, econds, mconds, dconds, src_mask, trg_mask):
+    def decode(self, trg, z, dconds, src_mask, trg_mask):
+        x = self.decoder(trg, z, dconds, src_mask, trg_mask)
+        return self.out(x)
+
+    def forward(self, src, trg, econds, mconds, 
+                dconds, src_mask, trg_mask):
         # src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
-        x, q_k_enc = self.encoder(src, econds, src_mask)
-        z1, mu1, log_var1 = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
+        x = self.encode(src, econds, src_mask)
+        z1, mu, logvar = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
         x = self.mlp(z1, mconds)
-        z2, mu2, log_var2 = self.sampler2(x)
-        d_output, q_k_dec1, q_k_dec2 = self.decoder(trg, z2, dconds, src_mask, trg_mask)
-        output = self.out(d_output)
+        z2, mu, logvar = self.sampler2(x)
+        output = self.decode(trg, z2, dconds, src_mask, trg_mask)
         
         if self.use_cond2dec == True:
             output_prop = self.prop_fc(output[:, :self.nconds, :])
@@ -193,11 +189,7 @@ class MLPTransformer(nn.Module):
             output_mol = output
 
         output_mol = F.log_softmax(output_mol, dim=-1)
-
-        return (output_prop, output_mol,
-                (mu1, log_var1, z1),
-                (mu2, log_var2, z2),
-                (q_k_enc, q_k_dec1, q_k_dec2))
+        return output_prop, output_mol, mu, logvar, z2
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

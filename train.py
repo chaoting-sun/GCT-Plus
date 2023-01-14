@@ -7,8 +7,11 @@
 import os
 import argparse
 
-from Train.train import train
-from Train.mlp_train import mlp_train
+# from Train.train import train
+# from Train.mlp_train import mlp_train
+from Train.attencvaetf_train import attencvaetf_train
+from Train.mlpcvaetf_encoder_train import mlpcvaetf_encoder_train
+from Train.mlpcvaetf_train import mlpcvaetf_train
 from Train.tf_train import tf_train
 from Configuration.config import options, hard_constraints_opts
 from Utils.log import get_logger as gl
@@ -32,6 +35,7 @@ def add_args(parser):
     parser.add_argument('-tolerance', type=float, default=0.01)
     parser.add_argument('-start_epoch', type=int)
     parser.add_argument('-num_epoch', type=int, default=30)
+    parser.add_argument('-use_cvaetf_path', type=str)
     parser.add_argument('-use_model_path', type=str)
     parser.add_argument('-save_directory', type=str, required=True)
     parser.add_argument('-train_params', type=str, nargs='+')
@@ -59,24 +63,29 @@ if __name__ == "__main__":
     # 0, 100, 200, 400
     set_seed(0)
 
+    # import pandas as pd
+    # data_folder = '/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim0.70_tol0.20/'
+    # data_type = 'train'
+    # df = pd.read_csv(os.path.join(data_folder, f'{data_type}.csv'))
+    # df.insert(len(df.columns), "trg_en", df['trg'])
+    
+    # df.to_csv(os.path.join(data_folder, f'{data_type}_en.csv'), index=False)
+    # exit()
+
     parser = argparse.ArgumentParser()
     add_args(parser)
     args = parser.parse_args()    
 
     logger = get_logger(args)
 
-    print(args)
-
-    if args.model_type == 'mlp':
-        mlp_train(args, debug=DEBUG)
-        
-    elif args.model_type == 'transformer':
+    if args.model_type == 'transformer':
         tf_train(args, logger=logger)
 
-    elif args.model_type == 'mlp_encoder':
-        print('Start to train MLP_Encoder')
-        train(args, debug=DEBUG)
-    
-    elif args.model_type == 'att_encoder':
-        print('Start to train ATT_Encoder')
-        train(args, debug=DEBUG)
+    elif args.model_type == 'mlpcvaetf_encoder':
+        mlpcvaetf_encoder_train(args, logger=logger)
+
+    elif args.model_type == 'mlpcvaetf':
+        mlpcvaetf_train(args, logger=logger)
+
+    elif args.model_type == 'attencvaetf':
+        attencvaetf_train(args, logger=logger)

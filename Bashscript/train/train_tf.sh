@@ -46,29 +46,27 @@
 # > train from scratch
 # > original data
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-#     train.py \
-#         -tolerance 0.20  \
-#         -similarity 0.00 \
-#         -n_jobs 4 \
-#         -model_type transformer \
-#     train-1st \
-#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer3 \
-#         -batch_size 128 \
-#         -start_epoch 1 \
-#         -num_epoch 30 \
-#     >train_transformer3.out 2>&1 &
-
-
-GPU_IDX=3
-TOLERANCE=0.10
-SIMILARITY=0.50
+GPU_IDX=2
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-    train.py                        \
-        -tolerance    ${TOLERANCE}  \
-        -similarity   ${SIMILARITY} \
-        -start_epoch  1             \
-        -num_epoch    30            \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_aug-s${SIMILARITY}-t${TOLERANCE}/   \
-    >>train_aug_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
+    train.py \
+        -tolerance 0.00  \
+        -similarity 0.00 \
+        -start_epoch 1   \
+        -num_epoch 30    \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer-140 \
+    >train_transformer-140.out 2>&1 &
+
+
+# GPU_IDX=0
+# TOLERANCE=0
+# SIMILARITY=1
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     train.py                        \
+#         -tolerance    ${TOLERANCE}  \
+#         -similarity   ${SIMILARITY} \
+#         -start_epoch  1             \
+#         -num_epoch    30            \
+#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_aug-s${SIMILARITY}-t${TOLERANCE}/   \
+#     >>train_aug_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &

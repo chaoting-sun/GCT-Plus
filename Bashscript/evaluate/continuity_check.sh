@@ -280,21 +280,21 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 # EPOCH=35
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-    inference.py \
-        -n_jobs 2 \
-        -model_type ${MODEL_TYPE} \
-        -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/${MODEL_TYPE}_ep25_aug-decoderout/model_${EPOCH}.pt \
-    continuity-check \
-        -decode_algo ${DECODE_ALGO} \
-        -decode_type ${DECODE_TYPE} \
-        -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL_TYPE}_ep25_aug-decoderout_ep${EPOCH}_1 \
-        -continuity_check \
-        -properties 2.8421 58.1053 0.8947 \
-        -toklen ${TOKLEN} \
-        -n_steps 50 \
-        -n_samples 1 \
-        -test_for conds \
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+#     inference.py \
+#         -n_jobs 2 \
+#         -model_type ${MODEL_TYPE} \
+#         -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/${MODEL_TYPE}_ep25_aug-decoderout/model_${EPOCH}.pt \
+#     continuity-check \
+#         -decode_algo ${DECODE_ALGO} \
+#         -decode_type ${DECODE_TYPE} \
+#         -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL_TYPE}_ep25_aug-decoderout_ep${EPOCH}_1 \
+#         -continuity_check \
+#         -properties 2.8421 58.1053 0.8947 \
+#         -toklen ${TOKLEN} \
+#         -n_steps 50 \
+#         -n_samples 1 \
+#         -test_for conds \
     # >>ContiCheck_model-${MODEL_TYPE}_ep-${EPOCH}.out 2>&1 &
 
 
