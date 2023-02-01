@@ -20,68 +20,20 @@ from Inference.uniform_generation import uniform_generation, fast_uniform_genera
 from Inference.continuity_check import continuity_check
 from Inference.fast_continuity_check import fast_continuity_check
 from Inference.src_generation import fast_src_generation
+from Inference.src_rotator_generation import fast_src_rotator_generation
 from Inference.test_encoder import fast_test_encoder
 from Utils.property import tanimoto_similarity as similarity_fcn
+from Inference.test_decoder import test_decoder
 
 # from Inference.atten_generate import atten_generate
 
 
-def get_smiles_generator(predictor, decode_algo, latent_dim,
-                         max_strlen, use_cond2dec):
-    if decode_algo in ("greedy", "multinomial"):
-        return MultinomialSearch(
-            predictor, latent_dim, TRG, toklen_data, scaler,
-            max_strlen, use_cond2dec, device, decode_algo
-        )
-    elif decode_algo == "beam":
-        return BeamSearch(
-            predictor, latent_dim, TRG, toklen_data,
-            scaler, max_strlen, use_cond2dec, device
-        )
-    elif decode_algo == "newbeam":
-        return NewBeamSearch(
-            predictor, latent_dim, TRG, toklen_data,
-            scaler, max_strlen, use_cond2dec, device
-        )        
-    else:
-        exit(f"No such decoding algorithm: {decode_algo}")
-
-
 def get_logger(args):
     def logger(name, log_path):
-        # try:
-        #     os.remove(log_path)
-        # except FileNotFoundError:
-        #     pass
         logger = ul.get_logger(name=name, log_path=log_path)
         logger.info(args)
         return logger
     return logger
-
-
-def get_generator(args, SRC, TRG, device):
-    if args.model_type == 'transformer':
-        print("get model...")
-        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
-    elif args.model_type == "att_encoder":
-        model = build_model(args, len(SRC.vocab),
-                            len(TRG.vocab), att_type='ATT_v5')
-    else:
-        model = build_model(args, len(SRC.vocab), len(TRG.vocab))
-
-    model = model.to(device)
-    model.eval()
-    print('Get predictor...')
-    predictor = Predictor(args.use_cond2dec,
-                          getattr(model, args.decode_type),
-                          getattr(model, args.encode_type))
-    print('Get generator...')
-    generator = get_smiles_generator(predictor,
-                                     args.decode_algo,
-                                     args.latent_dim,
-                                     args.max_strlen,
-                                     args.use_cond2dec)
-    return generator
 
 
 def calc_distance(args):
@@ -105,67 +57,6 @@ def calc_distance(args):
     print('tolP3:', (args.qed_ub - args.qed_lb)*0.01)
     exit()
 
-
-def main():
-    set_seed(0)
-    
-    
-    print("Parse the arguments...")
-
-    parser = argparse.ArgumentParser()
-    parser = options(parser)
-    args = parser.parse_args()
-    print(args)
-
-    print("Add the logger...")
-    logger = get_logger(args)
-
-    os.makedirs(args.storage_path, exist_ok=True)
-
-    print("Looking for gpu...")
-    device = allocate_gpu()
-    print("device:", device)
-
-    scaler_path = os.path.join(args.molgct_path, 'scaler.pkl')
-    toklen_path = os.path.join(args.data_path, 'raw',
-                               'train', 'toklen_list.csv')
-    train_smiles_path = os.path.join(args.data_path, 'raw',
-                                     'train', 'smiles_serial.csv')
-    
-    scaler = joblib.load(scaler_path)
-    fields, SRC, TRG = get_inference_fields(args.conditions, args.molgct_path)
-    toklen_data = pd.read_csv(toklen_path)
-
-    print("Get train smiles...")
-    train_smiles = pd.read_csv(train_smiles_path)
-    train_smiles = train_smiles['smiles'].tolist()
-
-    print("Get smiles generator...")
-    generator = get_generator(args, SRC, TRG, device)
-
-    # if args.has_source:
-    #     generate_z(args, smiles_generator, fields, device, TRG, logger)
-    # else:
-    #     greedy_generate(args, smiles_generator, train_smiles, logger)
-    #     # varying_z_generate(args, smiles_generator, fields, device, logger, SRC, TRG)
-    #     # generate_uniformly(args, smiles_generator, train_smiles, logger)
-    
-    if hasattr(args, 'continuity_check'):
-        # no source smiles. Don't know how to extend "has_source"
-        print("[PURPOSE] Check the continuity property...")
-        continuity_check(args, generator, train_smiles, logger=logger)
-
-    # elif hasattr(args, 'self_attention'):
-    #     print("[PURPOSE] Run Transformer with self-attention...")
-    #     atten_generate(generator, args.smiles, args.target_props,
-    #                    args.storage_path, train_smiles, SRC, TRG,
-    #                    fields, args.toklen, args.conditions,
-    #                    logger=logger)
-        
-    elif hasattr(args, 'uniform_generation'):
-        print("[PURPOSE] Generate uniformly over the valid property bounds")
-        uniform_generation(args, generator, train_smiles, logger)
-        
         
 def add_args(parser):
     """ Continuity check on the latent space:
@@ -210,7 +101,17 @@ def add_args(parser):
     sg_parser = subparsers.add_parser('src-generation', parents=[parent_parser])
     sg_parser.add_argument('-src_generation', action='store_true')
     sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
-    sg_parser.add_argument('-n_samples', type=int, default=10)
+    sg_parser.add_argument('-n_samples', type=int, default=500)
+    sg_parser.add_argument('-n_selections', type=int, default=5)
+    sg_parser.add_argument('-src_smiles', type=str)
+    sg_parser.add_argument('-trg_props', type=float, nargs='+')
+    """
+    Source rotator generation
+    """
+    sg_parser = subparsers.add_parser('src-rotator-generation', parents=[parent_parser])
+    sg_parser.add_argument('-src_rotator_generation', action='store_true')
+    sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
+    sg_parser.add_argument('-n_samples', type=int, default=100)
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
@@ -219,6 +120,24 @@ def add_args(parser):
     """
     et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
     et_parser.add_argument('-encoder_test', action='store_true')
+    """
+    decoder test
+    """
+    dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
+    dt_parser.add_argument('-decoder_test', action='store_true')
+
+
+def find_best_source():
+    props = pd.read_csv('/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/prop_serial.csv')
+    smiles = pd.read_csv('/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/smiles_serial.csv')
+    sp = pd.concat([smiles, props], axis=1)
+
+    sp = sp.loc[(abs(sp.logP-2.84) < 0.02) &
+                (abs(sp.tPSA-58.11) < 1.1) &
+                (abs(sp.QED-0.89) < 0.02)
+                ]
+    print(sp)
+    exit()
 
 
 if __name__ == "__main__":
@@ -237,7 +156,7 @@ if __name__ == "__main__":
     print("device:", device)
     
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
-    fields, SRC, TRG = get_inference_fields(args.conditions, args.molgct_path)
+    SRC, TRG = smiles_fields(args.conditions, args.molgct_path)
     COND = condition_fields(args.conditions)
         
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
@@ -258,5 +177,12 @@ if __name__ == "__main__":
         fast_src_generation(args, toklen_data, train_smiles, 
                             scaler, SRC, TRG, COND, device, logger)
 
+    if hasattr(args, 'src_rotator_generation'):
+        fast_src_rotator_generation(args, toklen_data, train_smiles, 
+                                     scaler, SRC, TRG, COND, device, logger)
+
     if hasattr(args, 'encoder_test'):
         fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)
+
+    if hasattr(args, 'decoder_test'):
+        test_decoder(args, toklen_data, scaler, SRC, TRG, device)

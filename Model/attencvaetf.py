@@ -67,7 +67,11 @@ class ATTEN2(nn.Module):
     def __init__(self, latent_dim, n_heads=2, cond_dim=6, d_in=512,
                  d_mid=256, dropout=0.1, batch_first=True, max_strlen=80):
         super(ATTEN2, self).__init__()
+        self.cond_dim = cond_dim
+        self.max_strlen = max_strlen
+
         # assert (latent_dim + cond_dim) % n_heads == 0
+        # PROBLEM: string length cannot change
         self.linear_in = nn.Linear(cond_dim+max_strlen, d_in)
         self.att = nn.MultiheadAttention(embed_dim=d_in,
                                          num_heads=n_heads,
@@ -81,6 +85,13 @@ class ATTEN2(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
         self.norm_2 = Norm(max_strlen)
     
+    def padding(self, x):
+        delta_length = self.cond_dim+self.max_strlen-x.size(2)
+        pad = torch.zeros(x.size(0), x.size(1), 
+            delta_length, dtype=torch.float32).to(x.get_device())
+        return torch.cat([x, pad], axis=2)
+        
+
     def forward(self, x, mconds):
         """
         concatenate x and mconds to get input of dimension
@@ -93,8 +104,10 @@ class ATTEN2(nn.Module):
         x = torch.transpose(x, 1, 2)
         mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
         x = torch.cat([mconds, x], dim=2)
+        x = self.padding(x)
         print('mconds size:', mconds.size())
-    
+        print('x size2:', x.size())        
+
         x1 = self.linear_in(x)
         attn_out, attn_out_weights = self.att(x1, x1, x1)
         x1 = x1 + attn_out
@@ -122,7 +135,8 @@ class BI_ATTEN(nn.Module):
     def forward(self, x, mconds):
         x1 = self.atten1(x, mconds)
         x2 = self.atten2(x, mconds)
-       
+        print('att1 size:', x1.size())
+        print('att2 size:', x2.size())
         return x1 + x2
 
 
@@ -260,8 +274,6 @@ class ATTENCVAETF(nn.Module):
                 dconds, src_mask, trg_mask):
         x = self.encode(src, econds, src_mask)
         _, mu, logvar = self.sampler(x)
-        print('mu size:', mu.size())
-        print('mconds size:', mconds.size())
         mu_pred = self.att_mu(mu, mconds)
         logvar_pred = self.att_log_var(logvar, mconds)
         z, mu, logvar = self.sampler.sampling(mu_pred, logvar_pred)

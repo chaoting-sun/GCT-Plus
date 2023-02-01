@@ -18,7 +18,7 @@ def train(args, debug=False):
     set_seed(100)
 
     print('Getting GPU')
-    device = allocate_gpu()    
+    device = allocate_gpu()
 
     print('Getting feilds / SRC / TRG')
 

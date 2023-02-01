@@ -20,24 +20,17 @@ from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, nopeak_mask, create_masks, create_source_mask, get_clones
 
 
+
 class MLP(nn.Module):
-    def __init__(self, vocab_size, latent_dim, mcond_dim, d_model):
+    def __init__(self, latent_dim, mcond_dim):
         super(MLP, self).__init__()
-        self.vocab_size = vocab_size
-        self.latent_dim = latent_dim
-        # TODO: change the layer settings
-        mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 64, 128, 256, d_model] # 1
-        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 32, 64, 128, d_model] # 2
-        # mlp_stacks = [latent_dim + mcond_dim, 256, 128, 256, d_model] # 3
-        # mlp_stacks = [latent_dim + mcond_dim, 128, 64, 128, d_model] # 4
-        # mlp_stacks = [latent_dim + mcond_dim, 64, 32, 64, d_model] # 5
-        # mlp_stacks = [latent_dim + mcond_dim, 32, d_model] # 6
-        self.mlp_layers = self.build_mlp(mlp_stacks)
         self.dropout = nn.Dropout(0.1)
         self.actFcn = nn.ReLU()
-        self.norm = Norm(d_model)
+        self.norm = Norm(latent_dim)
+        mlp_stacks = [latent_dim + mcond_dim,
+                      1024, 512, 256, 128, 64, 128, 256, 256, 1024,
+                      latent_dim]
+        self.mlp_layers = self.build_mlp(mlp_stacks)
 
     def build_mlp(self, stacks):
         layers = []        
@@ -131,10 +124,10 @@ class Decoder(nn.Module):
         return self.norm(x)
     
 
-class MLPCVAETF(nn.Module):
+class SEPMLPCVAETF(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(MLPCVAETF, self).__init__()
+        super(SEPMLPCVAETF, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -143,9 +136,9 @@ class MLPCVAETF(nn.Module):
         # model architecture
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
-        self.sampler1 = Sampler(d_model, latent_dim, variational)
-        self.mlp = MLP(src_vocab, latent_dim, 2*nconds, d_model)
-        self.sampler2 = Sampler(d_model, latent_dim, variational)
+        self.sampler = Sampler(d_model, latent_dim, variational)
+        self.mlp_mu = MLP(latent_dim, 2*nconds)
+        self.mlp_logvar = MLP(latent_dim, 2*nconds)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
@@ -159,34 +152,24 @@ class MLPCVAETF(nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
-
-    # def encoder_mlp(self, src, econds, mconds, src_mask):
-    #     x, _ = self.encoder(src, econds, src_mask)
-    #     z1, _, _ = self.sampler1(x)
-    #     x = self.mlp(z1, mconds)
-    #     z2, _, _ = self.sampler2(x)
-    #     return z2
     
     def encode(self, src, conds, src_mask):
         econds, mconds = conds
         x = self.encoder(src, econds, src_mask)
-        z, _, _ = self.sampler1(x)
-        x = self.mlp(z, mconds)
-        z, mu, log_var = self.sampler2(x)        
-        return z, mu, log_var
+        _, mu, logvar = self.sampler(x)
+        mu = self.mlp_mu(mu, mconds)
+        logvar = self.mlp_logvar(logvar, mconds)
+        z = self.sampler.sampling(mu, logvar)
+        return z, mu, logvar
 
     def decode(self, trg, z, dconds, src_mask, trg_mask):
         x = self.decoder(trg, z, dconds, src_mask, trg_mask)
         return self.out(x)
 
-    def forward(self, src, trg, econds, mconds, 
+    def forward(self, src, trg, econds, mconds,
                 dconds, src_mask, trg_mask):
-        # src_mask, trg_mask = create_masks(src, trg, econds, self.use_cond2dec)
-        x = self.encode(src, econds, src_mask)
-        z1, mu, logvar = self.sampler1(x) # (batch_size, max_source_len, latent_dim)
-        x = self.mlp(z1, mconds)
-        z2, mu, logvar = self.sampler2(x)
-        output = self.decode(trg, z2, dconds, src_mask, trg_mask)
+        z, mu, logvar = self.encode(src, (econds, mconds), src_mask)
+        output = self.decode(trg, z, dconds, src_mask, trg_mask)
         
         if self.use_cond2dec == True:
             output_prop = self.prop_fc(output[:, :self.nconds, :])
@@ -196,7 +179,7 @@ class MLPCVAETF(nn.Module):
             output_mol = output
 
         output_mol = F.log_softmax(output_mol, dim=-1)
-        return output_prop, output_mol, mu, logvar, z2
+        return output_prop, output_mol, mu, logvar, z
 
 
 def decode(model, src, econds, mconds, dconds, sos_idx, eos_idx,

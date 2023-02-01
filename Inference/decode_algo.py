@@ -91,6 +91,27 @@ class Sampling(object):
                 properties)).to(self.device)
         return conds
 
+    def encode_rotator_based_smiles(self, src, props_s, props_t, transform=True):
+        if transform:
+            props_s = self.transform_props(props_s)
+            props_t = self.transform_props(props_t)
+        if props_s.dtype != torch.float32:
+            props_s = torch.Tensor(props_s)
+            props_t = torch.Tensor(props_t)
+        props_m = torch.zeros((props_s.size(0), 6))
+        props_m[:, 0:3] = props_s[:]
+        props_m[:, 3:6] = props_t - props_s
+        
+        src_mask = create_source_mask(src, self.pad_id, props_s).to(self.device)
+        src = src.to(self.device)
+        props_s = props_s.to(self.device)
+        props_t = props_t.to(self.device)
+        props_m = props_m.to(self.device)
+
+        z, mu, log_var = self.predictor.encode(src, (props_s, props_m), src_mask)
+        return z, mu, log_var
+        
+
     def encode_smiles(self, src, props, transform=True):
         if transform:
             props = self.transform_props(props)

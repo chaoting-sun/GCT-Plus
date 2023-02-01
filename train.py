@@ -12,6 +12,7 @@ import argparse
 from Train.attencvaetf_train import attencvaetf_train
 from Train.mlpcvaetf_encoder_train import mlpcvaetf_encoder_train
 from Train.mlpcvaetf_train import mlpcvaetf_train
+from Train.sepmlpcvaetf_train import sepmlpcvaetf_train
 from Train.tf_train import tf_train
 from Configuration.config import options, hard_constraints_opts
 from Utils.log import get_logger as gl
@@ -74,7 +75,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     add_args(parser)
-    args = parser.parse_args()    
+    args = parser.parse_args()
 
     logger = get_logger(args)
 
@@ -86,6 +87,9 @@ if __name__ == "__main__":
 
     elif args.model_type == 'mlpcvaetf':
         mlpcvaetf_train(args, logger=logger)
+
+    elif args.model_type == 'sepmlpcvaetf':
+        sepmlpcvaetf_train(args, logger=logger)
 
     elif args.model_type == 'attencvaetf':
         attencvaetf_train(args, logger=logger)

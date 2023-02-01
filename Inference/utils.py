@@ -39,10 +39,9 @@ def prepare_model(args, SRC, TRG):
         print("get model...")
         model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     elif args.model_type == "att_encoder":
-        model = build_model(args, len(SRC.vocab),
-                            len(TRG.vocab), att_type='ATT_v5')
+        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     else:
-        model = build_model(args, len(SRC.vocab), len(TRG.vocab))
+        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     return model
 
 

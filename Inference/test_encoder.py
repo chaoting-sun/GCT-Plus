@@ -129,6 +129,7 @@ def fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device):
     each_iterval_cnt = 50
     low_sim_pairs = sample_low_similarity_pairs(each_iterval_cnt, SRC)
     high_sim_pairs = sample_high_similarity_pairs(each_iterval_cnt, SRC)
+    
     all_pairs = low_sim_pairs + high_sim_pairs
 
     smiles = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/smiles_serial.csv")
@@ -174,21 +175,31 @@ def fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device):
     similarity_list = np.zeros((len(dataset),))
     distance_list = np.zeros((len(dataset),))
 
+    max_length = 80
+
     for i, data in enumerate(dataset):
         src, src_props = rewrap_input('src', data)
         trg, trg_props = rewrap_input('trg', data)
-        pad = torch.zeros((1,abs(src.size(1)-trg.size(1))), dtype=torch.long)
-        if src.size(1) > trg.size(1):
-            trg = torch.concat([trg, pad], axis=1)
-        elif src.size(1) < trg.size(1):
-            src = torch.concat([src, pad], axis=1)
+        
+        # src_pad = torch.zeros((1,abs(max_length-src.size(1))), dtype=torch.long)
+        # trg_pad = torch.zeros((1,abs(max_length-trg.size(1))), dtype=torch.long)
+        
+        # src = torch.concat([src, src_pad], axis=1)
+        # trg = torch.concat([trg, trg_pad], axis=1)
 
         _, src_mu, _ = generator.encode_smiles(src, src_props)
         _, trg_mu, _ = generator.encode_smiles(trg, trg_props)
 
+        src_pad = torch.zeros((1,abs(max_length-src_mu.size(1)), src_mu.size(2)), dtype=torch.long)
+        trg_pad = torch.zeros((1,abs(max_length-trg_mu.size(1)), src_mu.size(2)), dtype=torch.long)
+        
+        src_mu = torch.concat([src_mu, src_pad.cuda()], axis=1)
+        trg_mu = torch.concat([trg_mu, trg_pad.cuda()], axis=1)
+
         similarity_list[i] = similarity_fcn(data_inputs['src'].loc[i],
                                             data_inputs['trg'].loc[i])
-        distance_list[i] = distance_fcn(src_mu, trg_mu) / src.size(1)
+        distance_list[i] = distance_fcn(src_mu, trg_mu) / max_length
  
     df = pd.DataFrame({ 'similarity': similarity_list, 'distance': distance_list })
+    df['distance'] = df['distance'] / df['distance'].max()
     df.to_csv('./3.csv')

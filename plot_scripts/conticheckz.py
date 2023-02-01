@@ -7,9 +7,15 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 from collections import OrderedDict
-from Configuration.config import property_bounds
 from scipy.stats import gaussian_kde
 import seaborn as sns
+
+
+property_bounds = {
+    'logP': [ 0.03,   4.97],
+    'tPSA': [17.92, 112.83],
+    'QED' : [ 0.58,   0.95]
+}
 
 
 def get_prop_bounds():
@@ -42,7 +48,6 @@ def get_training_set_number():
                       (c_QED-p3_range <= train.QED) & (train.QED <= c_QED+p3_range)]
         # n_trains.append(len(f))
         n_trains[i] = len(f)
-    print(n_trains)
     return n_trains
 
 # plot selections
@@ -77,13 +82,13 @@ outfig_settings = {
     2: { 
         'nrows': 1,
         'ncols': 2,
-        'figsize': (25, 10),
+        'figsize': (10, 5.1),
         'space': { }
     },
     3: {
         'nrows': 1,
         'ncols': 3,
-        'figsize': (15, 5.5),
+        'figsize': (15, 5.1),
         'space': { 'left': 0.10, 'right': 0.98, 'top': 0.95, 'bottom': 0.35, 'wspace': 0.24 }
     },
     4: {
@@ -132,10 +137,10 @@ def get_Ksmooth(data):
     return np.std(slopes)
 
 metric_function = {
-    "valid"       : get_mean,
-    "unique"      : get_mean,
-    "novel"       : get_mean,
-    "intDiv"      : get_mean,
+    "validity"    : get_mean,
+    "uniqueness"  : get_mean,
+    "novelty"     : get_mean,
+    "int_div"     : get_mean,
     "snn_previous": get_mean,
     "snn_start"   : get_Ksmooth,
 }
@@ -147,62 +152,56 @@ def return_percentage(val):
     return val*100
 
 metric_to_figure = {
-    "valid"     : {
-        'xlabel': '# Property set',
+    "validity"     : {
+        'xlabel': '# Step',
         'ylabel': 'Validity (%)',
         'ylimit': (0, 100),
         'process': return_percentage,
-        # 'xticks': ,
-        # 'yticks': ,
     },
-    "unique"    : {
-        'xlabel': '# Property set',
+    "uniqueness"  : {
+        'xlabel': '# Step',
         'ylabel': 'Uniqueness (%)',
         'ylimit': (0, 100),
         'process': return_percentage,
-        # 'xticks': ,
-        # 'yticks': ,
     },
-    "novel"     : {
-        'xlabel': '#Property set',
+    "novelty"    : {
+        'xlabel': '# Step',
         'ylabel': 'Novelty (%)',
         'ylimit': (0, 100),
         'process': return_percentage,
-        # 'xticks': ,
-        # 'yticks': ,
     },
-    "intDiv"    : {
-        'xlabel': '#Property set',
+    "int_div"    : {
+        'xlabel': '# Step',
         'ylabel': 'Internal diversity',
         'ylimit': (0, 1),
         'process': return_value,
-        # 'xticks': ,
-        # 'yticks': ,
-    },
-    "snn_previous"    : {
-        'xlabel': '#Property set',
-        'ylabel': 'SNNprev',
-        'ylimit': (0, 1),
-        'process': return_value,
-        # 'xticks': ,
-        # 'yticks': ,
     },
     "snn_start"    : {
-        'xlabel': 'Property set',
-        'ylabel': 'SNNstart',
+        'xlabel': '# Step',
+        'ylabel': r'$SNN_{start}$',
         'ylimit': (0, 1),
         'process': return_value,
-        # 'xticks': ,
-        # 'yticks': ,
     },
+    "snn_previous"    : {
+        'xlabel': '# Step',
+        'ylabel': r'$SNN_{prev}$',
+        'ylimit': (0, 1),
+        'process': return_value,
+    },
+    "not_intersect"    : {
+        'xlabel': '# Step',
+        'ylabel': 'No intersection (%)',
+        'ylimit': (0, 100),
+        'process': return_percentage,
+    },    
 }
 
 
-def get_full_metrics(data_dict, model_epoch, exper_name, file_name):
+def get_full_metrics(data_dict, model_epoch, experiment, file_name):
     for model_name, epoch_list in model_epoch.items():
         for epoch in epoch_list:
             data_path = os.path.join(main_folder,
-                                     exper_name,
+                                     experiment,
                                      model_name,
                                      str(epoch),
                                      file_name)
@@ -211,13 +210,13 @@ def get_full_metrics(data_dict, model_epoch, exper_name, file_name):
             data_dict[legend_name]['data'] = pd.read_csv(data_path, index_col=[0])
 
 
-def get_one_model_full_metric(data_dict, exper_name, model_name, epoch_list, file_name):
+def get_one_model_full_metric(data_dict, experiment, model_name, epoch_list, file_name):
     """
     uniform generation
     """    
     for i, epoch in enumerate(epoch_list):
         data_path = os.path.join(main_folder,
-                                 exper_name,
+                                 experiment,
                                  model_name,
                                  str(epoch),
                                  file_name)
@@ -229,9 +228,19 @@ def get_one_model_full_metric(data_dict, exper_name, model_name, epoch_list, fil
 
 
 def add_plot_features(data_dict, metric):
-    for _, data in data_dict.items(): 
+    for _, data in data_dict.items():    
+        # vals = []
+        # for i in range(len(data['data'][metric])):
+        #     if train_number[i] == 0:
+        #         continue
+        #     vals.append(data['data'][metric][i])
+
+        # data['value'] = metric_to_figure[metric]['process'](
+        #     metric_function[metric](vals))
+        
         data['value'] = metric_to_figure[metric]['process'](
             metric_function[metric](data['data'][metric]))
+        
         data['x'] = data['data'].index
         data['y'] = metric_to_figure[metric]['process'](data['data'][metric])
         data['xlabel'] = metric_to_figure[metric]['xlabel']
@@ -239,25 +248,23 @@ def add_plot_features(data_dict, metric):
         data['ylimit'] = metric_to_figure[metric]['ylimit']
 
 
-def plot_data():
+def plot_validity(model_epoch,
+                  main_folder,
+                  metric_name='valid',
+                  experiment='uniform_generation',
+                  figname='ug-valid.png'
+                  ):
     """
     data_dict: metric_name -> legend_name -> data
     """
-    metric_name = 'valid'
 
     full_data_dict = OrderedDict()
     full_data_dict[metric_name] = OrderedDict()
     
-    model_epoch = OrderedDict({
-        'transformer1': [20],
-        'transformer2': [20],
-        'transformer3': [20],        
-    })
-    
     get_full_metrics(
         data_dict=full_data_dict[metric_name],
         model_epoch=model_epoch,
-        exper_name='uniform_generation',
+        experiment=experiment,
         file_name='all_stat.csv'
     )
     
@@ -266,11 +273,54 @@ def plot_data():
         metric=metric_name
     )
     
-    one_figure_plot(full_data_dict, metric_name, figname='./aaa.png')
+    one_figure_plot(full_data_dict, metric_name,
+                    figpath=os.path.join(main_folder, figname))
         
 
-def get_multi_metric_data(model_epoch):
-    metric_list = ['unique', 'novel', 'intDiv']
+def one_figure_plot(full_data_dict, metric_name, figpath='./aaa.png'):
+    train_number = get_training_set_number()    
+
+    settings_out = outfig_settings[len(full_data_dict)]
+    settings_in = infig_settings[len(full_data_dict[metric_name])]
+    
+    legend_list = []
+    avg_values = []
+
+    fig, ax1 = plt.subplots(1, 1, figsize=(8, 6.8))
+    
+    for i, (legend, data) in enumerate(full_data_dict[metric_name].items()):
+        x_values = data['x']
+
+        ax1.plot(
+            data['x'], data['y'], 'ro',
+            color=settings_in['color'][i],
+            marker=settings_in['marker'][i],
+            # linestyle='--'
+        )
+        ax1.set_ylim(data['ylimit'])
+        ax1.set_xlabel(data['xlabel'], fontsize=22)
+        ax1.set_ylabel(data['ylabel'], fontsize=22)
+        
+        avg_values.append(data["value"])
+        legend_list.append(legend)
+
+    for axis in ['top','bottom','left','right']:
+        ax1.spines[axis].set_linewidth(2)
+
+    ax1.xaxis.set_tick_params(width=2, labelsize=18)
+    ax1.yaxis.set_tick_params(width=2, labelsize=18)
+
+    plt.title(f'AVG: {sum(avg_values)/len(avg_values):.1f}%', fontsize=26)
+    plt.tight_layout()
+    print('save to:', figpath)
+    plt.savefig(figpath, dpi=200)
+
+
+def plot_molecular_diversity(model_epoch,
+                             main_folder,
+                             experiment='check_z'
+                             ):
+    metric_list = ['uniqueness', 'novelty', 'int_div']
     full_data_dict = OrderedDict()
 
     for metric_name in metric_list:
@@ -279,8 +329,8 @@ def get_multi_metric_data(model_epoch):
         get_full_metrics(
             data_dict=full_data_dict[metric_name],
             model_epoch=model_epoch,
-            exper_name='uniform_generation',
-            file_name='all_stat.csv'
+            experiment=experiment,
+            file_name='z_statistics.csv'
         )
         
         add_plot_features(
@@ -288,11 +338,13 @@ def get_multi_metric_data(model_epoch):
             metric=metric_name
         )
     
-    multi_figure_plot(full_data_dict, figpath='aaa.png')
+    out_params = outfig_settings[len(full_data_dict)]    
+    multi_figure_plot(full_data_dict, out_params,
+                      figpath=os.path.join(main_folder, 'ccz-diversity.png'))
 
 
-def multi_figure_plot(full_data_dict, figpath):
-    out_params = outfig_settings[len(full_data_dict)]
+def multi_figure_plot(full_data_dict, out_params, figpath):
+    train_number = get_training_set_number()
     
     mpl.rcParams['axes.linewidth'] = 2
     mpl.rcParams['xtick.major.width'] = 2
@@ -320,9 +372,9 @@ def multi_figure_plot(full_data_dict, figpath):
 
             for i, (legend, data) in enumerate(data_dict.items()):
                 ax = subplt_ax.plot(
-                    data['x'], data['y'], 'ro',
+                    data['x'], data['y'],
                     color=in_params['color'][i],
-                    marker=in_params['marker'][i],
+                    # marker=in_params['marker'][i],
                     # linestyle='--'
                 )
                 
@@ -331,12 +383,13 @@ def multi_figure_plot(full_data_dict, figpath):
 
                 avg_values.append(data['value'])
                 legend_list.append(legend)
+                x_values = data['x']
 
             subplt_ax.set_xlabel(data['xlabel'], fontsize=22)
             subplt_ax.set_ylabel(data['ylabel'], fontsize=22)
             
             avg_values = sum(avg_values)/len(avg_values)
-            if metric_name == 'intDiv':
+            if metric_name == 'int_div':
                 val_str = f'AVG: {avg_values:.2f}'
             else:
                 val_str = f'AVG: {avg_values:.1f}%'
@@ -353,107 +406,89 @@ def multi_figure_plot(full_data_dict, figpath):
     plt.savefig(figpath, dpi=200)
 
 
-def one_figure_plot(full_data_dict, metric_name, figname='./aaa.png'):
-    train_number = get_training_set_number()    
-
-    settings_out = outfig_settings[len(full_data_dict)]
-    settings_in = infig_settings[len(full_data_dict[metric_name])]
+def multi_figure_plot2(full_data_dict, out_params, figpath):
+    train_number = get_training_set_number()
     
-    legend_list = []
-    avg_values = []
-
-    fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
-    ax2 = ax1.twinx()
+    mpl.rcParams['axes.linewidth'] = 2
+    mpl.rcParams['xtick.major.width'] = 2
+    mpl.rcParams['ytick.major.width'] = 2
     
-    for i, (legend, data) in enumerate(full_data_dict[metric_name].items()):
-        x_values = data['x']
+    fig = plt.figure(figsize=out_params['figsize'])
+    gs = gridspec.GridSpec(nrows=out_params['nrows'], ncols=out_params['ncols'])
+    # gs.update(**out_params['space'])
+    
+    met = list(full_data_dict.keys())
+    met_id = 0
+    
+    for r in range(out_params['nrows']):
+        for c in range(out_params['ncols']):
+            metric_name = met[met_id]
+            met_id += 1
+            
+            data_dict = full_data_dict[metric_name]
+            in_params = infig_settings[len(data_dict)]
+            
+            avg_values = []
+            legend_list = []
 
-        ax1.plot(
-            data['x'], data['y'], 'ro',
-            color=settings_in['color'][i],
-            marker=settings_in['marker'][i],
-            # linestyle='--'
+            subplt_ax = plt.subplot(gs[r, c])
+            
+            for i, (legend, data) in enumerate(data_dict.items()):
+                ax = subplt_ax.plot(
+                    data['x'], data['y'],
+                    color=in_params['color'][i],
+                    # marker=in_params['marker'][i],
+                    # linestyle='--'
+                )
+                
+                subplt_ax.set_ylim(data['ylimit'])
+                subplt_ax.tick_params(axis='both', labelsize=16)
+
+                legend_list.append(legend)
+
+            subplt_ax.set_xlabel(data['xlabel'], fontsize=22)
+            subplt_ax.set_ylabel(data['ylabel'], fontsize=22)
+            
+            plt.tight_layout()
+
+    plt.savefig(figpath, dpi=200)
+
+
+def plot_snn(model_epoch,
+             main_folder,
+             experiment='check_z'
+            ):
+    metric_list = ['snn_start', 'snn_previous']
+    
+    full_data_dict = OrderedDict()
+
+    for metric_name in metric_list:
+        full_data_dict[metric_name] = OrderedDict()
+            
+        get_full_metrics(
+            data_dict=full_data_dict[metric_name],
+            model_epoch=model_epoch,
+            experiment=experiment,
+            file_name='z_statistics.csv'
         )
-        ax1.set_ylim(data['ylimit'])
-        ax1.set_xlabel(data['xlabel'], fontsize=22)
-        ax1.set_ylabel(data['ylabel'], fontsize=22)
-        # ax1.set_xticks(fontsize=20)
-        # ax1.set_yticks(fontsize=20)
         
-        avg_values.append(data["value"])
-        legend_list.append(legend)
+        add_plot_features(
+            data_dict=full_data_dict[metric_name],
+            metric=metric_name
+        )
 
-    ax2.plot(x_values, train_number/10000)
-    ax2.set_ylabel("# Training set ("+r'$\times 10^4$'+")", fontsize=22)
-
-    for axis in ['top','bottom','left','right']:
-        ax1.spines[axis].set_linewidth(2)
-
-    ax1.xaxis.set_tick_params(width=2, labelsize=18)
-    ax1.yaxis.set_tick_params(width=2, labelsize=18)
-    ax2.yaxis.set_tick_params(width=2, labelsize=18)
-
-    plt.title(f'AVG: {sum(avg_values)/len(avg_values):.1f}%', fontsize=26)
-    plt.tight_layout()
-    # fig.legend(
-    #     legend_list,
-    #     fontsize=18,
-    #     loc='lower left',
-    #     bbox_to_anchor=(0.18, 0.15)
-    # )
-    plt.savefig(figname, dpi=200)
-
-
-# def one_figure_plot(full_data_dict, metric_name, figname='./aaa.png'):
-#     train_density = get_training_set_density()    
-
-#     settings_out = outfig_settings[len(full_data_dict)]
-#     settings_in = infig_settings[len(full_data_dict[metric_name])]
-    
-#     legend_list = []
-#     avg_values = []
-
-#     fig, ax = plt.subplots(1, 1, figsize=settings_out['figsize'])
-#     for i, (legend, data) in enumerate(full_data_dict[metric_name].items()):
-#         plt.plot(
-#             data['x'], data['y'], 'ro',
-#             color=settings_in['color'][i],
-#             marker=settings_in['marker'][i],
-#             # linestyle='--'
-#         )
-#         plt.ylim(data['ylimit'])
-#         plt.xlabel(data['xlabel'], fontsize=22)
-#         plt.ylabel(data['ylabel'], fontsize=22)
-#         plt.xticks(fontsize=20)
-#         plt.yticks(fontsize=20)
-        
-#         avg_values.append(data["value"])
-#         legend_list.append(legend)
-
-#     for axis in ['top','bottom','left','right']:
-#         ax.spines[axis].set_linewidth(2)
-#     ax.xaxis.set_tick_params(width=2)
-#     ax.yaxis.set_tick_params(width=2)
-
-#     plt.title(f'AVG: {sum(avg_values)/len(avg_values):.1f}%', fontsize=26)
-#     plt.tight_layout()
-#     # fig.legend(
-#     #     legend_list,
-#     #     fontsize=18,
-#     #     loc='lower left',
-#     #     bbox_to_anchor=(0.18, 0.15)
-#     # )
-#     plt.savefig(figname, dpi=200)
+    out_params = outfig_settings[len(full_data_dict)]
+    multi_figure_plot2(full_data_dict, out_params,
+                      figpath=os.path.join(main_folder, 'ccz-snn.png'))
 
 
 
-if __name__ == '__main__':
-    plot_data()
-    
-    # model_epoch = OrderedDict({
-    #     'transformer1': [20],
-    #     'transformer2': [20],
-    #     'transformer3': [20],        
-    # })
 
-    # get_multi_metric_data(model_epoch)
+
+# model_epoch = OrderedDict({
+#     'transformer1': [20],
+#     'transformer2': [20],
+#     'transformer3': [20],        
+# })
+
+# get_multi_metric_data(model_epoch)

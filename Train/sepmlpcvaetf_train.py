@@ -9,11 +9,10 @@ from torchtext import data
 import torch.nn.functional as F
 
 from Utils import allocate_gpu
-from Utils.field import save_fields, smiles_fields, condition_fields, get_tf_fields
+from Utils.field import save_fields, get_tf_fields
 from Utils.dataset import get_dataloader
 from Model.modules import create_source_mask, create_target_mask
 from Model.build_model import freeze_params, get_model
-from Model.loss import LossCompute, KLDiv
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -223,7 +222,7 @@ def train_model(args, model, optimizer, train_iter,
         save_checkpoint(args, model, optimizer, model_path)
 
 
-def mlpcvaetf_train(args, logger):
+def sepmlpcvaetf_train(args, logger):
     os.makedirs(args.save_directory, exist_ok=True)
     # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
     data_path = os.path.join(args.data_path, 'aug',
@@ -289,7 +288,7 @@ def mlpcvaetf_train(args, logger):
     LOG.info(f'Get optimizer...')
 
     # model_folder, model_path, start_epoch
-        
+    
     model_train_params = filter(lambda p: p.requires_grad, model.parameters())
     
     if args.optimizer_choice == 'sgd':

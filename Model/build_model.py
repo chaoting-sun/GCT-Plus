@@ -3,6 +3,7 @@ import torch
 
 from .transformer import Transformer
 from .mlpcvaetf import MLPCVAETF
+from .sepmlpcvaetf import SEPMLPCVAETF
 from .mlpcvaetf_encoder import MLPCVAETFEncoder
 from .attencvaetf import ATTENCVAETF
 from .mlp import MLP_Train
@@ -46,13 +47,26 @@ def build_cvaetf(hyperParameters, model_path=None):
 def build_mlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
     aug_cvaetf = MLPCVAETF(**hyperParams)
     if aug_cvaetf_path:
-        aug_cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict'])
+        aug_cvaetf.load_state_dict(torch.load(aug_cvaetf_path)['model_state_dict'])
     else:
         cvaetf = build_cvaetf(hyperParams, cvaetf_path)
         # cvaetf.load_state_dict(torch.load(cvaetf_path)) # for molgct.pt
         cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict']) # for self-trained cvaetf
         transfer_params(cvaetf, aug_cvaetf)
     freeze_params(aug_cvaetf, train_names=['mlp'])
+    return aug_cvaetf
+
+
+def build_sepmlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
+    aug_cvaetf = SEPMLPCVAETF(**hyperParams)
+    if aug_cvaetf_path:
+        aug_cvaetf.load_state_dict(torch.load(aug_cvaetf_path)['model_state_dict'])
+    else:
+        cvaetf = build_cvaetf(hyperParams, cvaetf_path)
+        # cvaetf.load_state_dict(torch.load(cvaetf_path)) # for molgct.pt
+        cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict']) # for self-trained cvaetf
+        transfer_params(cvaetf, aug_cvaetf)
+    freeze_params(aug_cvaetf, train_names=['mlp_mu', 'mlp_logvar'])
     return aug_cvaetf
 
 
@@ -102,7 +116,10 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len):
     elif args.model_type == "mlpcvaetf_encoder":
         return build_mlpcvaetfencoder(hyperParams, args.use_cvaetf_path, args.use_model_path)
     elif args.model_type == "mlpcvaetf":
+        args.use_cvaetf_path = None
         return build_mlpcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+    elif args.model_type == "sepmlpcvaetf":
+        return build_sepmlpcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
     elif args.model_type == "attencvaetf":
         return build_attencvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
 

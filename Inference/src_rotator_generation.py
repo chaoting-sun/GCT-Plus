@@ -11,34 +11,6 @@ from Inference.utils import prepare_generator
 from Utils.property import tanimoto_similarity as similarity_fcn
 
 
-# smiles_list = [
-#     'Cn1ncc(Br)c1NC(=O)Nc1ccccc1', 
-#     'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21',
-#     'O=C(NC1CCc2cc(F)ccc21)c1[nH]nc2c1CCCC2'
-# ]
-
-
-# prop_list = [
-#     [2.82660, 58.95, 0.894693],
-#     [2.82212, 57.61, 0.883604],
-#     [2.84490, 57.78, 0.895593]
-# ]
-
-
-smiles_list = [
-    'N#Cc1c(Br)cnc(N)c1Br', 
-    'CC(=O)Nc1cccc(-c2nc3cc(C)ccc3[nH]c2=O)c1',
-    'CC(NC(=O)OC(C)(C)C)c1nc(CO)nn1Cc1ccccc1'
-]
-
-
-prop_list = [
-    [2.06048, 62.70, 0.788971],
-    [2.85692, 74.85, 0.762590],
-    [2.40440, 89.27, 0.877442]
-]
-
-
 class DataFrameDataset(Dataset):
     def __init__(self, df: pd.DataFrame, fields: list):
         super(DataFrameDataset, self).__init__(
@@ -116,7 +88,7 @@ class SrcGeneration:
         for i, data in enumerate(dataset):
             src, props_s, props_t = self._wrap_input(data)
             for j in range(self.n_samples):
-                z, mu, logvar = self.generator.encode_smiles(src, props_s)
+                z, mu, logvar = self.generator.encode_rotator_based_smiles(src, props_s, props_t)
                 # props_t, z = self._aug_input(props_t, z)
             
                 # std = torch.exp(0.5*logvar)
@@ -213,61 +185,25 @@ class SrcGeneration:
             self.multi_step_sampling(src, props_t, n_step, step_save_folder)
             
             
-def fast_src_generation(args, toklen_data, train_smiles, 
-                        scaler, SRC, TRG, COND, device, logger):
+def fast_src_rotator_generation(args, toklen_data, train_smiles,
+                                scaler, SRC, TRG, COND, device, logger):
+
     for epoch in args.epoch_list:
-        for i in range(3):
-            args.src_smiles = smiles_list[i]
-            args.trg_props = prop_list[i]
-            
-            # args.use_model_path = '/fileserver-gamma/chaoting/ML/molGCT/molgct.pt'
-            args.use_model_path = os.path.join(args.train_path,
-                                            args.model_name,
-                                            f'model_{epoch}.pt')
-            generator = prepare_generator(args, SRC, TRG,
-                                        toklen_data, scaler, device)
+        args.use_model_path = os.path.join(args.train_path,
+                                           args.model_name,
+                                           f'model_{epoch}.pt')
+        generator = prepare_generator(args, SRC, TRG,
+                                      toklen_data, scaler, device)
 
-            # args.model_name = 'molGCT'
+        # args.model_name = 'molGCT'
 
-            save_folder = os.path.join(args.inference_path,
-                                    'src_generation', 
-                                    args.model_name,
-                                    str(epoch),
-                                    smiles_list[i]
-                                    )
-            os.makedirs(save_folder, exist_ok=True)
-            
-            LOG = logger(name='src generation',
-                        log_path=os.path.join(save_folder, "records.log"))
+        save_folder = os.path.join(args.inference_path, 'src_generation', 
+                                   args.model_name, str(epoch))
+        os.makedirs(save_folder, exist_ok=True)
+        
+        LOG = logger(name='src generation',
+                     log_path=os.path.join(save_folder, "records.log"))
 
-            scgn = SrcGeneration(args, SRC, COND, generator, train_smiles, LOG, device)
-            scgn.generate(args.src_smiles, args.trg_props, save_folder)
+        scgn = SrcGeneration(args, SRC, COND, generator, train_smiles, LOG, device)
+        scgn.generate(args.src_smiles, args.trg_props, save_folder)
 
-
-from collections import OrderedDict
-
-
-def plot_similarity_density(args):
-    """
-    src and trg are the same
-    """
-    
-    data_dict = OrderedDict()
-    
-    for epoch in args.epoch_list:
-        for i in range(3):
-            args.src_smiles = smiles_list[i]
-            args.trg_props = prop_list[i]
-            save_folder = os.path.join(args.inference_path,
-                                    'src_generation', 
-                                    args.model_name,
-                                    str(epoch),
-                                    smiles_list[i],
-                                    '1_step', '1.csv'
-                                    )
-            df = pd.read_csv(save_folder)
-            df = df.drop_duplicates(subset = "gen")
-            data_dict['CVAE-TF1'] = df
-            
-    print(data_dict)
-    exit()

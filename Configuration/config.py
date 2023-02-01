@@ -15,6 +15,13 @@ def model_opts(parser):
     parser.add_argument('-variational', type=bool, default=True) # should be removed later
 
 
+property_bounds = {
+    'logP': [ 0.03,   4.97],
+    'tPSA': [17.92, 112.83],
+    'QED' : [ 0.58,   0.95]
+}
+
+
 def props_opts(parser):
     # hard constraints
     parser.add_argument('-logp_lb', type=float, default=0.03)

@@ -13,8 +13,8 @@ class Predictor(object):
     #     _, mu, _ = self.encoder(src, econds, src_mask)
     #     return mu
     
-    def encode(self, src, econds, src_mask):
-        z, mu, log_var = self.encoder(src, econds, src_mask)
+    def encode(self, src, conds, src_mask):
+        z, mu, log_var = self.encoder(src, conds, src_mask)
         return z, mu, log_var
 
     def predict(self, trg, z, conds, src_mask, trg_mask):
