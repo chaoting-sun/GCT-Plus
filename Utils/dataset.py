@@ -83,9 +83,9 @@ class Batch:
             self.dconds = trg_cond.to(device)
 
 
-def padding(obj, max_strlen, cond_len, pad_idx):
+def padding(obj, max_strlen, cond_len, pad_id):
     obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
-                       - cond_len), dtype=torch.long) * pad_idx
+                       - cond_len), dtype=torch.long) * pad_id
     return torch.cat([obj, obj_pad], dim=1)
 
 
@@ -143,4 +143,62 @@ def rebatch2(batch, conds, pad_idx, device):
 
 def get_dataloader(data_iter, conds, pad_idx, device):
     return (rebatch2(batch, conds, pad_idx, device)
+            for batch in data_iter) 
+
+
+# updated version
+
+class BatchData:
+    def __init__(self, src, trg=None, device=None,
+                 econds=None, dconds=None, mconds=None):
+        # input of encoder
+        self.src = src.to(device)
+        if trg is not None:
+            self.trg_y = trg[:, 1:].to(device)
+            self.trg = trg[:, :-1].to(device)
+        if econds is not None:
+            self.econds = econds.to(device)
+        if dconds is not None:
+            self.dconds = dconds.to(device)
+        if mconds is not None:
+            self.mconds = mconds.to(device)
+
+
+def rebatch_data(src, econds=None, trg=None, dconds=None, pad_id=None,
+                 max_strlen=None, pad_to_same_len=False, device=None,
+                 include_delconds=True):
+    def padding(obj, cond_len):
+        obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
+                        - cond_len), dtype=torch.long) * pad_id
+        return torch.cat([obj, obj_pad], dim=1)
+
+    batch_data = {}
+    batch_data['device'] = device
+
+    src = src.transpose(0, 1)
+    batch_data['src'] = padding(src, econds.size(-1)) if pad_to_same_len else src
+    if econds is not None:
+        batch_data['econds'] = econds
+    if trg is not None:
+        trg = trg.transpose(0, 1)
+        batch_data['trg'] = padding(trg, dconds.size(-1)) if pad_to_same_len else trg
+    if dconds is not None:
+        batch_data['dconds'] = dconds
+    if include_delconds:
+        batch_data['mconds'] = torch.sub(dconds, econds)
+    
+    return BatchData(**batch_data)
+
+
+def get_loader(data_iter, conditions, pad_id, max_strlen,
+               pad_to_same_len=False, device=None):
+    def extract_conds(batch, data_type):
+        cond_vals = []
+        for c in conditions:
+            cond_vals.append(getattr(batch, f"{data_type}_{c}").view(-1, 1))
+        return torch.cat(cond_vals, dim=1)
+
+    return (rebatch_data(batch.src, extract_conds(batch, 'src'),
+                         batch.trg, extract_conds(batch, 'trg'),
+                         pad_id, max_strlen, pad_to_same_len, device)
             for batch in data_iter)

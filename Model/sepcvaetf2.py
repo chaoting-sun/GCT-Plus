@@ -20,31 +20,44 @@ from .modules import Embeddings, PositionalEncoding
 from .modules import Norm, nopeak_mask, create_masks, create_source_mask, get_clones
 
 
+class BLOCK(nn.Module):
+    def __init__(self, z_dim):
+        super(BLOCK, self).__init__()
+        self.ln1 = nn.LayerNorm(z_dim)
+        self.ln2 = nn.LayerNorm(z_dim)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=z_dim,
+            num_heads=8,
+            dropout=0.1,
+            batch_first=True
+        )
+        self.mlp = nn.Sequential(
+            nn.Linear(z_dim, 4*z_dim),
+            nn.GELU(),
+            nn.Linear(4*z_dim, z_dim),
+            nn.Dropout(0.1),
+        )
+    def forward(self, x):
+        x1 = self.ln1(x)
+        y, attn = self.attn(x1,x1,x1)
+        x = x + y
+        x = x + self.mlp(self.ln2(x))
+        return x
 
-class MLP(nn.Module):
-    def __init__(self, latent_dim, mcond_dim):
-        super(MLP, self).__init__()
-        self.dropout = nn.Dropout(0.1)
-        self.actFcn = nn.ReLU()
-        self.norm = Norm(latent_dim)
-        mlp_stacks = [latent_dim + mcond_dim,
-                      1024, 512, 256, 128, 64, 128, 256, 256, 1024,
-                      latent_dim]
-        self.mlp_layers = self.build_mlp(mlp_stacks)
 
-    def build_mlp(self, stacks):
-        layers = []        
-        for i in range(len(stacks) - 1):
-            layers.extend([nn.Linear(stacks[i], stacks[i + 1]), self.dropout, self.actFcn])
-        return nn.ModuleList(layers)
-
+class ROTATOR(nn.Module):
+    def __init__(self, latent_dim, mcond_dim, n_layer=6):
+        super(ROTATOR, self).__init__()
+        self.blocks = nn.Sequential(*[BLOCK(latent_dim) for _ in range(n_layer)])
+        self.prop_linear = nn.Linear(mcond_dim, latent_dim)
+    
     def forward(self, x, mconds):
-        mconds = torch.stack(tuple(mconds for _ in range(x.size(1))),dim=1)
-        x = torch.cat([x, mconds], dim=2)
+        props = self.prop_linear(mconds.unsqueeze(1))
+        x = torch.cat([props, x], dim=1)
 
-        for i in range(len(self.mlp_layers)):
-            x = self.mlp_layers[i](x)
-        return self.norm(x) # should add to avoid inf
+        for layer in self.blocks:
+            x = layer(x)
+        return x[:, 1:, :]
 
 
 class Encoder(nn.Module):
@@ -55,7 +68,7 @@ class Encoder(nn.Module):
         self.variational = variational
         # input embedding layers
         self.embed_sentence = Embeddings(d_model, vocab_size)
-        self.embed_cond2enc = nn.Linear(nconds, d_model*nconds) # nn.Linear() supports TensorFloat32
+        self.embed_cond2enc = nn.Linear(nconds, d_model*nconds)
         # other layers
         self.norm = Norm(d_model)
         self.pe = PositionalEncoding(d_model, dropout=dropout)
@@ -124,10 +137,10 @@ class Decoder(nn.Module):
         return self.norm(x)
     
 
-class SEPMLPCVAETF(nn.Module):
+class SEPCVAETF2(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(SEPMLPCVAETF, self).__init__()
+        super(SEPCVAETF2, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -137,8 +150,8 @@ class SEPMLPCVAETF(nn.Module):
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, variational)
         self.sampler = Sampler(d_model, latent_dim, variational)
-        self.mlp_mu = MLP(latent_dim, 2*nconds)
-        self.mlp_logvar = MLP(latent_dim, 2*nconds)
+        self.mu_rotator = ROTATOR(latent_dim, 2*nconds)
+        self.logvar_rotator = ROTATOR(latent_dim, 2*nconds)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         self.out = nn.Linear(d_model, trg_vocab)
@@ -157,8 +170,8 @@ class SEPMLPCVAETF(nn.Module):
         econds, mconds = conds
         x = self.encoder(src, econds, src_mask)
         _, mu, logvar = self.sampler(x)
-        mu = self.mlp_mu(mu, mconds)
-        logvar = self.mlp_logvar(logvar, mconds)
+        mu = self.mu_rotator(mu, mconds)
+        logvar = self.logvar_rotator(logvar, mconds)
         z = self.sampler.sampling(mu, logvar)
         return z, mu, logvar
 
@@ -178,7 +191,7 @@ class SEPMLPCVAETF(nn.Module):
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
 
-        output_mol = F.log_softmax(output_mol, dim=-1)
+        # output_mol = F.log_softmax(output_mol, dim=-1) # ??? comment and test this
         return output_prop, output_mol, mu, logvar, z
 
 

@@ -29,5 +29,5 @@
 
 python3 train_results.py \
     -begin_epoch 1       \
-    -end_epoch 22        \
-    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer_ep25_aug-all-s0.70-t0.10/
+    -end_epoch 10        \
+    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/ctf_pad/

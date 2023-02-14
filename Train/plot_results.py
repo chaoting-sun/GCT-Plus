@@ -43,6 +43,7 @@ def plot(epoch, loss, name_list,
     plt.ylabel('Loss', fontsize=14)
     plt.title(title_name, fontsize=16)
     plt.savefig(save_path)
+    print('save path:', save_path)
 
 
 def plot_results(model_path, num_epoch):

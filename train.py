@@ -11,9 +11,13 @@ import argparse
 # from Train.mlp_train import mlp_train
 from Train.attencvaetf_train import attencvaetf_train
 from Train.mlpcvaetf_encoder_train import mlpcvaetf_encoder_train
+from Train.cvaetfcut_train import cvaetfcut_train
 from Train.mlpcvaetf_train import mlpcvaetf_train
-from Train.sepmlpcvaetf_train import sepmlpcvaetf_train
-from Train.tf_train import tf_train
+from Train.sepcvaetf_train import sepcvaetf_train
+from Train.sepcvaetf2_train import sepcvaetf2_train
+from Train.cvaetf_train import cvaetf_train
+from Train.ctf_train import ctf_train
+from Train.attenctf_train import attenctf_train
 from Configuration.config import options, hard_constraints_opts
 from Utils.log import get_logger as gl
 from Utils.seed import set_seed
@@ -43,6 +47,7 @@ def add_args(parser):
     parser.add_argument('-batch_size', type=int, default=128)
     parser.add_argument('-uninit_optimizer', action='store_true')
     parser.add_argument('-optimizer_choice', default='original', choices=['sgd', 'rmsprop', 'adagrad', 'adam', 'original'])
+    parser.add_argument('-pad_to_same_len', action='store_true')
 
     # KL Annealing
     parser.add_argument('-use_KLA', type=bool, default=True)
@@ -79,8 +84,19 @@ if __name__ == "__main__":
 
     logger = get_logger(args)
 
-    if args.model_type == 'transformer':
-        tf_train(args, logger=logger)
+    print('model type:', args.model_type)
+
+    if args.model_type == 'cvaetf':
+        cvaetf_train(args, logger=logger)
+
+    elif args.model_type == 'ctf':
+        ctf_train(args, logger=logger)
+
+    elif args.model_type == 'attenctf':
+        attenctf_train(args, logger=logger)
+
+    elif args.model_type == 'cvaetfcut':
+        cvaetfcut_train(args, logger=logger)
 
     elif args.model_type == 'mlpcvaetf_encoder':
         mlpcvaetf_encoder_train(args, logger=logger)
@@ -88,8 +104,13 @@ if __name__ == "__main__":
     elif args.model_type == 'mlpcvaetf':
         mlpcvaetf_train(args, logger=logger)
 
-    elif args.model_type == 'sepmlpcvaetf':
-        sepmlpcvaetf_train(args, logger=logger)
+    elif args.model_type == 'sepcvaetf':
+        sepcvaetf_train(args, logger=logger)
+
+    elif args.model_type == 'sepcvaetf2':
+        sepcvaetf2_train(args, logger=logger)
 
     elif args.model_type == 'attencvaetf':
         attencvaetf_train(args, logger=logger)
+
+    print('training finished.')

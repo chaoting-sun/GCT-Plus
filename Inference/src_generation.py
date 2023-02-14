@@ -26,6 +26,8 @@ from Utils.property import tanimoto_similarity as similarity_fcn
 
 
 smiles_list = [
+    'Cn1cc(C(=O)N2CCC(c3nc(-c4ccccn4)no3)C2)cn1',
+    'Cc1cnc(C(C)NC(=O)CCC(=O)c2ccc(F)c(F)c2)s1',
     'N#Cc1c(Br)cnc(N)c1Br', 
     'CC(=O)Nc1cccc(-c2nc3cc(C)ccc3[nH]c2=O)c1',
     'CC(NC(=O)OC(C)(C)C)c1nc(CO)nn1Cc1ccccc1'
@@ -33,6 +35,8 @@ smiles_list = [
 
 
 prop_list = [
+    [1.4948, 89.940, 0.7250],
+    [3.5700, 59.0600, 0.8193],
     [2.06048, 62.70, 0.788971],
     [2.85692, 74.85, 0.762590],
     [2.40440, 89.27, 0.877442]
@@ -95,7 +99,7 @@ class SrcGeneration:
 
     def _wrap_input(self, data):
         src = torch.LongTensor([[self.SRC.vocab.stoi[t]
-                                 for t in data.smiles]])        
+                                 for t in data.smiles]])
         props_s = np.zeros((1,3))
         props_t = np.zeros((1,3))
         for i, c in enumerate(self.conditions):
@@ -119,11 +123,15 @@ class SrcGeneration:
                 z, mu, logvar = self.generator.encode_smiles(src, props_s)
                 # props_t, z = self._aug_input(props_t, z)
             
-                # std = torch.exp(0.5*logvar)
-                # eps = torch.empty_like(std).normal_(mean=0, std=0.8)
-                # pseudo_z = eps.mul(std).add(mu)
+                std = torch.exp(0.5*logvar)
+                if std > ...:
+                    eps = torch.empty_like(std).normal_(mean=0, std=10E-3)
+                else:
+                    eps = torch.empty_like(std).normal_(mean=0, std=1)
+                    
+                pseudo_z = eps.mul(std).add(mu)
 
-                smiles, *_ = self.generator.sample_smiles(props_t, z)
+                smiles, *_ = self.generator.sample_smiles(props_t, pseudo_z)
                 gen_list.append(smiles[0])
                 print(j, smiles[0])
     
@@ -225,16 +233,16 @@ def fast_src_generation(args, toklen_data, train_smiles,
                                             args.model_name,
                                             f'model_{epoch}.pt')
             generator = prepare_generator(args, SRC, TRG,
-                                        toklen_data, scaler, device)
+                                          toklen_data, scaler, device)
 
             # args.model_name = 'molGCT'
 
             save_folder = os.path.join(args.inference_path,
-                                    'src_generation', 
-                                    args.model_name,
-                                    str(epoch),
-                                    smiles_list[i]
-                                    )
+                                       'src_generation', 
+                                       args.model_name,
+                                       str(epoch),
+                                       smiles_list[i]
+                                      )
             os.makedirs(save_folder, exist_ok=True)
             
             LOG = logger(name='src generation',
@@ -259,12 +267,12 @@ def plot_similarity_density(args):
             args.src_smiles = smiles_list[i]
             args.trg_props = prop_list[i]
             save_folder = os.path.join(args.inference_path,
-                                    'src_generation', 
-                                    args.model_name,
-                                    str(epoch),
-                                    smiles_list[i],
-                                    '1_step', '1.csv'
-                                    )
+                                       'src_generation', 
+                                       args.model_name,
+                                       str(epoch),
+                                       smiles_list[i],
+                                       '1_step', '1.csv'
+                                       )
             df = pd.read_csv(save_folder)
             df = df.drop_duplicates(subset = "gen")
             data_dict['CVAE-TF1'] = df

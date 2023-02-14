@@ -46,21 +46,24 @@
 # > train from scratch
 # > original data
 
-GPU_IDX=2
+GPU_IDX=1
+SIMILARITY=0.70
+TOLERANCE=0.20
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
     train.py \
-        -tolerance 0.00  \
-        -similarity 0.00 \
-        -start_epoch 1   \
-        -num_epoch 30    \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment_Repeat/transformer-140 \
-    >train_transformer-140.out 2>&1 &
+        -model_type cvaetf \
+        -tolerance 0.20    \
+        -similarity 0.70   \
+        -start_epoch 1     \
+        -num_epoch 30      \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/cvaetf_aug-s${SIMILARITY}-t${TOLERANCE} \
+    >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
 
 
-# GPU_IDX=0
+# GPU_IDX=1
 # TOLERANCE=0
-# SIMILARITY=1
+# SIMILARITY=
 
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
 #     train.py                        \

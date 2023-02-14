@@ -84,10 +84,10 @@ class Decoder(nn.Module):
             x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
         return self.norm(x)
 
-class Transformer(nn.Module):
+class CVAETF(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(Transformer, self).__init__()
+        super(CVAETF, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec

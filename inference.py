@@ -8,12 +8,9 @@ import torch
 
 import Utils.log as ul
 from Utils.seed import set_seed 
-from Configuration.config import options, hard_constraints_opts
+from Configuration.config import hard_constraints_opts
 from Utils import allocate_gpu
-from Utils.field import get_inference_fields, smiles_fields, condition_fields
-from Model.build_model import get_model
-from Inference.model_prediction import Predictor
-from Inference.decode_algo import MultinomialSearch, BeamSearch, NewBeamSearch
+from Utils.field import smiles_fields, condition_fields
 from Inference.uniform_generation import uniform_generation, fast_uniform_generation
 # from Inference.generate_z import generate_z
 # from Inference.varying_z_generate import varying_z_generate
@@ -101,7 +98,7 @@ def add_args(parser):
     sg_parser = subparsers.add_parser('src-generation', parents=[parent_parser])
     sg_parser.add_argument('-src_generation', action='store_true')
     sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
-    sg_parser.add_argument('-n_samples', type=int, default=500)
+    sg_parser.add_argument('-n_samples', type=int, default=20)
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
@@ -115,6 +112,8 @@ def add_args(parser):
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
+    sg_parser.add_argument('-use_cvaetf_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer/model_25.pt')
+
     """
     encoder test
     """
@@ -156,7 +155,7 @@ if __name__ == "__main__":
     print("device:", device)
     
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
-    SRC, TRG = smiles_fields(args.conditions, args.molgct_path)
+    SRC, TRG = smiles_fields(args.molgct_path)
     COND = condition_fields(args.conditions)
         
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))

@@ -24,13 +24,13 @@ MODEL_NAME=transformer
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
     inference.py                                    \
-        -model_type mlpcvaetf \
+        -model_type ctf \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
     src-rotator-generation                                  \
         -src_rotator_generation                             \
-        -model_name mlpcvaetf_selftf                \
+        -model_name ctf                    \
         -n_steps 1                                  \
-        -epoch_list 26                              \
+        -epoch_list 30                       \
         -src_smiles 'Cn1ncc(Br)c1NC(=O)Nc1ccccc1' \
         -trg_props  2.82660 58.95 0.894693                 \
     # >>src-generation_model-${MODEL_NAME}.out 2>&1 &

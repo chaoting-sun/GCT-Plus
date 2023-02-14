@@ -34,19 +34,8 @@ def augment_z(n, z, std=None):
     return z
 
 
-def prepare_model(args, SRC, TRG):
-    if args.model_type == 'transformer':
-        print("get model...")
-        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
-    elif args.model_type == "att_encoder":
-        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
-    else:
-        model = get_model(args, len(SRC.vocab), len(TRG.vocab))
-    return model
-
-
 def prepare_generator(args, SRC, TRG, toklen_data, scaler, device):
-    model = prepare_model(args, SRC, TRG)
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab))
     model = model.to(device)
     model.eval()
 

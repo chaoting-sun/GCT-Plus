@@ -1,12 +1,16 @@
 import os
 import torch
 
-from .transformer import Transformer
+from .ctf import CTF
+from .cvaetfcut import CVAETFCUT
+from .cvaetf import CVAETF
 from .mlpcvaetf import MLPCVAETF
-from .sepmlpcvaetf import SEPMLPCVAETF
 from .mlpcvaetf_encoder import MLPCVAETFEncoder
 from .attencvaetf import ATTENCVAETF
 from .mlp import MLP_Train
+from .sepcvaetf import SEPCVAETF
+from .sepcvaetf2 import SEPCVAETF2
+from .attenctf import ATTENCTF
 
 
 def transfer_params(trained_model, new_model):
@@ -28,12 +32,31 @@ def freeze_params(model, freeze_names=None, train_names=None):
         name_split = name.split('.')
         if freeze_names and name_split[0] in freeze_names:
             param.requires_grad = False
-        if train_names and name_split[0] not in train_names:
-            param.requires_grad = False
+        if train_names:
+            if name_split[0] in train_names:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
+
+def build_ctf(hyperParameters, model_path=None):
+    hyperParameters['variational'] = False
+    model = CTF(**hyperParameters)
+    if model_path:
+        print("Use model path:", model_path)
+        model_state = torch.load(model_path)
+        model.load_state_dict(model_state['model_state_dict'])
+    return model
+
+def build_cvaetfcut(hyperParameters, model_path=None):
+    model = CVAETFCUT(**hyperParameters)
+    if model_path:
+        model_state = torch.load(model_path)
+        model.load_state_dict(model_state['model_state_dict'])
+    return model
 
 def build_cvaetf(hyperParameters, model_path=None):
-    model = Transformer(**hyperParameters)
+    model = CVAETF(**hyperParameters)
     if model_path:
         print("Use model path:", model_path)
         model_state = torch.load(model_path)
@@ -43,6 +66,16 @@ def build_cvaetf(hyperParameters, model_path=None):
             model.load_state_dict(model_state['model_state_dict'])
     return model            
  
+def build_attenctf(hyperParams, ctf_path, aug_ctf_path=None):
+    aug_ctf = ATTENCTF(**hyperParams)
+    if aug_ctf_path:
+        aug_ctf.load_state_dict(torch.load(aug_ctf_path)['model_state_dict'])
+    else:
+        ctf = build_ctf(hyperParams, ctf_path)
+        ctf.load_state_dict(torch.load(ctf_path)['model_state_dict'])
+        transfer_params(ctf, aug_ctf)
+    freeze_params(aug_ctf, train_names=['rotator'])
+    return aug_ctf
 
 def build_mlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
     aug_cvaetf = MLPCVAETF(**hyperParams)
@@ -57,8 +90,8 @@ def build_mlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
     return aug_cvaetf
 
 
-def build_sepmlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
-    aug_cvaetf = SEPMLPCVAETF(**hyperParams)
+def build_sepcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
+    aug_cvaetf = SEPCVAETF(**hyperParams)
     if aug_cvaetf_path:
         aug_cvaetf.load_state_dict(torch.load(aug_cvaetf_path)['model_state_dict'])
     else:
@@ -66,7 +99,20 @@ def build_sepmlpcvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
         # cvaetf.load_state_dict(torch.load(cvaetf_path)) # for molgct.pt
         cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict']) # for self-trained cvaetf
         transfer_params(cvaetf, aug_cvaetf)
-    freeze_params(aug_cvaetf, train_names=['mlp_mu', 'mlp_logvar'])
+    freeze_params(aug_cvaetf, train_names=['mu_rotator', 'logvar_rotator'])
+    return aug_cvaetf
+
+
+def build_sepcvaetf2(hyperParams, cvaetf_path, aug_cvaetf_path=None):
+    aug_cvaetf = SEPCVAETF2(**hyperParams)
+    if aug_cvaetf_path:
+        aug_cvaetf.load_state_dict(torch.load(aug_cvaetf_path)['model_state_dict'])
+    else:
+        cvaetf = build_cvaetf(hyperParams, cvaetf_path)
+        # cvaetf.load_state_dict(torch.load(cvaetf_path)) # for molgct.pt
+        cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict']) # for self-trained cvaetf
+        transfer_params(cvaetf, aug_cvaetf)
+    freeze_params(aug_cvaetf, train_names=['mu_rotator', 'logvar_rotator'])
     return aug_cvaetf
 
 
@@ -110,16 +156,27 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len):
                     'use_cond2dec': args.use_cond2dec,
                     'use_cond2lat': args.use_cond2lat
                 }
+    
+    if not hasattr(args, 'use_cvaetf_path'):
+        args.use_cvaetf_path = None
 
-    if args.model_type == "transformer":
+    if args.model_type == "ctf":
+        return build_ctf(hyperParams, args.use_model_path)
+    if args.model_type == "attenctf":
+        return build_attenctf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+    if args.model_type == "cvaetfcut":
+        return build_cvaetfcut(hyperParams, args.use_model_path)
+    if args.model_type == "cvaetf":
         return build_cvaetf(hyperParams, args.use_model_path)
     elif args.model_type == "mlpcvaetf_encoder":
         return build_mlpcvaetfencoder(hyperParams, args.use_cvaetf_path, args.use_model_path)
     elif args.model_type == "mlpcvaetf":
         args.use_cvaetf_path = None
         return build_mlpcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
-    elif args.model_type == "sepmlpcvaetf":
-        return build_sepmlpcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+    elif args.model_type == "sepcvaetf":
+        return build_sepcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+    elif args.model_type == "sepcvaetf2":
+        return build_sepcvaetf2(hyperParams, args.use_cvaetf_path, args.use_model_path)
     elif args.model_type == "attencvaetf":
         return build_attencvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
 

@@ -3,7 +3,7 @@ import argparse
 
 def model_opts(parser):
     # hard constraints
-    parser.add_argument('-model_type', type=str, default='transformer')
+    parser.add_argument('-model_type', type=str, default='cvaetf')
     parser.add_argument('-N', type=int, default=6, help="# of encoder/decoder")
     parser.add_argument('-d_model', type=int, default=512, help="embedding dimension")
     parser.add_argument('-d_ff', type=int, default=2048, help="dimension in feed forward network")

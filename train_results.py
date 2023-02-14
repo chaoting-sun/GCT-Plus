@@ -54,6 +54,8 @@ def plot(epoch, loss, name_list,
     
     plt.xlabel('# Epoch', fontsize=12)
     plt.ylabel('Loss', fontsize=12)
+    plt.xticks(epoch, fontsize=16)
+    plt.yticks(fontsize=16)
     plt.title(title_name, fontsize=16)
     plt.savefig(save_path)
 
@@ -104,6 +106,41 @@ def plot_train_results(optimizer, model_folder, begin_epoch, end_epoch):
     
     plt.savefig(os.path.join(model_folder, 'train_loss.png'))
 
+
+def plot_ctf_train_results(model_folder, begin_epoch, end_epoch):
+    def data_results(data_name):
+        print('dataset:', data_name)
+        rce = []
+        for i in range(begin_epoch, end_epoch+1):
+            data = pd.read_csv(os.path.join(model_folder, f"{data_name}_{i}.csv"))
+            rce.append(data['RCE'].mean())
+            print(f'{i}\trce: {rce[-1]:.5f}')
+        return rce
+
+    train_rce = data_results('train')
+    valid_rce = data_results('valid')
+
+    data_loss = pd.DataFrame({
+        '# Epoch'   : [int(i) for i in range(begin_epoch, end_epoch+1)],
+        'train RCE' : train_rce,  'valid RCE' : valid_rce,
+    })
+
+    plt.figure(figsize=(7.5, 6))
+    
+    plt.plot(data_loss['# Epoch'], data_loss['train RCE'], 
+             label='train RCE', linestyle='-', marker='x', color='#3c28ed', markersize=5)
+    plt.plot(data_loss['# Epoch'], data_loss['valid RCE'], 
+             label='valid RCE', linestyle='-', marker='x', color='#29dff0', markersize=5)
+    plt.legend()
+    
+    plt.title(f'Training/Validation Loss', fontsize=19)
+    plt.xlabel('# Epoch', fontsize=17)
+    plt.ylabel('Loss', fontsize=17)
+    plt.xticks(fontsize=16.5)
+    plt.yticks(fontsize=16.5)
+    plt.legend(fontsize=16)
+    
+    plt.savefig(os.path.join(model_folder, 'train_loss.png'))
     
     
 if __name__ == '__main__':
@@ -111,6 +148,7 @@ if __name__ == '__main__':
     options(parser)
     args = parser.parse_args()
     
-    plot_train_results(args.optimizer, args.model_folder, args.begin_epoch, args.end_epoch)
-
+    # plot_train_results(args.optimizer, args.model_folder, args.begin_epoch, args.end_epoch)
     # plot_results(args.model_folder, args.begin_epoch, args.end_epoch)
+
+    plot_ctf_train_results(args.model_folder, args.begin_epoch, args.end_epoch)
