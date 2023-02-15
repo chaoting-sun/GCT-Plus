@@ -124,10 +124,12 @@ class SrcGeneration:
                 # props_t, z = self._aug_input(props_t, z)
             
                 std = torch.exp(0.5*logvar)
-                if std > ...:
-                    eps = torch.empty_like(std).normal_(mean=0, std=10E-3)
-                else:
-                    eps = torch.empty_like(std).normal_(mean=0, std=1)
+                eps = torch.empty_like(std).normal_(mean=0, std=1)
+                
+                # if std > ...:
+                #     eps = torch.empty_like(std).normal_(mean=0, std=10E-3)
+                # else:
+                #     eps = torch.empty_like(std).normal_(mean=0, std=1)
                     
                 pseudo_z = eps.mul(std).add(mu)
 

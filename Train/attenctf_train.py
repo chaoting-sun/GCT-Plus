@@ -207,9 +207,12 @@ def train_model(args, model, optimizer, train_iter,
 
 def attenctf_train(args, logger):
     os.makedirs(args.save_directory, exist_ok=True)
-    # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
-    data_path = os.path.join(args.data_path, 'aug',
-                             f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
+
+    if args.debug:
+        data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
+    else:
+        data_path = os.path.join(args.data_path, 'aug',
+                                f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
 
     LOG = logger(name='augment data by conditions',
                  log_path=os.path.join(args.save_directory, "records.log"))
@@ -222,7 +225,7 @@ def attenctf_train(args, logger):
 
     LOG.info('prepare train & valid dataset...')
     train, valid = data.TabularDataset.splits(
-        path=data_path, train='train_half.csv', validation='valid_half.csv', # change
+        path=data_path, train='train.csv', validation='validation.csv',
         test=None, format='csv', fields=fields, skip_header=True
     )
 

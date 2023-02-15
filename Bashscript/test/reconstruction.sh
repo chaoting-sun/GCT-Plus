@@ -3,6 +3,7 @@
 
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
+export PYTHONPATH='/home/chaoting/tools/python-plot/':$PYTHONPATH
 
 
 
@@ -26,44 +27,47 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
         # -epoch_list 1 2 3 4 5 6 7 8 9 10            \
 
 
-GPU_IDX=0
-SIMILARITY=1.00
-TOLERANCE=0.00
-MODEL_NAME=ctf
-
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-    test.py                                    \
-        -model_type cvaetf \
-        -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
-    reconstruction                                     \
-        -reconstruction                                \
-        -model_name cvaetf                             \
-        -epoch_list 10                                 \
-        -similarity 1.00                               \
-        -tolerance 0.00                                \
-        -pad_to_same_len                               \
-    # >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
-
-
 # GPU_IDX=0
-# SIMILARITY=0.50
-# TOLERANCE=0.20
-# # MODEL_NAME=attenctf_pad-aug-s${SIMILARITY}-t${TOLERANCE}
-# # MODEL_NAME=ctf_pad
-# # MODEL_NAME=ctf_aug-s${SIMILARITY}-t${TOLERANCE}
+# SIMILARITY=1.00
+# TOLERANCE=0.00
+# MODEL_NAME=ctf
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
-#     test.py                                            \
-#         -model_type ctf                                \
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+#     test.py                                    \
+#         -model_type cvaetf \
 #         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
 #     reconstruction                                     \
 #         -reconstruction                                \
-#         -model_name ${MODEL_NAME}                      \
-#         -epoch_list 5                                  \
-#         -similarity ${SIMILARITY}                      \
-#         -tolerance ${TOLERANCE}                        \
+#         -model_name cvaetf                             \
+#         -epoch_list 10                                 \
+#         -similarity 1.00                               \
+#         -tolerance 0.00                                \
 #         -pad_to_same_len                               \
-#     >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
+    # >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
+
+
+GPU_IDX=3
+SIMILARITY=0.50
+TOLERANCE=0.20
+# MODEL_NAME=attenctf_pad-aug-s${SIMILARITY}-t${TOLERANCE}
+# MODEL_NAME=ctf_pad
+# MODEL_NAME=ctf_aug-s${SIMILARITY}-t${TOLERANCE}
+# MODEL_NAME=attenctf_pad-aug-s${SIMILARITY}-t${TOLERANCE}-half
+MODEL_NAME=cvaetfcut_aug-s1.00-t0.00_0.1
+
+
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+    test.py                                            \
+        -model_type cvaetfcut                                \
+        -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
+    reconstruction                                     \
+        -reconstruction                                \
+        -model_name ${MODEL_NAME}                      \
+        -epoch_list 2                                  \
+        -similarity ${SIMILARITY}                      \
+        -tolerance ${TOLERANCE}                        \
+        -pad_to_same_len                               \
+    # >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
 
         # -pad_to_same_len                               \
 

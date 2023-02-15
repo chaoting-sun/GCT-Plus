@@ -64,6 +64,8 @@ def add_args(parser):
     parser.add_argument('-lr_beta2', type=float, default=0.98)
     parser.add_argument('-lr_eps', type=float, default=1e-9)
 
+    parser.add_argument('-debug', action='store_true')
+
 
 if __name__ == "__main__":
     # 0, 100, 200, 400

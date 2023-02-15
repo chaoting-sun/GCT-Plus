@@ -8,6 +8,7 @@ import Utils.log as ul
 from Configuration.config import hard_constraints_opts
 
 from Test.reconstruction import reconstruction
+from Test.encoder_outputs import encoder_outputs
 from Utils.field import smiles_fields, condition_fields
 
 
@@ -34,6 +35,7 @@ def add_args(parser):
     parent_parser.add_argument('-pad_to_same_len', action='store_true')
     parent_parser.add_argument('-model_name', type=str, default='ctf')
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
+    parent_parser.add_argument('-debug', action='store_true')
 
     """
     reconstruction
@@ -42,28 +44,35 @@ def add_args(parser):
     rc_parser.add_argument('-reconstruction', action='store_true')
     rc_parser.add_argument('-similarity', type=float)
     rc_parser.add_argument('-tolerance', type=float)
-
-
-def sample_from_dataset():
-    """same + not_same"""
-    from sklearn.utils import shuffle
-    data_folder = '/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim0.50_tol0.20/'
-
-    def sample_data(data_type):
-        df = pd.read_csv(os.path.join(data_folder, f'{data_type}.csv'))
-        df_same = df.loc[df.src == df.trg]
-        df_not_same = df.loc[df.src != df.trg]
-        df_same = df_same.sample(len(df_not_same),
-                                 random_state=1,
-                                 ignore_index=True)
-        df = pd.concat([df_same, df_not_same], axis=0)
-        return shuffle(df)
     
-    train = sample_data('train')
-    valid = sample_data('validation')
+    """
+    encoder_outputs
+    """
+    eo_parser = subparsers.add_parser('encoder_outputs', parents=[parent_parser])
+    eo_parser.add_argument('-encoder_outputs', action='store_true')
+    eo_parser.add_argument('-similarity', type=float)
+    eo_parser.add_argument('-tolerance', type=float)
+
+# def sample_from_dataset():
+#     """same + not_same"""
+#     from sklearn.utils import shuffle
+#     data_folder = '/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim0.50_tol0.20/'
+
+#     def sample_data(data_type):
+#         df = pd.read_csv(os.path.join(data_folder, f'{data_type}.csv'))
+#         df_same = df.loc[df.src == df.trg]
+#         df_not_same = df.loc[df.src != df.trg]
+#         df_same = df_same.sample(len(df_not_same),
+#                                  random_state=1,
+#                                  ignore_index=True)
+#         df = pd.concat([df_same, df_not_same], axis=0)
+#         return shuffle(df)
     
-    train.to_csv(os.path.join(data_folder, 'train_half.csv'), index=False)
-    valid.to_csv(os.path.join(data_folder, 'valid_half.csv'), index=False)
+#     train = sample_data('train')
+#     valid = sample_data('validation')
+    
+#     train.to_csv(os.path.join(data_folder, 'train_half.csv'), index=False)
+#     valid.to_csv(os.path.join(data_folder, 'valid_half.csv'), index=False)
     
 
 if __name__ == "__main__":
@@ -84,3 +93,6 @@ if __name__ == "__main__":
 
     if hasattr(args, 'reconstruction'):
         reconstruction(args, toklen_data, scaler, device, logger)
+        
+    elif hasattr(args, 'encoder_outputs'):
+        encoder_outputs(args, toklen_data, scaler, device, logger)

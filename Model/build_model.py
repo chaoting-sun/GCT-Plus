@@ -66,12 +66,13 @@ def build_cvaetf(hyperParameters, model_path=None):
             model.load_state_dict(model_state['model_state_dict'])
     return model            
  
-def build_attenctf(hyperParams, ctf_path, aug_ctf_path=None):
-    aug_ctf = ATTENCTF(**hyperParams)
+def build_attenctf(hyperparams, ctf_path, aug_ctf_path=None):
+    hyperparams['variational'] = False
+    aug_ctf = ATTENCTF(**hyperparams)
     if aug_ctf_path:
         aug_ctf.load_state_dict(torch.load(aug_ctf_path)['model_state_dict'])
     else:
-        ctf = build_ctf(hyperParams, ctf_path)
+        ctf = build_ctf(hyperparams, ctf_path)
         ctf.load_state_dict(torch.load(ctf_path)['model_state_dict'])
         transfer_params(ctf, aug_ctf)
     freeze_params(aug_ctf, train_names=['rotator'])

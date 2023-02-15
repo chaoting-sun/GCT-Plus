@@ -166,7 +166,7 @@ def find_all_position_correlation(data_type, all_mu, all_log_var,
         if os.path.exists(save_path):
             return pickle.load(open(save_path, 'rb'))
         else:
-            all_values = pd.DataFrame(all_values[:,:,position],     
+            all_values = pd.DataFrame(all_values[:,:,position],  
                                       columns=[i for i in range(max_strlen)])
             corr = all_values.corr()
             pickle.dump(corr, open(save_path, 'wb'))
