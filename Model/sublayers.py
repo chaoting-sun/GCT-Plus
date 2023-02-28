@@ -73,7 +73,6 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # calculate attention using function we will define next
-        # print(f'q: {q.size()}, k: {k.size()}, v: {v.size()}')
         scores, scores_attn = attention(q, k, v, self.d_k, mask, self.dropout)
 
         # concatenate heads and put through final linear layer

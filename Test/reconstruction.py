@@ -54,71 +54,6 @@ from Utils.dataset import get_loader
 #             return n_trains[i]
 
 
-class Batch:
-    def __init__(self, src, trg, trg_en=None,
-                 econds=None, dconds=None, mconds=None):
-        self.src = src
-        self.trg_y = trg[:, 1:]
-        self.trg = trg[:, :-1]
-
-        if trg_en:
-            self.trg_en = trg_en
-
-        self.trg_en = None if trg_en is None else trg_en
-        self.econds = None if econds is None else econds
-        self.dconds = None if dconds is None else dconds
-        self.mconds = None if mconds is None else mconds
-
-
-def rebatch(batch, conds):
-    batch_data = {}
-    batch_data['src'] = batch.src.transpose(0, 1)
-    batch_data['trg'] = batch.trg.transpose(0, 1)
-
-    if len(conds) > 0:
-        econds, dconds = [], []
-        for c in conds:
-            econds.append(getattr(batch, f"src_{c}").view(-1, 1))
-            dconds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-        batch_data['econds'] = torch.cat(econds, dim=1)
-        batch_data['dconds'] = torch.cat(dconds, dim=1)
-        delconds = batch_data['dconds'] - batch_data['econds']
-        batch_data['mconds'] = torch.cat([batch_data['econds'], delconds], dim=1)
-
-    return Batch(**batch_data)
-
-
-def rebatch_pad(batch, conds, pad_id, max_strlen):
-    def padding(obj, max_strlen, cond_len):
-        obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
-                           - cond_len), dtype=torch.long) * pad_id
-        return torch.cat([obj, obj_pad], dim=1)
-    
-    batch_data = {}
-    batch_data['src'] = padding(batch.src.transpose(0, 1), max_strlen, len(conds))
-    batch_data['trg'] = padding(batch.trg.transpose(0, 1), max_strlen, len(conds))
-
-    if len(conds) > 0:
-        econds, dconds = [], []
-        for c in conds:
-            econds.append(getattr(batch, f"src_{c}").view(-1, 1))
-            dconds.append(getattr(batch, f"trg_{c}").view(-1, 1))
-        batch_data['econds'] = torch.cat(econds, dim=1)
-        batch_data['dconds'] = torch.cat(dconds, dim=1)
-        delconds = batch_data['dconds'] - batch_data['econds']
-        batch_data['mconds'] = torch.cat([batch_data['econds'], delconds], dim=1)
-
-    return Batch(**batch_data)
-
-
-def get_dataloader(data_iter, conds):
-    return (rebatch(batch, conds) for batch in data_iter)
-
-
-def get_pad_dataloader(data_iter, conds, pad_id, max_strlen):
-    return (rebatch_pad(batch, conds, pad_id, max_strlen) for batch in data_iter)
-
-
 def tensor_to_smiles(FIELD):
     def convert(tensor):
         smiles = ""
@@ -131,15 +66,6 @@ def tensor_to_smiles(FIELD):
             smiles += s
         return smiles
     return convert
-
-# def smiles2tensor(tensor, FIELD):
-#     smiles = ""
-#     for i in tensor:
-#         s = FIELD.vocab.itos[i]
-#         if s == "<pad>":
-#             return
-#         smiles += s
-#     return smiles
 
 
 def smiles_converter(x, FIELD, n_jobs=1, reverse=True):
@@ -180,40 +106,49 @@ def prepare_dataiter(data_path, fields, batch_size=1, n_samples=1000): # 256, 10
     return train_iter, valid_iter
 
 
-def src_generation(generator, SRC, TRG, batch, n_samples=1, n_jobs=1):
+def src_generation(generator, SRC, TRG, batch, model_type, n_samples=1, n_jobs=1):
     smi_in = smiles_converter(batch.src, SRC, n_jobs)
     smi_trg = smiles_converter(batch.trg_y, TRG, n_jobs)
     smi_out = [[] for _ in range(len(smi_in))]
 
     for _ in range(n_samples):
-        z, mu, logvar = generator.encode_smiles(batch.src,
-                                                batch.econds,
-                                                transform=False)
-        mu = mu[:, :35, :]
+        if model_type == 'attenctf':
+            conds = (batch.econds, batch.mconds)
+        else:
+            conds = batch.econds
+        z, mu, logvar = generator.encode_smiles(batch.src, conds, transform=False)
+        mu = mu[:, :, :]
         smi_gen, *_ = generator.sample_smiles(batch.dconds, mu, transform=False)
         for i, smi in enumerate(smi_gen):
             smi_out[i].append(smi)
     return smi_in, smi_trg, smi_out
 
-def compute_accuracy(dataloader, generator, SRC, TRG, scaler, n_samples=1, n_jobs=1):
+
+def compute_accuracy(dataloader, generator, SRC, TRG, scaler, model_type, n_samples=1, n_jobs=1):
     n_data = n_same = n_not_same = 0
     n_total_acc = n_same_acc = n_not_same_acc = 0
 
     # for i, batch in enumerate(tqdm(dataloader)):
     for i, batch in enumerate(dataloader):
-        smi_in, smi_trg, smi_out = src_generation(generator, SRC, TRG, batch, n_samples, n_jobs)
+        smi_in, smi_trg, smi_out = src_generation(generator, SRC, TRG, batch,
+                                                  model_type, n_samples, n_jobs)
         n_data += len(smi_in)
-        print(i, smi_in, smi_trg, smi_out)
+        print(i)
+        print(smi_in, smi_trg, smi_out)
+
+        if smi_in != smi_trg and smi_in == smi_out[0]:
+            print('the same!!!')
+        
         # dconds_truth = scaler.inverse_transform(batch.dconds)
         
         for j, (st, so_list) in enumerate(zip(smi_trg, smi_out)):
             for k, so in enumerate(so_list):
                 if smi_in[j] == st: # src = trg
                     n_same += 1
-                    if st == so: # trg = gen                        
+                    if st == so: # trg = gen
                         n_total_acc += 1
                         n_same_acc += 1
-                        break        
+                        break
                 else:
                     n_not_same += 1
                     if st == so:
@@ -275,7 +210,7 @@ def reconstruction(args, toklen_data, scaler, device, logger, n_samples=1):
                                     args.max_strlen,
                                     args.pad_to_same_len)
             n_acc, n_same_acc, n_not_same_acc, n_data, n_same, n_not_same = compute_accuracy(
-                dataloader, generator, SRC, TRG, scaler, n_samples, args.n_jobs)
+                dataloader, generator, SRC, TRG, scaler, args.model_type, n_samples, args.n_jobs)
             dataloader = get_loader(valid_iter,
                                     args.conditions,
                                     args.pad_id,
@@ -290,7 +225,7 @@ def reconstruction(args, toklen_data, scaler, device, logger, n_samples=1):
             acc_dict['n_train_not_same_acc'].append(n_not_same_acc)
 
             n_acc, n_same_acc, n_not_same_acc, n_data, n_same, n_not_same = compute_accuracy(
-                dataloader, generator, SRC, TRG, scaler, n_samples, args.n_jobs)
+                dataloader, generator, SRC, TRG, scaler, args.model_type, n_samples, args.n_jobs)
 
             acc_dict['n_valid'].append(n_data)
             acc_dict['n_valid_same'].append(n_same)

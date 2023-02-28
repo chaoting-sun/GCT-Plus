@@ -73,7 +73,7 @@ def add_args(parser):
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
 
     parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Results')
-    parent_parser.add_argument('-n_jobs', type=int, default=4)
+    parent_parser.add_argument('-n_jobs', type=int, default=8)
     parent_parser.add_argument('-model_name', type=str, required=True)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
     """
@@ -98,7 +98,7 @@ def add_args(parser):
     sg_parser = subparsers.add_parser('src-generation', parents=[parent_parser])
     sg_parser.add_argument('-src_generation', action='store_true')
     sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
-    sg_parser.add_argument('-n_samples', type=int, default=20)
+    sg_parser.add_argument('-n_samples', type=int, default=1000)
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')

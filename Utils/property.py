@@ -1,7 +1,10 @@
 import numpy as np
 
 from rdkit import RDLogger, rdBase
-from rdkit.DataStructs import TanimotoSimilarity
+from rdkit.Chem.Fingerprints.FingerprintMols import FingerprintMol
+from rdkit.DataStructs.cDataStructs import TanimotoSimilarity
+from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+
 from rdkit.Chem.rdchem import AtomValenceException
 from rdkit.Chem import MolFromSmiles, MolToSmiles, \
     Descriptors, Mol, AllChem, SanitizeMol
@@ -13,18 +16,14 @@ from moses.metrics.NP_Score import npscorer
 
 
 def disable_rdkit_logging():
-    """
-    Disables RDKit whiny logging.
-    """
+    """Disable RDKit whiny logging"""
     logger = RDLogger.logger()
     logger.setLevel(RDLogger.ERROR)
     rdBase.DisableLog('rdApp.error')
 
 disable_rdkit_logging()
 
-"""
-property functions
-"""
+"""Property prediction function"""
 
 def logP(mol: Mol) -> float:
     """ RDKit's partition coefficient """
@@ -54,14 +53,19 @@ def NP(mol) -> float:
     """ RDKit's Natural Product-likeness score """
     return npscorer.scoreMol(mol)
 
+
 property_prediction = {
     "logP": logP,
     "tPSA": tPSA,
-    "QED": QED,
-    "SA": SA,
-    "NP": NP
+    "QED" : QED,
+    "SA"  : SA,
+    "NP"  : NP
 }
 
+
+def MurckoScaffoldFromSmiles(smiles):
+    return MurckoScaffoldSmiles(smiles)
+    
 
 def to_fp_ECFP(smi):
     if smi:
@@ -89,16 +93,28 @@ def tanimoto_similarity(smi1, smi2):
         return None
 
 
+def MurckoScaffoldSimilarity(smi1, smi2):
+    """refer to the implementation in molgpt"""
+    
+    mol1, mol2 = MolFromSmiles(smi1), MolFromSmiles(smi2)
+    if mol1 is None or mol2 is None:
+        return None
+
+    ms1, ms2 = MurckoScaffoldSmiles(smi1), MurckoScaffoldSmiles(smi2)    
+    fp1, fp2 = FingerprintMol(MolFromSmiles(ms1)), FingerprintMol(MolFromSmiles(ms2))
+    return TanimotoSimilarity(fp1, fp2)
+
+
 def is_valid(smi):
     return 1 if to_mol(smi) else 0
 
-
+# old
 def predict_props(smiles, conditions=['logP', 'tPSA', 'QED']):
     mol = MolFromSmiles(smiles)
     if mol:
-        return [property_prediction[c](mol) 
+        return [property_prediction[c](mol)
                 for c in conditions]
-    return [np.nan]*3
+    return [np.nan]*len(conditions)
 
 
 def props_predictor_wrapper(conditions):
@@ -161,4 +177,3 @@ def get_canonical_smile(smile):
     else:
         return None
     
-

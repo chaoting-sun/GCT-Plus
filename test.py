@@ -9,6 +9,7 @@ from Configuration.config import hard_constraints_opts
 
 from Test.reconstruction import reconstruction
 from Test.encoder_outputs import encoder_outputs
+from Test.src_gen import fast_src_generation
 from Utils.field import smiles_fields, condition_fields
 
 
@@ -53,6 +54,20 @@ def add_args(parser):
     eo_parser.add_argument('-similarity', type=float)
     eo_parser.add_argument('-tolerance', type=float)
 
+    """
+    src_gen
+    """
+    sg_parser = subparsers.add_parser('src-gen', parents=[parent_parser])
+    sg_parser.add_argument('-src_gen', action='store_true')
+    sg_parser.add_argument('-similarity', type=float)
+    sg_parser.add_argument('-tolerance', type=float)
+    sg_parser.add_argument('-n_steps', type=int, nargs='+')
+    sg_parser.add_argument('-src', type=str)
+    sg_parser.add_argument('-trg_props', type=float, nargs='+')
+    sg_parser.add_argument('-n_vars', type=int)
+    sg_parser.add_argument('-n_samples', type=int, default=1000)
+
+
 # def sample_from_dataset():
 #     """same + not_same"""
 #     from sklearn.utils import shuffle
@@ -91,8 +106,15 @@ if __name__ == "__main__":
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
     scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
 
+    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv'))
+    train_smiles = train_smiles['smiles'].tolist()
+
     if hasattr(args, 'reconstruction'):
         reconstruction(args, toklen_data, scaler, device, logger)
         
     elif hasattr(args, 'encoder_outputs'):
         encoder_outputs(args, toklen_data, scaler, device, logger)
+
+    elif hasattr(args, 'src_gen'):
+        fast_src_generation(args, toklen_data, train_smiles, scaler,
+                            SRC, TRG, COND, device, logger)

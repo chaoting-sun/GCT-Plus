@@ -18,7 +18,7 @@ from Utils import allocate_gpu
 from Utils.property import tanimoto_similarity
 from Utils.dataset import get_condition
 from Model import create_source_mask
-from Model.build_model import build_model
+from Model.build_model import get_model
 from Preprocess.augmentation import get_similar_molecular_pairs
 
 

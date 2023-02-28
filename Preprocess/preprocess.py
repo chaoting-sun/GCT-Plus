@@ -29,7 +29,6 @@ def get_scaler(condition, scaler_path=None):
         scaler = RobustScaler(quantile_range=(0.1, 0.9))
         scaler.fit(condition.copy(), len(condition.columns))
         joblib.dump(scaler, open(scaler_path), 'wb')
-
     return scaler
 
 

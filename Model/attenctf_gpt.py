@@ -75,7 +75,7 @@ class Decoder(nn.Module):
 
         for i in range(self.N):
             x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
-        
+
         return self.norm(x)
     
 
@@ -106,6 +106,62 @@ class AttenBlock(nn.Module):
         return x, attn
 
 """
+original attenctf
+"""
+
+# class StrAttention(nn.Module):
+#     def __init__(self, latent_dim, cond_dim, max_strlen,
+#                  prop_embed_dim=64, n_layers=8, dropout=0.1):
+#         super(StrAttention, self).__init__()
+#         # assert (latent_dim + cond_dim) % n_heads == 0
+
+#         self.prop_linear = nn.Linear(cond_dim, prop_embed_dim)
+#         self.prop_ln = nn.LayerNorm(prop_embed_dim)    
+#         self.atten_blocks = nn.Sequential(*[AttenBlock(latent_dim) for _ in range(n_layers)])
+
+#         self.out = nn.Linear(max_strlen+prop_embed_dim, max_strlen)
+#         self.out_ln = nn.LayerNorm(latent_dim)
+    
+#     def forward(self, x, mconds):
+#         props = self.prop_ln(self.prop_linear(mconds))
+#         props = torch.stack(tuple(props for _ in range(x.size(-1))),dim=2) # (bs, latent_dim/2, latent_dim)
+
+#         x = torch.cat([props, x], dim=1)
+#         for layer in self.atten_blocks:
+#             x, atten = layer(x)
+#         x = x.permute(0, 2, 1)
+#         x = self.out(x)
+#         x = x.permute(0, 2, 1)
+#         return self.out_ln(x)
+
+
+# class DimAttention(nn.Module):
+#     def __init__(self, latent_dim, cond_dim, max_strlen,
+#                  prop_embed_dim=64, n_layers=8):
+#         super(DimAttention, self).__init__()
+#         self.cond_dim = cond_dim
+#         self.max_strlen = max_strlen
+
+#         self.prop_linear = nn.Linear(cond_dim, prop_embed_dim)
+#         self.prop_ln = nn.LayerNorm(prop_embed_dim)        
+#         self.atten_blocks = nn.Sequential(*[AttenBlock(max_strlen) for _ in range(n_layers)])
+
+#         self.out = nn.Linear(latent_dim+prop_embed_dim, latent_dim)
+#         self.out_ln = nn.LayerNorm(latent_dim)
+
+#     def forward(self, x, mconds):
+#         props = self.prop_ln(self.prop_linear(mconds))
+#         props = torch.stack(tuple(props for _ in range(x.size(1))), dim=1)
+        
+#         x = torch.cat([props, x], dim=2)
+#         x = x.permute(0, 2, 1)
+#         for layer in self.atten_blocks:
+#             x, atten = layer(x)
+#         x = x.permute(0, 2, 1)
+#         x = self.out(x)
+#         return self.out_ln(x)
+
+"""
 test the method from molgpt
 """
 
@@ -115,61 +171,71 @@ class StrAttention(nn.Module):
         super(StrAttention, self).__init__()
         # assert (latent_dim + cond_dim) % n_heads == 0
         
-        self.prop_linear = nn.Linear(nconds, latent_dim*nconds)
-        self.pe = PositionalEncoding(latent_dim, dropout=dropout)
-        
+        self.prop_linear = nn.Linear(nconds, latent_dim)
+        self.prop_ln = nn.LayerNorm(latent_dim)
+        self.type_emb = nn.Embedding(nconds, latent_dim)
+
         self.atten_blocks = nn.Sequential(*[AttenBlock(latent_dim) for _ in range(n_layers)])
-        
-        self.out = nn.Linear(latent_dim, latent_dim)
-        self.out_norm = Norm(latent_dim) # new
+
+        self.out = nn.Linear(max_strlen+1, max_strlen)
+        self.out_ln = nn.LayerNorm(latent_dim)
     
     def forward(self, x, mconds):
-        props = self.prop_linear(mconds).view(mconds.size(0), mconds.size(1), -1)        
+        props = self.prop_ln(self.prop_linear(mconds.unsqueeze(1)))
+        type_embeddings = self.type_emb(torch.ones((x.size(0), 1),
+                                                   dtype=torch.long,
+                                                   device=mconds.device))
+        props += type_embeddings
+        
         x = torch.cat([props, x], dim=1)
-        x = self.pe(x)
         for layer in self.atten_blocks:
             x, atten = layer(x)
-        x = self.out_norm(self.out(x))
-        return x[:, mconds.size(1):, :]
+        x = x.permute(0, 2, 1)
+        x = self.out(x)
+        x = x.permute(0, 2, 1)
+        return self.out_ln(x)
 
 
 class DimAttention(nn.Module):
-    def __init__(self, latent_dim, nconds, max_strlen,
-                 n_layers=8, dropout=0.1):
+    def __init__(self, latent_dim, nconds, max_strlen, n_layers=8):
         super(DimAttention, self).__init__()
-        self.nconds = nconds
         self.max_strlen = max_strlen
-        
-        self.pe = PositionalEncoding(latent_dim, dropout=dropout)
-        self.prop_linear = nn.Linear(nconds, max_strlen*nconds)
+
+        self.prop_linear = nn.Linear(nconds, max_strlen)
+        self.prop_ln = nn.LayerNorm(max_strlen)        
+        self.type_emb = nn.Embedding(nconds, max_strlen)
 
         self.atten_blocks = nn.Sequential(*[AttenBlock(max_strlen) for _ in range(n_layers)])
 
-        self.out = nn.Linear(max_strlen, max_strlen)
-        self.out_norm = Norm(max_strlen) # new
+        self.out = nn.Linear(latent_dim+1, latent_dim)
+        self.out_ln = nn.LayerNorm(latent_dim)
 
     def forward(self, x, mconds):
-        props = self.prop_linear(mconds).view(mconds.size(0), self.max_strlen, self.nconds)        
-        x = torch.cat([props, x], dim=2)
+        props = self.prop_ln(self.prop_linear(mconds.unsqueeze(1)))
+        type_embeddings = self.type_emb(torch.ones((x.size(0), 1),
+                                                   dtype=torch.long,
+                                                   device=mconds.device))
+        props += type_embeddings
         x = x.permute(0, 2, 1)
+        x = torch.cat([props, x], dim=1)
         for layer in self.atten_blocks:
             x, atten = layer(x)
-        x = self.out_norm(self.out(x))
-        
         x = x.permute(0, 2, 1)
-        return x[:, :, mconds.size(1):]
-    
+        x = self.out(x)
+        return self.out_ln(x)
+
 
 class RotatorAttention(nn.Module):
     def __init__(self, latent_dim, nconds, max_strlen):
         super(RotatorAttention, self).__init__()
+
         self.string_atten = StrAttention(latent_dim, nconds, max_strlen)
         self.latdim_atten = DimAttention(latent_dim, nconds, max_strlen)
-        
+
     def forward(self, x, mconds):
         x_sa = self.string_atten(x, mconds)
         x_la = self.latdim_atten(x, mconds)
-        return x_sa + x_la 
+        return x_sa + x_la
 
 
 class ATTENCTF(CTF):

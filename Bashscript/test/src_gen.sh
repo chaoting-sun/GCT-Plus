@@ -3,31 +3,29 @@
 
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
+export PYTHONPATH='/home/chaoting/tools/python-plot/':$PYTHONPATH
 
-GPU_IDX=0
+GPU_IDX=1
 MODEL_NAME=cvaetf
-# MODEL_NAME=cvaetf_aug-s0.70-t0.20
+
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-    inference.py                                    \
+    test.py                                    \
         -model_type cvaetf \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
-    src-generation                                  \
-        -src_generation                        \
+    src-gen                                  \
+        -src_gen                        \
         -decode_algo multinomial \
         -model_name ${MODEL_NAME}                             \
-        -n_steps 1 2 3 4                                  \
+        -n_steps 1                                  \
         -epoch_list 20                              \
-        -src_smiles 'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21' \
-        -trg_props 2.82212 63.61 0.883604               \
+        -src 'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21' \
+        -trg_props 2.82212 57.61 0.883604               \
+        -n_vars 1 \
+
     # >/dev/null 2>&1 &
 
-# -trg_props 2.82212 57.61 0.883604               \
-
-# 1, 6, 0.1
-# -trg_props1 3.82212 57.61 0.883604               \
-# -trg_props2 2.82212 63.61 0.883604               \
-# -trg_props3 2.82212 57.61 sh               \
+        # -trg_props 2.82212 57.61 0.883604               \
 
 # src: 2.92910 53.43 0.944642
 

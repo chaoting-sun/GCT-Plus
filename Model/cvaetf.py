@@ -112,13 +112,7 @@ class CVAETF(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src, trg, econds, dconds, src_mask, trg_mask):
-        # print('Encoder:')
-        # print(f'src: {src.size()}, trg: {trg.size()}, econds: {econds.size()}')
         z, mu, log_var = self.encoder(src, econds, src_mask)
-        
-        # print('Decoder:')
-        # print(f'z: {z.size()}, mu: {mu.size()}, log_var: {log_var.size()}')
-        # print(f'src_mask: {src_mask.size()}, trg_mask: {trg_mask.size()}')
         d_output = self.decoder(trg, z, dconds, src_mask, trg_mask)
         output = self.out(d_output)
 

@@ -46,30 +46,35 @@ export PYTHONPATH='/home/chaoting/tools/python-plot/':$PYTHONPATH
     # >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
 
 
-GPU_IDX=3
-SIMILARITY=0.50
-TOLERANCE=0.20
+GPU_IDX=1
+SIMILARITY=1.00
+TOLERANCE=0.00
+
+MODEL_NAME=cvaetf_pad
 # MODEL_NAME=attenctf_pad-aug-s${SIMILARITY}-t${TOLERANCE}
-# MODEL_NAME=ctf_pad
 # MODEL_NAME=ctf_aug-s${SIMILARITY}-t${TOLERANCE}
 # MODEL_NAME=attenctf_pad-aug-s${SIMILARITY}-t${TOLERANCE}-half
-MODEL_NAME=cvaetfcut_aug-s1.00-t0.00_0.1
+# MODEL_NAME=attenctf_pad_dconds_gpt_aug-s0.50-t0.20
+# MODEL_NAME=attenctf_pad_dconds_zeros_aug-s0.50-t0.20-half
+# MODEL_NAME=attenctf_pad_aug-s0.50-t0.20_22
 
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-    test.py                                            \
-        -model_type cvaetfcut                                \
+    test.py                                                      \
+        -model_type cvaetf                                       \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
     reconstruction                                     \
         -reconstruction                                \
         -model_name ${MODEL_NAME}                      \
-        -epoch_list 2                                  \
+        -epoch_list 4                                  \
         -similarity ${SIMILARITY}                      \
         -tolerance ${TOLERANCE}                        \
         -pad_to_same_len                               \
+
+
+        
     # >>rec_${MODEL_NAME}_s${SIMILARITY}_t${TOLERANCE}.out 2>&1 &
 
         # -pad_to_same_len                               \
 
         # -epoch_list 1 2                              \
-

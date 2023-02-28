@@ -28,8 +28,10 @@ class Sampler(nn.Module):
     def conditional_sampling(self, mu, logvar):
         """limit the value of threshold"""
         
-        # threshold = 0.1; eps_narrow = 0.1
-        threshold = 0.5; eps_narrow = 0.5
+        # threshold = 0.001; eps_narrow = 0.001
+        # threshold = 0.01; eps_narrow = 0.01
+        # threshold = 0.1; eps_narrow = 0.1 -> std 不變
+        threshold = 0.5; eps_narrow = 0.5 #-> std 不變
         
         std = torch.exp(0.5*logvar)
 
@@ -39,7 +41,8 @@ class Sampler(nn.Module):
         z = eps.mul(std).add(mu)
         z_narrow = eps_narrow.mul(std).add(mu)
         
-        return torch.where(std > threshold, z_narrow, z) # 要 return sample 出來的東西
+        out = torch.where(std > threshold, z_narrow, z)
+        return out # 要 return sample 出來的東西
 
     def forward(self, x):
         mu = self.fc_mu(x)

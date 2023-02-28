@@ -110,19 +110,35 @@ class Sampling(object):
 
         z, mu, log_var = self.predictor.encode(src, (props_s, props_m), src_mask)
         return z, mu, log_var
-        
+    
+    
+    def preprocess_props(self, props, transform=True):
+        if transform and isinstance(props, tuple):
+            return (torch.Tensor(self.transform_props(props[0])),
+                    torch.Tensor(self.transform_props(props[1]))), 2
 
-    def encode_smiles(self, src, props, transform=True):
-        if transform:
-            props = self.transform_props(props)
-        if props.dtype != torch.float32:
-            props = torch.Tensor(props)
+        if not transform and isinstance(props, tuple):
+            return (torch.Tensor(props[0]), torch.Tensor(props[1])), 2
         
-        src_mask = create_source_mask(src, self.pad_id, props)
+        if transform and not isinstance(props, tuple):
+            return torch.Tensor(self.transform_props(props)), 1
+            
+        if not transform and not isinstance(props, tuple):
+            return torch.Tensor(props), 1
+    
+
+    def encode_smiles(self, src, props, transform=True):        
+        props, np = self.preprocess_props(props, transform)
+        src_mask = create_source_mask(src, self.pad_id, 
+                                      props if np == 1 else props[0])
 
         src = src.to(self.device)
-        props = props.to(self.device)
         src_mask = src_mask.to(self.device)
+        if np == 2:
+            props = (props[0].to(self.device), props[1].to(self.device))
+        else:
+            props = props.to(self.device)
+
         z, mu, log_var = self.predictor.encode(src, props, src_mask)
         return z, mu, log_var
     

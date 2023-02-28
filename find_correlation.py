@@ -17,7 +17,7 @@ from plot import density_plot, density_plot_dict
 
 from Utils import allocate_gpu, get_fields
 from Utils.seed import set_seed
-from Model.build_model import build_model
+from Model.build_model import build_model, get_model
 from Configuration.config import options
 from Utils.dataset import to_dataloader
 from Model.modules import create_source_mask
@@ -30,16 +30,16 @@ def sample_and_store_data(data_type, input_path, output_path, n_samples, random_
     data.to_csv(os.path.join(output_path, f'{data_type}_{random_state}.csv'))
 
 
-def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
-    if model_type == 'transformer':
-        model_path = 'molGCT/molgct.pt'
-    elif args.epoch > 0:
-        model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
-        # model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
-    else:
-        model_path = None
-    print("Model path:", model_path)
-    return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path)
+# def get_model(args, SRC_vocab_len, TRG_vocab_len, model_type, decode_type):
+#     if model_type == 'transformer':
+#         model_path = 'molGCT/molgct.pt'
+#     elif args.epoch > 0:
+#         model_path = os.path.join(args.model_directory, f'model_{args.epoch}.pt')
+#         # model_path = glob.glob(os.path.join(args.model_directory, 'best_*'))[0]
+#     else:
+#         model_path = None
+#     print("Model path:", model_path)
+#     return build_model(args, SRC_vocab_len, TRG_vocab_len, model_path)
 
 
 def generate_encoder_outputs(model, data_iter, conditions, encode_type, batch_size,
@@ -260,10 +260,10 @@ def save_correlation_bar_plot(corr, fig_path):
 
 def multi_faceted_analysis(args, model, device, fields, TRG):
     ################## Settings ##################
-    plot_density_of_encoder_outputs = True
+    plot_density_of_encoder_outputs = False
     compute_latent_dimensional_correlation = True
-    compute_string_location_correlation = True
-    compute_mu_log_var_correlation = True
+    compute_string_location_correlation = False
+    compute_mu_log_var_correlation = False
 
     random_states = (0,1,2)
     ##############################################
@@ -273,8 +273,8 @@ def multi_faceted_analysis(args, model, device, fields, TRG):
     os.makedirs(results_path, exist_ok=True)
 
     for state in random_states:
-        sample_and_store_data('train', data_path, results_path, 10000, state)
-        sample_and_store_data('validation', data_path, results_path, 1000, state)
+        sample_and_store_data('train', data_path, results_path, 1000, state)
+        sample_and_store_data('validation', data_path, results_path, 100, state)
 
     for state in random_states:
         train_data, valid_data = data.TabularDataset.splits(
@@ -325,11 +325,11 @@ def multi_faceted_analysis(args, model, device, fields, TRG):
         if plot_density_of_encoder_outputs:
             print('Plot distribution of the encoder outputs...')
             plot_latent_space_distribution('train', train_mu, train_log_var, train_z, 
-                                           100000, args.latent_dim, args.max_strlen, state,
+                                           10000, args.latent_dim, args.max_strlen, state,
                                            correlation_path=os.path.join(args.storage_path, 'density_distribution'))
 
             plot_latent_space_distribution('validation', valid_mu, valid_log_var, valid_z,
-                                           10000, args.latent_dim, args.max_strlen, state,
+                                           1000, args.latent_dim, args.max_strlen, state,
                                            correlation_path=os.path.join(args.storage_path, 'density_distribution'))
 
         if compute_latent_dimensional_correlation:
@@ -436,17 +436,18 @@ if __name__ == '__main__':
     parser = options(parser)
     args = parser.parse_args()
     args.batch_size = 512
+    args.storage_path = '.'
 
     print('-------------------------- Settings --------------------------')
     print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
     print('-------------------------- Settings --------------------------')
 
-    device = allocate_gpu()
+    device = allocate_gpu(3)
     fields, SRC, TRG = get_fields(args.conditions, args.field_path)
     toklen_data = pd.read_csv(args.toklen_path)
 
-    model = get_model(args, len(SRC.vocab), len(TRG.vocab), 
-                      args.model_type, args.decode_type).to(device)
+    args.use_model_path = '/fileserver-gamma/chaoting/ML/molGCT/molgct.pt'
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab)).to(device)
 
     choice = 1
 

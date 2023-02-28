@@ -199,7 +199,8 @@ def train_model(args, model, optimizer, train_iter,
                                    args.conditions,
                                    args.pad_id,
                                    args.max_strlen,
-                                   device)
+                                   device
+                                   )
         # dataloader = get_dataloader(valid_iter, args.conditions,
         #                             args.pad_id, device)
         model.eval()
@@ -221,10 +222,12 @@ def train_model(args, model, optimizer, train_iter,
 
 def cvaetf_train(args, logger):
     os.makedirs(args.save_directory, exist_ok=True)
-    
-    data_path = os.path.join(args.data_path, 'aug',
-                             f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
-    # data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
+
+    if args.debug:    
+        data_path = os.path.join(args.data_path, 'aug', 'data_tiny')
+    else:
+        data_path = os.path.join(args.data_path, 'aug',
+                                 f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
 
     LOG = logger(name='augment data by conditions',
                  log_path=os.path.join(args.save_directory, "records.log"))

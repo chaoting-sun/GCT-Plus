@@ -46,18 +46,19 @@
 # > train from scratch
 # > original data
 
-GPU_IDX=1
-SIMILARITY=0.70
-TOLERANCE=0.20
+GPU_IDX=0
+SIMILARITY=1.00
+TOLERANCE=0.00
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
     train.py \
         -model_type cvaetf \
-        -tolerance 0.20    \
-        -similarity 0.70   \
+        -tolerance ${TOLERANCE}     \
+        -similarity ${SIMILARITY}   \
         -start_epoch 1     \
         -num_epoch 30      \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/cvaetf_aug-s${SIMILARITY}-t${TOLERANCE} \
+        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/cvaetf_pad \
+        -pad_to_same_len \
     >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
 
 

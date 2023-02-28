@@ -73,32 +73,11 @@ def plot_similarity(args, aug_path):
     exit() 
 
 
-# def find_similar_prop_pairs(props, conds, tols):
-#     props = props.sort_values(by=conds[0])
-#     similar_pairs = []
-#     cost_time = -time()
-#     for id1 in range(len(props)):
-#         id2 = id1
-#         while id2 < len(props):
-#             if abs(props[conds[0]].iloc[id2] - props[conds[0]].iloc[id1]) > tols[0]:
-#                 break
-#             if abs(props[conds[1]].iloc[id2] - props[conds[1]].iloc[id1]) > tols[1]:
-#                 break
-#             if abs(props[conds[2]].iloc[id2] - props[conds[2]].iloc[id1]) > tols[2]:
-#                 break
-#             no1, no2 = props.index[id1], props.index[id2]
-#             similar_pairs.append((no1, no2))
-#             if no1 != no2:
-#                 similar_pairs.append((no2, no1))
-#             id2 += 1
-#         if id1 % 2000 == 0 or id1 == len(props)-1:
-#             print("schedule:", id1, end='\r')
-#     cost_time += time()
-#     print(f"Total time costed: {str(timedelta(seconds=cost_time))}")
-#     similar_pairs = pd.DataFrame.from_records(similar_pairs, columns =['no1', 'no2'])
-#     assert len(similar_pairs) >= len(props)
-#     return similar_pairs 
-
+# class DataAugmentation(object):
+#     def __init__(self, args):
+#         self.tolerance = args.tolerance
+#         self.similarity = args.similarity
+    
 
 def _find_similar_pairs(props_smiles, conds, sim_tol, prop_tols, LOG):
     props_smiles = props_smiles.sort_values(by=conds[0])

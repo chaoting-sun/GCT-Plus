@@ -4,12 +4,13 @@
 
 # augment data by molecular similarity and properties
 
-TOLERANCE=0.30
-SIMILARITY=0.50
+TOLERANCE=1.00
+SIMILARITY=0.40
 
-nohup python3 -u \
+python3 -u \
     preprocess.py \
         -tolerance ${TOLERANCE}  \
         -similarity ${SIMILARITY} \
         -n_jobs 4 \
-    >>preprocess_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
+    # >>preprocess_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
+    

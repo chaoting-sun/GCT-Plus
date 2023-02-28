@@ -35,8 +35,8 @@ class EncoderOutput(object):
         self.require_neq_data = True if args.similarity != 1 else False
         
         self.data_folder = os.path.join(self.data_path, 'aug', f'data_sim{args.similarity:.2f}_tol{args.tolerance:.2f}')
-        self.save_folder = os.path.join(args.train_path, args.model_name, 'encoder_outputs')
-        # self.save_folder = '/fileserver-gamma/chaoting/ML/molGCT/encoder_outputs'
+        # self.save_folder = os.path.join(args.train_path, args.model_name, 'encoder_outputs')
+        self.save_folder = '/fileserver-gamma/chaoting/ML/molGCT/encoder_outputs'
         os.makedirs(self.save_folder, exist_ok=True)
         
         
@@ -73,6 +73,7 @@ class EncoderOutput(object):
         out_dim = (2*self.n_data if self.require_neq_data else self.n_data,
                    self.max_strlen, self.latent_dim)
         zs, mus, stds = np.empty(out_dim), np.empty(out_dim), np.empty(out_dim)
+        logvars = np.empty(out_dim)
         
         n_acc = 0
         
@@ -88,10 +89,11 @@ class EncoderOutput(object):
             zs[n_acc:n_acc+n_cur, :, :] = z.cpu().numpy()
             mus[n_acc:n_acc+n_cur, :, :] = mu.cpu().numpy()
             stds[n_acc:n_acc+n_cur, :, :] = std.cpu().numpy()
+            logvars[n_acc:n_acc+n_cur, :, :] = logvar.cpu().numpy()
 
             n_acc += n_cur
             
-        return zs, mus, stds
+        return zs, mus, stds, logvars
         
     
     def save_encoder_outputs(self, outs, data_name):
@@ -190,9 +192,9 @@ class EncoderOutput(object):
         with torch.no_grad():
             for epoch in self.epoch_list:
                 LOG.info(f"model epoch: {epoch}")
-                args.use_model_path = os.path.join(args.train_path,
-                    args.model_name, f'model_{epoch}.pt')
-                # args.use_model_path = '/fileserver-gamma/chaoting/ML/molGCT/molgct.pt'
+                # args.use_model_path = os.path.join(args.train_path,
+                #     args.model_name, f'model_{epoch}.pt')
+                args.use_model_path = '/fileserver-gamma/chaoting/ML/molGCT/molgct.pt'
                 
                 generator = prepare_generator(args, self.SRC, self.TRG,
                     self.toklen_data, self.scaler, self.device)
@@ -200,8 +202,8 @@ class EncoderOutput(object):
                 dataloader = get_loader(data_iter, args.conditions,
                     self.pad_id, args.max_strlen, args.pad_to_same_len)
 
-                zs, mus, stds = self.get_encoder_outputs(generator, dataloader)
-   
+                zs, mus, stds, logvars = self.get_encoder_outputs(generator, dataloader)
+                
                 self.save_latent_dim_correlation(zs, 'zs')
                 self.save_latent_dim_correlation(mus, 'mus')
                 self.save_latent_dim_correlation(stds, 'stds')
@@ -213,6 +215,7 @@ class EncoderOutput(object):
                 self.save_encoder_outputs(zs, 'zs')
                 self.save_encoder_outputs(mus, 'mus')
                 self.save_encoder_outputs(stds, 'stds')
+                self.save_encoder_outputs(logvars, 'logvars')
                 
                 for stat, val in self.get_statistics(zs).items():
                     z_stat_dict[stat].append(val)

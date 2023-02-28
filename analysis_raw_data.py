@@ -240,7 +240,29 @@ def property_similarity_plot():
         'similarity': sim_list
     })
     df.to_csv(f'Data/d{var_prop}.csv')
+
+
+from pathos.multiprocessing import ProcessingPool as Pool
+from Utils.property import MurckoScaffoldSimilarity
+
+
+def test(logP=2.82212, tPSA=63.61, QED=0.883604):
+    props = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/prop_serial.csv")
+    smiles = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/smiles_serial.csv")
+    sp = pd.concat([smiles, props], axis=1)
     
+    sp = sp.loc[(logP-0.2 <= sp.logP) & (sp.logP <= logP+0.2)]
+    sp = sp.loc[(tPSA-2 <= sp.tPSA) & (sp.tPSA <= tPSA+2)]
+    sp = sp.loc[(QED-0.05 <= sp.QED) & (sp.QED <= QED+0.05)]
+
+    smiles_list1 = ['CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21'] * len(sp)
+    
+    with Pool(4) as pool:
+        res = pool.amap(MurckoScaffoldSimilarity, smiles_list1, sp['smiles'])
+    sp['similarity'] = res.get()
+    sp = sp.sort_values(by=['similarity'], ascending=False)
+    print(sp)
+
     
 
 if __name__ == '__main__':
@@ -248,4 +270,5 @@ if __name__ == '__main__':
     arguments
     """
     # corr_plot()
-    property_similarity_plot()
+    # property_similarity_plot()
+    test()
