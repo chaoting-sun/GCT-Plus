@@ -8,7 +8,7 @@ from rdkit.Chem import MolFromSmiles
 import torch
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.property import get_mol, property_prediction, predict_props
+from Utils.properties import get_mol, property_fcn, predict_props
 from Inference.metrics import get_all_metrics, print_all_metrics
 from Inference.utils import augment_props
 from Inference.utils import prepare_generator
@@ -57,7 +57,7 @@ def store_properties(conditions, gen_smiles, smiles_path,
             mol = Chem.MolFromSmiles(gen_smiles[i])
             if mol is not None:
                 valid = 1
-                logp_p, tpsa_p, qed_p = (property_prediction[c](mol)
+                logp_p, tpsa_p, qed_p = (property_fcn[c](mol)
                                          for c in conditions)
             else:
                 valid = 0
@@ -126,7 +126,7 @@ def uniform_generation(args, sampler, train_smiles, logger):
     log_path = os.path.join(save_folder, "record.log")
     LOG = logger('uniform_generation', log_path=log_path)
 
-    calc_props = props_predictor_wrapper(property_prediction,
+    calc_props = props_predictor_wrapper(property_fcn,
                                          args.conditions)
 
     props_bounds = {

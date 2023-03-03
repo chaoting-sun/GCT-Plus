@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from Utils.property import tanimoto_similarity as similarity_fcn
+from Utils.properties import tanimoto_similarity as similarity_fcn
 import os
 
 

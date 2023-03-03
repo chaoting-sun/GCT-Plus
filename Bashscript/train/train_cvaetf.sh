@@ -46,20 +46,20 @@
 # > train from scratch
 # > original data
 
-GPU_IDX=0
-SIMILARITY=1.00
-TOLERANCE=0.00
+# GPU_IDX=0
+# SIMILARITY=1.00
+# TOLERANCE=0.00
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-    train.py \
-        -model_type cvaetf \
-        -tolerance ${TOLERANCE}     \
-        -similarity ${SIMILARITY}   \
-        -start_epoch 1     \
-        -num_epoch 30      \
-        -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/cvaetf_pad \
-        -pad_to_same_len \
-    >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     train.py \
+#         -model_type cvaetf \
+#         -tolerance ${TOLERANCE}     \
+#         -similarity ${SIMILARITY}   \
+#         -start_epoch 1     \
+#         -num_epoch 30      \
+#         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/cvaetf_pad \
+#         -pad_to_same_len \
+#     >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
 
 
 # GPU_IDX=1
@@ -74,3 +74,32 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
 #         -num_epoch    30            \
 #         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_aug-s${SIMILARITY}-t${TOLERANCE}/   \
 #     >>train_aug_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
+
+GPU_IDX=0
+BENCHMARK=chembl_02
+
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+    Train.py \
+        -model_type cvaetf \
+        -benchmark ${BENCHMARK} \
+        -start_epoch 1     \
+        -num_epoch 40      \
+        -max_strlen 100    \
+        -property_list logP \
+        
+        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf \
+    >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
+
+
+# GPU_IDX=0
+# BENCHMARK=moses
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python3 -u \
+#     Train.py \
+#         -model_type cvaetf \
+#         -benchmark ${BENCHMARK} \
+#         -start_epoch 1     \
+#         -num_epoch 30      \
+#         -max_strlen 100    \
+#         -property_list logP tPSA QED \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf_test \

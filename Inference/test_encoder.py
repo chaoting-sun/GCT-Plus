@@ -6,7 +6,7 @@ import dill as pickle
 from Inference.utils import prepare_generator
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
-from Utils.property import tanimoto_similarity as similarity_fcn
+from Utils.properties import tanimoto_similarity as similarity_fcn
 from sklearn.utils import shuffle
 
 

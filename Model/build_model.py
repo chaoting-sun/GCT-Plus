@@ -57,9 +57,10 @@ def build_cvaetfcut(hyperParameters, model_path=None):
 
 def build_cvaetf(hyperParameters, model_path=None):
     model = CVAETF(**hyperParameters)
+    
     if model_path:
-        print("Use model path:", model_path)
         model_state = torch.load(model_path)
+
         if 'molgct.pt' in model_path:
             model.load_state_dict(model_state)
         else:
@@ -153,11 +154,13 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len):
                     'h'           : args.H,
                     'latent_dim'  : args.latent_dim,
                     'dropout'     : args.dropout,
-                    'nconds'      : args.nconds,
                     'use_cond2dec': args.use_cond2dec,
-                    'use_cond2lat': args.use_cond2lat
+                    'use_cond2lat': args.use_cond2lat,
+                    'nconds'      : len(args.property_list),
                 }
     
+    model_path = args.model_path if hasattr(args, 'model_path') else None
+
     if not hasattr(args, 'use_cvaetf_path'):
         args.use_cvaetf_path = None
 
@@ -168,7 +171,7 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len):
     if args.model_type == "cvaetfcut":
         return build_cvaetfcut(hyperParams, args.use_model_path)
     if args.model_type == "cvaetf":
-        return build_cvaetf(hyperParams, args.use_model_path)
+        return build_cvaetf(hyperParams, model_path)
     elif args.model_type == "mlpcvaetf_encoder":
         return build_mlpcvaetfencoder(hyperParams, args.use_cvaetf_path, args.use_model_path)
     elif args.model_type == "mlpcvaetf":

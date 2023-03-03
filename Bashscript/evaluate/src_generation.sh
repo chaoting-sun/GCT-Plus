@@ -16,10 +16,24 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
         -src_generation                        \
         -decode_algo multinomial \
         -model_name ${MODEL_NAME}                             \
-        -n_steps 1 2 3 4                                  \
+        -n_steps 2                                  \
         -epoch_list 20                              \
         -src_smiles 'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21' \
-        -trg_props 2.82212 63.61 0.883604               \
+        -trg_props 2.82660 58.95 0.894693               \
+
+
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+#     inference.py                                    \
+#         -model_type cvaetf \
+#         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment \
+#     src-generation                                  \
+#         -src_generation                        \
+#         -decode_algo multinomial \
+#         -model_name ${MODEL_NAME}                             \
+#         -n_steps 1                                  \
+#         -epoch_list 20                              \
+#         -src_smiles 'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21' \
+#         -trg_props 2.82660 58.95 0.894693               \
     # >/dev/null 2>&1 &
 
 # -trg_props 2.82212 57.61 0.883604               \

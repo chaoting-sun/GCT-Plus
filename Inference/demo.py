@@ -2,7 +2,7 @@ import numpy as np
 import rdkit.Chem as Chem
 
 from Inference.decode_algo import MultinomialSearch, BeamSearch
-from Utils.property import property_prediction
+from Utils.properties import property_prediction
 from Model.mlpcvaetf_encoder import decode
 
 

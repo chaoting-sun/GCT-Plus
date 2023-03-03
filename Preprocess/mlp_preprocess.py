@@ -15,7 +15,7 @@ from torchtext import data
 from Utils.scaler import scaler_transform
 from Utils.field import smiles_fields, condition_fields
 from Utils import allocate_gpu
-from Utils.property import tanimoto_similarity
+from Utils.properties import tanimoto_similarity
 from Utils.dataset import get_condition
 from Model import create_source_mask
 from Model.build_model import get_model

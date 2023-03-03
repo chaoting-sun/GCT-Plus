@@ -1,26 +1,11 @@
-# general modules
-import io
 import os
 import time
-import gc
-import joblib
-import sqlite3
 import pandas as pd
-import dill as pickle
 from multiprocessing import Pool
-from collections import OrderedDict
-import numpy as np
-
-# ml modules
-import moses
 import torch
 from torchtext import data
-# from torchtext.legacy import data
-from torch.utils.data import Dataset
 
-# other packages
-from .property import to_mol, property_prediction
-from Utils.chrono import Chrono
+from Utils.properties import to_mol, property_fcn
 
 
 def measure_time(f):
@@ -51,7 +36,7 @@ def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:
     mol = list(pool.map(to_mol, dataset))
 
     for prop in condition_list:
-        results = pool.map(property_prediction[prop], mol)
+        results = pool.map(property_fcn[prop], mol)
         condition_dict[prop] = list(results)
     return pd.DataFrame.from_dict(condition_dict)
 
@@ -174,13 +159,11 @@ def rebatch_data(src, econds=None, trg=None, dconds=None, pad_id=None,
 
     batch_data = {}
     batch_data['device'] = device
-
-    src = src.transpose(0, 1)
     batch_data['src'] = padding(src, econds.size(-1)) if pad_to_same_len else src
+
     if econds is not None:
         batch_data['econds'] = econds
     if trg is not None:
-        trg = trg.transpose(0, 1)
         batch_data['trg'] = padding(trg, dconds.size(-1)) if pad_to_same_len else trg
     if dconds is not None:
         batch_data['dconds'] = dconds
@@ -190,15 +173,41 @@ def rebatch_data(src, econds=None, trg=None, dconds=None, pad_id=None,
     return BatchData(**batch_data)
 
 
-def get_loader(data_iter, conditions, pad_id, max_strlen,
+def get_dataset(data_folder, fields, file_name_list):
+    return data.TabularDataset.splits(
+        path=data_folder,
+        train=f'{file_name_list[0]}.csv' if file_name_list[0] else None,
+        validation=f'{file_name_list[1]}.csv' if file_name_list[1] else None,
+        test=f'{file_name_list[2]}.csv' if file_name_list[2] else None,
+        format='csv',
+        fields=fields,
+        skip_header=True
+    )
+
+
+def get_iterator(train, valid, batch_size):
+    train_iter, valid_iter = data.BucketIterator.splits(
+        (train, valid), batch_sizes=(batch_size, batch_size),
+        sort_key=lambda x: (len(x.src), len(x.trg))
+    )
+    return train_iter, valid_iter
+
+
+def get_loader(data_iter, property_list, pad_id, max_strlen,
                pad_to_same_len=False, device=None):
     def extract_conds(batch, data_type):
-        cond_vals = []
-        for c in conditions:
-            cond_vals.append(getattr(batch, f"{data_type}_{c}").view(-1, 1))
-        return torch.cat(cond_vals, dim=1)
+        prop_vals = []
+        for p in property_list:
+            prop_vals.append(getattr(batch, f"{data_type}_{p}").view(-1, 1))
+        return torch.cat(prop_vals, dim=1)
 
-    return (rebatch_data(batch.src, extract_conds(batch, 'src'),
-                         batch.trg, extract_conds(batch, 'trg'),
-                         pad_id, max_strlen, pad_to_same_len, device)
+    return (rebatch_data(getattr(batch, 'src', None), 
+                         extract_conds(batch, 'src'),
+                         getattr(batch, 'trg', None),
+                         extract_conds(batch, 'trg'),
+                         pad_id,
+                         max_strlen,
+                         pad_to_same_len,
+                         device
+                         )
             for batch in data_iter)

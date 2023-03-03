@@ -1,18 +1,16 @@
 # from email.contentmanager import raw_data_manager
 import os
 import numpy as np
-import time
 import joblib
-import argparse
-from datetime import timedelta
 import pandas as pd
-from functools import partial
-from multiprocessing import Pool
+# from multiprocessing import Pool
+
+from pathos.multiprocessing import ProcessingPool as Pool
 
 import moses
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler
 
-from Utils.property import to_mol, property_prediction
+from Utils.properties import to_mol, property_prediction
 from Preprocess.augmentation import get_similar_molecular_pairs
 
 
@@ -92,47 +90,6 @@ def prepare_processed_data(src_info, trg_info, conditions, processed_path):
     results.to_csv(processed_path, index=False)
 
 
-# def prepare_processed_data(smiles_path, property_path,
-#                            processed_path, pair_path, scaler_path=None):
-#     print('Transform properties')
-
-#     prop = pd.read_csv(property_path, index_col='no')
-#     prop = scaler_transform(prop, scaler_path)
-
-#     print("Reading file:", pair_path)
-#     pair = pd.read_csv(pair_path)
-
-#     src_no = pair['no1'].tolist()
-#     trg_no = pair['no2'].tolist()
-
-#     print("Reading file:", smiles_path)
-#     dataset = pd.read_csv(smiles_path, index_col='no')
-
-#     print('Getting source smiles/properties...')
-#     src_smi = dataset.loc[src_no].reset_index(inplace=False)
-#     src_smi = src_smi[['smiles']].rename(columns={'smiles': 'src'})
-#     src_prop = prop.loc[src_no].reset_index(inplace=False)
-#     src_prop = src_prop.rename(
-#         columns={k: f'src_{k}' for k in src_prop.columns})
-
-#     print('Getting target smiles/properties...')
-#     trg_smi = dataset.loc[trg_no].reset_index(inplace=False)
-#     trg_smi = trg_smi[['smiles']].rename(columns={'smiles': 'trg'})
-#     trg_en_smi = trg_smi[['trg']].rename(columns={'trg': 'trg_en'})
-#     trg_prop = prop.loc[trg_no].reset_index(inplace=False)
-#     trg_prop = trg_prop.rename(
-#         columns={k: f'trg_{k}' for k in trg_prop.columns})
-
-#     print('Concatenating source/target smiles/properties...')
-#     results = pd.concat([src_smi, trg_en_smi, trg_smi,
-#                         src_prop, trg_prop], axis=1)
-#     # results = pd.concat([src_smi, trg_smi, src_prop, trg_prop], axis=1)
-
-#     print("Saving file:", processed_path)
-#     results.to_csv(processed_path, index=False)
-#     print(results.head())
-
-
 def preprocess(args, data_type):
     print("Create folders...")
 
@@ -199,3 +156,5 @@ def preprocess(args, data_type):
 
         prepare_processed_data(
             src_info, trg_info, args.conditions, processed_path)
+
+    

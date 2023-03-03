@@ -1,11 +1,14 @@
 import os
 import swifter
 import numpy as np
+import concurrent.futures
 import pandas as pd
 from time import time
-from datetime import timedelta
-from Utils.property import tanimoto_similarity
+from Utils.properties import tanimoto_similarity, to_mol
 import matplotlib.pyplot as plt
+from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn, get_similarity
+from pathos.multiprocessing import ProcessingPool as Pool
+from rdkit import Chem
 
 
 def validate(smiles, props, similar_pairs, input_data, 
@@ -77,7 +80,7 @@ def plot_similarity(args, aug_path):
 #     def __init__(self, args):
 #         self.tolerance = args.tolerance
 #         self.similarity = args.similarity
-    
+
 
 def _find_similar_pairs(props_smiles, conds, sim_tol, prop_tols, LOG):
     props_smiles = props_smiles.sort_values(by=conds[0])
@@ -153,6 +156,8 @@ def _get_raw_data(raw_data_path):
     return smiles, props, pd.concat([smiles, props], axis=1)
 
 
+
+
 def data_augmentation(args, data_type, raw_path, aug_path, rescaler, logger):
     data_raw_path, data_aug_path, train_data_path, pair_serial_path = _build_paths(raw_path,
                                                                                    aug_path,
@@ -189,6 +194,81 @@ def data_augmentation(args, data_type, raw_path, aug_path, rescaler, logger):
              args.conditions, props_tol, args.similarity)
     
     train_data.to_csv(train_data_path, index=False)
+            
+
+def search_similar_pairs(smiles_list, similarity_fcn, similarity_threshold, n_jobs):
+    results = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
+        futures = []
+        
+        start_time = time()
+
+        for i, mol1 in enumerate(smiles_list):
+            for j, mol2 in enumerate(smiles_list[i:]):
+                print(i, j)
+                future = executor.submit(similarity_fcn, mol1, mol2)
+                futures.append((i, j, future))
+
+        end_time = time()
+        print('elapsed time:', end_time - start_time)
+
+        for i, j, future in futures:
+            similarity = future.result()
+            if similarity >= similarity_threshold:
+                results.append((i, j))
+    return results
+
+
+def augment_data(raw_data, property_list, similarity_threshold, similarity_fcn, n_jobs):
+    smiles_list = raw_data['smiles'].tolist()
+    # smiles_list = smiles_list[:10]
+    
+    # print('smiles to mol...')
+    # with Pool(n_jobs) as pool:
+    #     mols = list(pool.map(to_mol, smiles_list))
+    
+    print('search similar pairs...')
+    res = search_similar_pairs(smiles_list, similarity_fcn, similarity_threshold, n_jobs)
+    print(res)
+    
 
 
 
+
+
+
+
+
+    
+    psmi = psmi.sort_values(by=property_list[0])
+    similar_pairs = []
+    
+    for id1 in range(len(psmi)):
+        id2 = id1
+        while id2 < len(psmi):
+            smi1_list = [psmi['smiles'].iloc[id1]] * (len(psmi)-id1)
+            smi2_list = psmi['smiles'].iloc[id1:id2]
+            
+            get_similarity(smi1_list, smi2_list, similarity_fcn, n_jobs)
+            
+            # with Pool(n_jobs) as pool:
+            #     res = pool.amap(similarity_fcn, smiles_list1, smiles_list2)
+            # similarity_list = res.get()
+            # return similarity_list
+
+            
+    #         prop_smiles
+    #         if tanimoto_similarity(props_smiles['smiles'].iloc[id1], props_smiles['smiles'].iloc[id2]) < sim_tol:
+    #             break
+            
+    #         no1, no2 = props_smiles.index[id1], props_smiles.index[id2]
+    #         similar_pairs.append((no1, no2))
+    #         if no1 != no2:
+    #             similar_pairs.append((no2, no1))
+    #         id2 += 1
+    #     if id1 % 5000 == 0 or id1 == len(props_smiles)-1:
+    #         LOG.info(f"schedule: {id1}, "
+    #                  f"# pairs: {len(similar_pairs)}, "
+    #                  f"aug-ratio: {len(similar_pairs)/(id1+1)-1:.2f} %")
+    # return pd.DataFrame.from_records(similar_pairs, columns =['no1', 'no2'])

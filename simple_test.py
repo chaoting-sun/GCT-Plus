@@ -1,6 +1,6 @@
 import sys
 import pandas as pd
-from Utils.property import predict_props
+from Utils.properties import predict_props
 
 
 def predict_several_props(smiles_list):

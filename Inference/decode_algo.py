@@ -78,6 +78,9 @@ class Sampling(object):
             return torch.cat(props, dim=0)
         return self.transform(properties)
 
+    def to_tensor(self, val):
+        return torch.as_tensor(val, device=self.device)
+
     def scaler_transform(self, properties):
         if isinstance(properties, tuple):
             econds = torch.Tensor(self.scaler.transform(
@@ -110,24 +113,25 @@ class Sampling(object):
 
         z, mu, log_var = self.predictor.encode(src, (props_s, props_m), src_mask)
         return z, mu, log_var
-    
+
     
     def preprocess_props(self, props, transform=True):
         if transform and isinstance(props, tuple):
-            return (torch.Tensor(self.transform_props(props[0])),
-                    torch.Tensor(self.transform_props(props[1]))), 2
+            return (torch.as_tensor(self.transform_props(props[0]), device=self.device),
+                    torch.as_tensor(self.transform_props(props[1]), device=self.device)), 2
 
         if not transform and isinstance(props, tuple):
-            return (torch.Tensor(props[0]), torch.Tensor(props[1])), 2
+            return (torch.as_tensor(props[0], device=self.device),
+                    torch.as_tensor(props[1], device=self.device)), 2
         
         if transform and not isinstance(props, tuple):
-            return torch.Tensor(self.transform_props(props)), 1
+            return torch.as_tensor(self.transform_props(props), device=self.device), 1
             
         if not transform and not isinstance(props, tuple):
-            return torch.Tensor(props), 1
+            return torch.as_tensor(props, device=self.device), 1
     
 
-    def encode_smiles(self, src, props, transform=True):        
+    def encode_smiles(self, src, props, transform=True):
         props, np = self.preprocess_props(props, transform)
         src_mask = create_source_mask(src, self.pad_id, 
                                       props if np == 1 else props[0])

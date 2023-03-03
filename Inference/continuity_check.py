@@ -7,9 +7,9 @@ from rdkit.Chem import MolFromSmiles
 from moses.metrics import SNNMetric
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.property import get_mol, get_smiles
+from Utils.properties import get_mol, get_smiles
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
-from Utils.property import predict_props
+from Utils.properties import predict_props
 from Utils.dataset import to_dataloader
 
 

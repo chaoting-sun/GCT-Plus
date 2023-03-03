@@ -9,7 +9,7 @@ import joblib
 
 from time import time
 from Configuration.config import options
-from Utils.property import property_prediction, tanimoto_similarity
+from Utils.properties import property_prediction, tanimoto_similarity
 from Utils.field import smiles_fields
 import matplotlib.pyplot as plt
 import dill as pickle

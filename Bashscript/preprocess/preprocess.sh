@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 
-# export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity':$PYTHONPATH
-
-# augment data by molecular similarity and properties
-
-TOLERANCE=1.00
-SIMILARITY=0.40
+# moses
 
 python3 -u \
     preprocess.py \
-        -tolerance ${TOLERANCE}  \
-        -similarity ${SIMILARITY} \
-        -n_jobs 4 \
-    # >>preprocess_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
-    
+        -benchmark moses \
+        -all_property_list 'logP' 'tPSA' 'QED' 'SAS' \
+        -similarity_threshold 0.70 \
+        -n_jobs 16 \
+    # >/dev/null 2>&1 &
+
+# chembl_02
+
+# python3 -u \
+#     preprocess.py \
+#         -benchmark chembl_02 \
+#         -all_property_list logP \
+#         -n_jobs 32 \

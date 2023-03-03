@@ -6,12 +6,15 @@ import numpy as np
 import pandas as pd
 import torch
 
-import Utils.log as ul
+from Configuration.config_default import benchmark_settings
+
+from Utils.scaler import get_scaler
+from Utils.log import get_logger
 from Utils.seed import set_seed 
 from Configuration.config import hard_constraints_opts
 from Utils import allocate_gpu
 from Utils.field import smiles_fields, condition_fields
-from Inference.uniform_generation import uniform_generation, fast_uniform_generation
+from Inference.uniform_generation import fast_uniform_generation
 # from Inference.generate_z import generate_z
 # from Inference.varying_z_generate import varying_z_generate
 from Inference.continuity_check import continuity_check
@@ -19,18 +22,10 @@ from Inference.fast_continuity_check import fast_continuity_check
 from Inference.src_generation import fast_src_generation
 from Inference.src_rotator_generation import fast_src_rotator_generation
 from Inference.test_encoder import fast_test_encoder
-from Utils.property import tanimoto_similarity as similarity_fcn
 from Inference.test_decoder import test_decoder
+from Inference.src_generation_mmps import fast_src_generation_mmps
 
 # from Inference.atten_generate import atten_generate
-
-
-def get_logger(args):
-    def logger(name, log_path):
-        logger = ul.get_logger(name=name, log_path=log_path)
-        logger.info(args)
-        return logger
-    return logger
 
 
 def calc_distance(args):
@@ -67,13 +62,16 @@ def add_args(parser):
     subparsers = parser.add_subparsers(help='choose test methods')
 
     parent_parser = argparse.ArgumentParser(add_help=False)
-    
+
+    parent_parser.add_argument('-benchmark', type=str, default='moses')
+    parent_parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED'])
+
     parent_parser.add_argument('-encode_type', type=str, default='encode')
     parent_parser.add_argument('-decode_type', type=str, default='decode')
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
 
     parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Results')
-    parent_parser.add_argument('-n_jobs', type=int, default=8)
+    parent_parser.add_argument('-n_jobs', type=int, default=4)
     parent_parser.add_argument('-model_name', type=str, required=True)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
     """
@@ -90,7 +88,7 @@ def add_args(parser):
     """
     ug_parser = subparsers.add_parser('uniform-generation', parents=[parent_parser])
     ug_parser.add_argument('-uniform_generation', action='store_true')
-    ug_parser.add_argument('-n_each_sampling', type=int, default=100)
+    ug_parser.add_argument('-n_each_sampling', type=int, default=10)
     ug_parser.add_argument('-n_each_prop', type=int, default=5)
     """
     Source generation
@@ -102,6 +100,19 @@ def add_args(parser):
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
+
+    """
+    Source generation mmps
+    """
+    sgm_parser = subparsers.add_parser('src-generation-mmps', parents=[parent_parser])
+    sgm_parser.add_argument('-src_generation_mmps', action='store_true')
+
+    sgm_parser.add_argument('-data_folder', type=str)
+    sgm_parser.add_argument('-data_name', type=str)
+    sgm_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
+    sgm_parser.add_argument('-n_samples', type=int, default=1000)
+    sgm_parser.add_argument('-n_selections', type=int, default=5)
+
     """
     Source rotator generation
     """
@@ -148,16 +159,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print("Add the logger...")
-    logger = get_logger(args)
+    logger = get_logger()
 
     print("Looking for gpu...")
     device = allocate_gpu()
     print("device:", device)
     
-    scaler = joblib.load(os.path.join(args.molgct_path, 'scaler.pkl'))
-    SRC, TRG = smiles_fields(args.molgct_path)
-    COND = condition_fields(args.conditions)
-        
+    bm = benchmark_settings[args.benchmark]
+    args.max_strlen = bm['max_strlen']
+
+    scaler = get_scaler(args.property_list, os.path.join(args.data_folder, 'utils'))
+    SRC, TRG = smiles_fields(os.path.join(args.data_folder, 'utils'))
+    COND = condition_fields(args.property_list)
+    
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
 
     print("Get train smiles...")
@@ -175,6 +189,10 @@ if __name__ == "__main__":
     if hasattr(args, 'src_generation'):
         fast_src_generation(args, toklen_data, train_smiles, 
                             scaler, SRC, TRG, COND, device, logger)
+
+    if hasattr(args, 'src_generation_mmps'):
+        fast_src_generation_mmps(args, toklen_data, train_smiles, 
+                                 scaler, SRC, TRG, COND, device, logger)
 
     if hasattr(args, 'src_rotator_generation'):
         fast_src_rotator_generation(args, toklen_data, train_smiles, 

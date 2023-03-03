@@ -193,7 +193,7 @@ def corr_plot():
     plt.savefig('Data/pearson_corr.png')
 
 
-from Utils.property import tanimoto_similarity as similarity_fcn
+from Utils.properties import tanimoto_similarity as similarity_fcn
 
 def property_similarity_plot():
     props = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/raw/train/prop_serial.csv")
@@ -243,7 +243,7 @@ def property_similarity_plot():
 
 
 from pathos.multiprocessing import ProcessingPool as Pool
-from Utils.property import MurckoScaffoldSimilarity
+from Utils.properties import MurckoScaffoldSimilarity
 
 
 def test(logP=2.82212, tPSA=63.61, QED=0.883604):

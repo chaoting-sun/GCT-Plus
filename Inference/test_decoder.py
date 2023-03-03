@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from Inference.utils import prepare_generator
 import torch
-from Utils.property import tanimoto_similarity as similarity_fcn
+from Utils.properties import tanimoto_similarity as similarity_fcn
 
 
 property_peaks = [3.075,93.411,0.609]

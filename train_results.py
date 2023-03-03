@@ -149,6 +149,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # plot_train_results(args.optimizer, args.model_folder, args.begin_epoch, args.end_epoch)
-    # plot_results(args.model_folder, args.begin_epoch, args.end_epoch)
+    plot_results(args.model_folder, args.begin_epoch, args.end_epoch)
 
-    plot_ctf_train_results(args.model_folder, args.begin_epoch, args.end_epoch)
+    # plot_ctf_train_results(args.model_folder, args.begin_epoch, args.end_epoch)

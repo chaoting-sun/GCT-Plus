@@ -2,32 +2,17 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-# from torchtext import data
+from time import time
+from torchtext import data
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import predict_props, property_fcn, predict_properties
 from Inference.utils import prepare_generator
-# from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn
-from Utils.properties import is_valid, tanimoto_similarity as similarity_fcn
-
-
-smiles_list = [
-    'Cn1cc(C(=O)N2CCC(c3nc(-c4ccccn4)no3)C2)cn1',
-    'Cc1cnc(C(C)NC(=O)CCC(=O)c2ccc(F)c(F)c2)s1',
-    'N#Cc1c(Br)cnc(N)c1Br', 
-    'CC(=O)Nc1cccc(-c2nc3cc(C)ccc3[nH]c2=O)c1',
-    'CC(NC(=O)OC(C)(C)C)c1nc(CO)nn1Cc1ccccc1'
-]
-
-
-prop_list = [
-    [1.4948, 75., 0.7250],
-    [3., 59.0600, 0.8193],
-    [3.06048, 62.70, 0.788971],
-    [2.85692, 74.85, 0.762590],
-    [2.40440, 89.27, 0.877442]
-]
+# from Utils.properties import tanimoto_similarity as similarity_fcn
+from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn
+from Utils.properties import is_valid, predict_properties
+from Utils.dataset import get_dataset, get_loader
+from Utils.field import untokenize
 
 
 class DataFrameDataset(Dataset):
@@ -39,12 +24,10 @@ class DataFrameDataset(Dataset):
         for i, c in enumerate(property_list):
             fields.append((f'trg_{c}', PROP[i]))
         
-        super(DataFrameDataset, self).__init__(
-            [
+        super(DataFrameDataset, self).__init__([
                 Example.fromlist(list(r), fields)
                 for i, r in df.iterrows()
-            ],
-            fields
+            ], fields
         )
 
 
@@ -63,26 +46,6 @@ class PropertyPrediction:
         similarity_list = res.get()
         return similarity_list
 
-    def get_conditions(self, smiles_list):
-        with Pool(self.n_jobs) as pool:
-            conditions_list = np.array(pool.map(predict_props, smiles_list))
-        return conditions_list
-
-
-# with Pool(self.n_jobs) as pool:
-#     res = pool.map(smiles_list, )
-
-# def predict_properties(smiles_list, property_list, n_jobs=1):
-#     with Pool(n_jobs) as pool:
-#         mol_list = list(pool.map(to_mol, smiles_list))
-
-#     calculated_properties = OrderedDict()
-#     for prop in property_list:
-#         with Pool(n_jobs) as pool:
-#             calculated_properties[prop] = list(pool.map(property_fcn[prop], mol_list))
-#     return pd.DataFrame(calculated_properties)
-
-
 
 class SrcGeneration:
     def __init__(self, args, SRC, PROP, generator, train_smiles, LOG, device,
@@ -100,7 +63,6 @@ class SrcGeneration:
         self.property_list = args.property_list
 
         self.n_steps = args.n_steps
-        self.n_samples = args.n_samples
         self.n_selections = args.n_selections
 
         self.predictor = PropertyPrediction(args.n_jobs)
@@ -154,7 +116,7 @@ class SrcGeneration:
             
             # augment input data
             props_t = np.tile(props_t, (self.n_samples_per_src, 1))
-            zs = self.augment_latent_space(mu, std)
+            zs = self.augment_latent_space(mu, std, ep_std=0) # variable: ep_std
 
             gen = []
             n_per_prediction = 1000
@@ -291,88 +253,126 @@ class SrcGeneration:
             self.multi_step_sampling(src, props_t, n_step, step_save_folder)
 
 
-
-smiles_list = [
-    'Cn1cc(C(=O)N2CCC(c3nc(-c4ccccn4)no3)C2)cn1',
-    'Cc1cnc(C(C)NC(=O)CCC(=O)c2ccc(F)c(F)c2)s1',
-    'N#Cc1c(Br)cnc(N)c1Br', 
-    'CC(=O)Nc1cccc(-c2nc3cc(C)ccc3[nH]c2=O)c1',
-    'CC(NC(=O)OC(C)(C)C)c1nc(CO)nn1Cc1ccccc1'
-]
-
-# prop_list = [
-#     [1.4948, 89.940, 0.7250],
-#     [3.5700, 59.0600, 0.8193],
-#     [2.06048, 62.70, 0.788971],
-#     [2.85692, 74.85, 0.762590],
-#     [2.40440, 89.27, 0.877442]
-# ]
-
-prop_list = [
-    [1.4948, 75., 0.7250],
-    [3., 59.0600, 0.8193],
-    [3.06048, 62.70, 0.788971],
-    [2.85692, 74.85, 0.762590],
-    [2.40440, 89.27, 0.877442]
-]
+def get_fields(SRC, PROP, property_list):
+    fields = [('src', SRC)]
+    for i, p in enumerate(property_list):
+        fields.append((f'src_{p}', PROP[i]))
+    fields.append(('trg', None))
+    for i, p in enumerate(property_list):
+        fields.append((f'trg_{p}', PROP[i]))
+    return fields
 
 
-def fast_src_generation(args, toklen_data, train_smiles, 
-                        scaler, SRC, TRG, PROP, device, logger):
+def get_iterator(dataset, batch_size):
+    data_iter = data.BucketIterator(
+        dataset, batch_size, shuffle=False
+    )
+    return data_iter
+
+
+def get_similarity(smiles_list1, smiles_list2, n_jobs):
+    with Pool(n_jobs) as pool:
+        res = pool.amap(similarity_fcn, smiles_list1, smiles_list2)
+    similarity_list = res.get()
+    return similarity_list
+
+
+def get_valid_smiles(smiles_list, n_jobs):
+    with Pool(n_jobs) as pool:
+        validity_list = np.array(pool.map(is_valid, smiles_list))
+    valid_smiles = []
+    for i, v in enumerate(validity_list):
+        if v == 1:
+            valid_smiles.append(smiles_list[i])
+    return valid_smiles
+
+
+def fast_src_generation_mmps(args, toklen_data, train_smiles, 
+                             scaler, SRC, TRG, PROP, device, logger):
+    prepared_data_path = os.path.join(args.data_folder, 'prepared')
+
     for epoch in args.epoch_list:
         # args.src_smiles = smiles_list[i]
         # args.trg_props = prop_list[i]
         
-        # args.use_model_path = '/fileserver-gamma/chaoting/ML/molGCT/molgct.pt'
         args.model_path = os.path.join(args.train_path,
+                                       args.benchmark,
                                        args.model_name,
                                        f'model_{epoch}.pt')
-        # args.model_path = os.path.join(args.model_folder,
-        #                                f'model_{epoch}.pt')
-        generator = prepare_generator(args, SRC, TRG, toklen_data,
-                                      scaler, device)
+        generator = prepare_generator(args, SRC, TRG, toklen_data, scaler, device)
 
-        # args.model_name = 'molGCT'
-
-        save_folder = os.path.join(args.inference_path,
-                                    'src_generation', 
-                                    args.model_name,
-                                    str(epoch),
-                                    f'{args.src_smiles}'
-                                    )
+        save_folder = os.path.join(args.inference_path, 'src_generation', args.benchmark,
+                                    args.model_name, str(epoch))
         os.makedirs(save_folder, exist_ok=True)
-        LOG = logger(name='src generation',
-                     log_path=os.path.join(save_folder, "records.log"))
+
+        LOG = logger('src generation', os.path.join(save_folder, "records.log"))
         LOG.info(args)
         
+        fields = get_fields(SRC, PROP, args.property_list)
+        dataset = get_dataset(prepared_data_path, fields,
+                              [None, None, args.data_name]
+                              )[0]
+
+        data_iter = get_iterator(dataset, batch_size=1)
+        dataloader = get_loader(data_iter=data_iter,
+                                property_list=args.property_list,
+                                pad_id=SRC.vocab.stoi['<pad>'],
+                                max_strlen=args.max_strlen,
+                                device=device
+                                )
+
+        n_samples_per_src = 10000
+        n_times = 100
+        n_each_time = n_samples_per_src // n_times
+
+        for d, batch in enumerate(dataloader):
+            src_smi = untokenize(batch.src[0], SRC.vocab)
+            _, mu, logvar = generator.encode_smiles(batch.src, batch.econds, transform=False)
+            std = torch.exp(0.5*logvar)
+            
+            # augment latent space
+            zs = torch.tile(mu, (n_samples_per_src, 1, 1))
+            for i in range(n_samples_per_src):
+                eps = torch.empty_like(mu).normal_(0, 0.4)
+                zs[i, :, :] = eps.mul(std).add(mu)
+            batch.dconds = torch.tile(batch.dconds, (n_samples_per_src, 1))
+            
+            all_valid_list = []
+            all_unique_list = []
+            high_sim_list = []
+            
+            for i in range(n_times):
+                start_id, end_id = n_times*i, n_times*(i+1)
+                gen_list, *_ = generator.sample_smiles(batch.dconds[start_id:end_id, :],
+                                                       zs[start_id:end_id, :],
+                                                       transform=False
+                                                       )
+                valid_list = get_valid_smiles(gen_list, args.n_jobs)
+                gen_props = predict_properties(valid_list, args.property_list, args.n_jobs).to_numpy()
+                print(gen_props)
+                exit()
+                
+                
+                unique_list = list(set(valid_list))
+                
+                all_valid_list.extend(valid_list)
+                
+                similarity_list = get_similarity([src_smi]*len(unique_list),
+                                                 unique_list, args.n_jobs)
+                
+                for j, sim in enumerate(similarity_list):
+                    if sim >= 0.5:
+                        high_sim_list.append(unique_list[j])
+
+                all_unique_list.extend(unique_list)
+                all_unique_list = list(set(all_unique_list))
+                high_sim_list = list(set(high_sim_list))
+                
+                print(f'({100*(i+1)}) valid smiles: {len(all_valid_list)}\t'
+                      f'unique smiles: {len(all_unique_list)}\t'
+                      f'high sim smiles: {len(high_sim_list)}'
+                      )
+
         scgn = SrcGeneration(args, SRC, PROP, generator, train_smiles, LOG, device)
         scgn.generate(args.src_smiles, args.trg_props, save_folder)
 
-
-# from collections import OrderedDict
-
-
-# def plot_similarity_density(args):
-#     """
-#     src and trg are the same
-#     """
-    
-#     data_dict = OrderedDict()
-    
-#     for epoch in args.epoch_list:
-#         for i in range(3):
-#             args.src_smiles = smiles_list[i]
-#             args.trg_props = prop_list[i]
-#             save_folder = os.path.join(args.inference_path,
-#                                        'src_generation', 
-#                                        args.model_name,
-#                                        str(epoch),
-#                                        smiles_list[i],
-#                                        '1_step', '1.csv'
-#                                        )
-#             df = pd.read_csv(save_folder)
-#             df = df.drop_duplicates(subset = "gen")
-#             data_dict['CVAE-TF1'] = df
-            
-#     print(data_dict)
-#     exit()

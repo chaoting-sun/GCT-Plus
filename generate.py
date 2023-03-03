@@ -21,7 +21,7 @@ from Utils import allocate_gpu
 from Utils.mapper import mapper
 from Utils.field import smiles_fields
 from Utils.seed import set_seed
-from Utils.property import property_prediction, get_mol, tanimoto_similarity
+from Utils.properties import property_prediction, get_mol, tanimoto_similarity
 from Configuration.config import options
 # from Inference.beam_search import BeamSearchTool
 from Inference.demo import Demo

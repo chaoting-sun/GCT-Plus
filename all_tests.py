@@ -272,7 +272,7 @@ def test_rdkit():
 
 def test_novelty():
     from multiprocessing import Pool
-    from Utils.property import get_mol
+    from Utils.properties import get_mol
     from Utils.mapper import mapper
     from moses.metrics import metrics
     import pandas as pd

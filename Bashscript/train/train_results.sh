@@ -29,5 +29,5 @@
 
 python3 train_results.py \
     -begin_epoch 1       \
-    -end_epoch 10        \
-    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/ctf_pad/
+    -end_epoch 40        \
+    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/chembl_02/cvaetf/

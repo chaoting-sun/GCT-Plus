@@ -6,10 +6,24 @@ import torch
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import predict_props, property_fcn, predict_properties
+from Utils.properties import predict_props, property_fcn
 from Inference.utils import prepare_generator
 # from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn
 from Utils.properties import is_valid, tanimoto_similarity as similarity_fcn
+
+
+# smiles_list = [
+#     'Cn1ncc(Br)c1NC(=O)Nc1ccccc1', 
+#     'CCN1C(=O)C(O)(CC(=O)c2ccc(C)cc2)c2ccccc21',
+#     'O=C(NC1CCc2cc(F)ccc21)c1[nH]nc2c1CCCC2'
+# ]
+
+
+# prop_list = [
+#     [2.82660, 58.95, 0.894693],
+#     [2.82212, 57.61, 0.883604],
+#     [2.84490, 57.78, 0.895593]
+# ]
 
 
 smiles_list = [
@@ -20,6 +34,13 @@ smiles_list = [
     'CC(NC(=O)OC(C)(C)C)c1nc(CO)nn1Cc1ccccc1'
 ]
 
+# prop_list = [
+#     [1.4948, 89.940, 0.7250],
+#     [3.5700, 59.0600, 0.8193],
+#     [2.06048, 62.70, 0.788971],
+#     [2.85692, 74.85, 0.762590],
+#     [2.40440, 89.27, 0.877442]
+# ]
 
 prop_list = [
     [1.4948, 75., 0.7250],
@@ -30,15 +51,20 @@ prop_list = [
 ]
 
 
+"""
+- all: smi1, smi2 -> gen_1.csv
+- prop: prop1, prop2 -> prop_1.csv
+
+先轉成 unique smi set (smi1, smi2)
+- all: smi1, smi2, smi3 -> gen_2.csv
+- prop: prop1, prop2, prop3 -> prop_2.csv
+
+...
+"""
+
+
 class DataFrameDataset(Dataset):
-    def __init__(self, df, SRC, PROP, property_list):
-        # get fields for dataset
-        fields = [('smiles', SRC)]
-        for i, c in enumerate(property_list):
-            fields.append((f'src_{c}', PROP[i]))
-        for i, c in enumerate(property_list):
-            fields.append((f'trg_{c}', PROP[i]))
-        
+    def __init__(self, df: pd.DataFrame, fields: list):
         super(DataFrameDataset, self).__init__(
             [
                 Example.fromlist(list(r), fields)
@@ -69,27 +95,12 @@ class PropertyPrediction:
         return conditions_list
 
 
-# with Pool(self.n_jobs) as pool:
-#     res = pool.map(smiles_list, )
-
-# def predict_properties(smiles_list, property_list, n_jobs=1):
-#     with Pool(n_jobs) as pool:
-#         mol_list = list(pool.map(to_mol, smiles_list))
-
-#     calculated_properties = OrderedDict()
-#     for prop in property_list:
-#         with Pool(n_jobs) as pool:
-#             calculated_properties[prop] = list(pool.map(property_fcn[prop], mol_list))
-#     return pd.DataFrame(calculated_properties)
-
-
-
 class SrcGeneration:
-    def __init__(self, args, SRC, PROP, generator, train_smiles, LOG, device,
+    def __init__(self, args, SRC, COND, generator, train_smiles, LOG, device,
                  similarity_threshold=0.50, n_samples_per_src=200):
         self.LOG = LOG
         self.SRC = SRC
-        self.PROP = PROP
+        self.COND = COND
         self.device = device
         self.generator = generator
         self.train_smiles = train_smiles
@@ -97,28 +108,43 @@ class SrcGeneration:
         self.n_samples_per_src = n_samples_per_src
 
         self.n_jobs = args.n_jobs
-        self.property_list = args.property_list
+        self.conditions = args.conditions
 
         self.n_steps = args.n_steps
         self.n_samples = args.n_samples
         self.n_selections = args.n_selections
 
         self.predictor = PropertyPrediction(args.n_jobs)
+        
+        self.fields = self._get_fields()
+
+
+    def _predict_props(self, smiles_list):
+        with Pool(self.n_jobs) as pool:
+            props_s = pool.map(predict_props, smiles_list)
+        return np.array(props_s)
+
+
+    def _get_fields(self):
+        fields = [('smiles', self.SRC)]
+        for i, c in enumerate(self.conditions):
+            fields.append((f'{c}_s', self.COND[i]))
+        for i, c in enumerate(self.conditions):
+            fields.append((f'{c}_t', self.COND[i]))
+        return fields
 
 
     def prepare_dataset(self, src, props_s, props_t):
-        raw_data = pd.DataFrame({ 'src': src })
-
-        src_p = {}
-        for i, p in enumerate(self.property_list):
-            src_p[f'src_{p}'] = [props_s[0, i]]*len(src)
-        src_p = pd.DataFrame(src_p)
-        trg_p = {}
-        for i, p in enumerate(self.property_list):
-            trg_p[f'trg_{p}'] = [props_t[0, i]]*len(src)
-        trg_p = pd.DataFrame(trg_p)
-        raw_data = pd.concat([raw_data, src_p, trg_p], axis=1)
-        return DataFrameDataset(raw_data, self.SRC, self.PROP, self.property_list)
+        raw_data = pd.DataFrame({
+            'src'     : src,
+            'logp_s'  : [props_s[0, 0]]*len(src),
+            'tpsa_s'  : [props_s[0, 1]]*len(src),
+            'qed_s'   : [props_s[0, 2]]*len(src),
+            'logp_t'  : [props_t[0, 0]]*len(src),
+            'tpsa_t'  : [props_t[0, 1]]*len(src),
+            'qed_t'   : [props_t[0, 2]]*len(src),
+        })
+        return DataFrameDataset(df=raw_data, fields=self.fields)
 
 
     def preprocess_input_data(self, data):
@@ -126,9 +152,9 @@ class SrcGeneration:
                                  for t in data.smiles]])
         props_s = np.zeros((1,3))
         props_t = np.zeros((1,3))
-        for i, c in enumerate(self.property_list):
-            props_s[0, i] = getattr(data, f'src_{c}')
-            props_t[0, i] = getattr(data, f'trg_{c}')
+        for i, c in enumerate(self.conditions):
+            props_s[0, i] = getattr(data, f'{c}_s')
+            props_t[0, i] = getattr(data, f'{c}_t')
         return src, props_s, props_t
 
 
@@ -188,16 +214,19 @@ class SrcGeneration:
 
     def save_predictions(self, src_list, gen_list, i_step, save_folder):
         if i_step == 1:
-            prev_prop = predict_properties(src_list, self.property_list, self.n_jobs)
+            src_prop = self.predictor.get_conditions(src_list)
             prev_gen = pd.DataFrame({
                 f'smiles_{i_step-1}'    : src_list,
                 f'similarity_{i_step-1}': [np.nan],
+                f'logP_{i_step-1}'      : src_prop[:, 0],
+                f'tPSA_{i_step-1}'      : src_prop[:, 1],
+                f'QED_{i_step-1}'       : src_prop[:, 2],
             })
-            prev_gen = pd.concat([prev_gen, prev_prop], axis=1)
-            print('src_gen:', prev_gen)
+            print('prev_gen:', prev_gen)
         else:
-            prev_gen = pd.read_csv(os.path.join(save_folder, f'gen_{i_step-1}.csv'), index_col=[0])
-        prev_gen = prev_gen.rename(columns={f'{p}': f'{p}_{i_step-1}' for p in self.property_list})
+            prev_gen = pd.read_csv(os.path.join(save_folder,
+                                   f'gen_{i_step-1}.csv'),
+                                   index_col=[0])
 
         for src_no, src in enumerate(src_list):
             # get similarity and filter smiles by a similarity threshold
@@ -218,17 +247,16 @@ class SrcGeneration:
                 total_gen_data = None
 
             if high_sim_gen_list:
-                gen_prop = predict_properties(high_sim_gen_list,
-                                              self.property_list,
-                                              self.n_jobs)
+                gen_prop = self.predictor.get_conditions(high_sim_gen_list)
+
                 gen_data = pd.DataFrame({
                     f'smiles_{i_step-1}'  : [src]*len(high_sim_gen_list),
                     f'smiles_{i_step}'    : high_sim_gen_list,
                     f'similarity_{i_step}': high_sim_list,
+                    f'logP_{i_step}'      : gen_prop[:, 0],
+                    f'tPSA_{i_step}'      : gen_prop[:, 1],
+                    f'QED_{i_step}'       : gen_prop[:, 2],
                 })
-                gen_data = pd.concat([gen_data, gen_prop], axis=1)                
-                gen_data = gen_data.rename(columns={f'{p}': f'{p}_{i_step}'
-                                                    for p in self.property_list})
 
                 gen_data = prev_gen.iloc[[src_no]].merge(
                     gen_data, how='right', on=f'smiles_{i_step-1}'
@@ -252,12 +280,12 @@ class SrcGeneration:
 
     def multi_step_sampling(self, src, props_t, n_step, save_folder):
         src = [src]
-        props_s = predict_properties(src, self.property_list, self.n_jobs).to_numpy()
+        props_s = self.predictor.get_conditions(src)
         props_t = np.array(props_t)
         props_t_cur = props_s
         props_d = (props_t-props_s)/n_step
 
-        trg_props = np.empty((n_step+1, len(self.property_list)))
+        trg_props = np.empty((n_step+1, len(self.conditions)))
         trg_props[0, :] = props_s
 
         for i in range(1, n_step+1): # from 1 to n_step
@@ -269,7 +297,7 @@ class SrcGeneration:
             trg_props[i, :] = props_t_cur
     
             self.LOG.info(f'# steps: {n_step}, current step: {i}, Psrc: {props_s_cur}, Ptrg: {props_t_cur}')
-            
+
             dataset = self.prepare_dataset(src, props_s_cur, props_t_cur)
             src_list, gen_list = self.sample_by_one_step(dataset)
 
@@ -277,7 +305,7 @@ class SrcGeneration:
 
         trg_props = pd.DataFrame(
             data=trg_props,
-            columns=self.property_list,
+            columns=self.conditions,
             index=[f'step_{i}' for i in range(n_step+1)]
         )
         trg_props.to_csv(os.path.join(save_folder, 'trg_props.csv'))
@@ -318,7 +346,7 @@ prop_list = [
 
 
 def fast_src_generation(args, toklen_data, train_smiles, 
-                        scaler, SRC, TRG, PROP, device, logger):
+                        scaler, SRC, TRG, COND, device, logger):
     for epoch in args.epoch_list:
         # args.src_smiles = smiles_list[i]
         # args.trg_props = prop_list[i]
@@ -345,7 +373,7 @@ def fast_src_generation(args, toklen_data, train_smiles,
                      log_path=os.path.join(save_folder, "records.log"))
         LOG.info(args)
         
-        scgn = SrcGeneration(args, SRC, PROP, generator, train_smiles, LOG, device)
+        scgn = SrcGeneration(args, SRC, COND, generator, train_smiles, LOG, device)
         scgn.generate(args.src_smiles, args.trg_props, save_folder)
 
 

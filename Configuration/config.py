@@ -1,6 +1,21 @@
 import argparse
 
 
+def device_opts(parser):
+    parser.add_argument('-n_jobs', type=int, default=1)
+
+
+def savePaths_opts(parser):
+    parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
+    parser.add_argument('-model_folder', type=str, required=True)
+
+
+def preprocessing_opts(parser):
+    parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
+    parser.add_argument('-benchmark', type=str, default='moses')
+    parser.add_argument('-all_property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+
+
 def model_opts(parser):
     # hard constraints
     parser.add_argument('-model_type', type=str, default='cvaetf')
@@ -22,6 +37,15 @@ property_bounds = {
 }
 
 
+def mosesPropConstraints(parser):
+    parser.add_argument('-logp_lb', type=float, default=0.03)
+    parser.add_argument('-logp_ub', type=float, default=4.97)
+    parser.add_argument('-tpsa_lb', type=float, default=17.92)
+    parser.add_argument('-tpsa_ub', type=float, default=112.83)
+    parser.add_argument('-qed_lb', type=float, default=0.58)
+    parser.add_argument('-qed_ub', type=float, default=0.95)
+
+
 def props_opts(parser):
     # hard constraints
     parser.add_argument('-logp_lb', type=float, default=0.03)
@@ -34,7 +58,7 @@ def props_opts(parser):
 
 def hard_constraints_opts(parser):
     model_opts(parser) # model-size options
-    props_opts(parser)  # property options
+    mosesPropConstraints(parser)
     
     parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/')
     parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/')
@@ -70,23 +94,28 @@ def options(parser):
     return parser
 
 
+def klAnnealing_opts(parser):
+    parser.add_argument('-use_KLA', type=bool, default=True)
+    parser.add_argument('-KLA_ini_beta', type=float, default=0.02)
+    parser.add_argument('-KLA_inc_beta', type=float, default=0.02)
+    parser.add_argument('-KLA_max_beta', type=float, default=1.0)
+    parser.add_argument('-KLA_beg_epoch', type=int, default=1) # KL annealing begin
+
+
+def optimTasks_opts(parser):
+    parser.add_argument('-lr_scheduler', type=str, default="WarmUpDefault", help="WarmUpDefault, SGDR")
+    parser.add_argument('-lr_WarmUpSteps', type=int, default=8000, help="only for WarmUpDefault")
+    parser.add_argument('-lr', type=float, default=0.0001)
+    parser.add_argument('-lr_beta1', type=float, default=0.9)
+    parser.add_argument('-lr_beta2', type=float, default=0.98)
+    parser.add_argument('-lr_eps', type=float, default=1e-9)
+
+
 def train_opts(parser):
     parent_parser = argparse.ArgumentParser(add_help=False)
 
-    """KL Annealing"""
-    parent_parser.add_argument('-use_KLA', type=bool, default=True)
-    parent_parser.add_argument('-KLA_ini_beta', type=float, default=0.02)
-    parent_parser.add_argument('-KLA_inc_beta', type=float, default=0.02)
-    parent_parser.add_argument('-KLA_max_beta', type=float, default=1.0)
-    parent_parser.add_argument('-KLA_beg_epoch', type=int, default=1) # KL annealing begin
-
-    """Optimization Tasks"""
-    parent_parser.add_argument('-lr_scheduler', type=str, default="WarmUpDefault", help="WarmUpDefault, SGDR")
-    parent_parser.add_argument('-lr_WarmUpSteps', type=int, default=8000, help="only for WarmUpDefault")
-    parent_parser.add_argument('-lr', type=float, default=0.0001)
-    parent_parser.add_argument('-lr_beta1', type=float, default=0.9)
-    parent_parser.add_argument('-lr_beta2', type=float, default=0.98)
-    parent_parser.add_argument('-lr_eps', type=float, default=1e-9)
+    klAnnealing_opts(parent_parser)
+    optimTasks_opts(parent_parser)
 
     """Others"""
     parent_parser.add_argument('-save_directory', type=str, required=True)

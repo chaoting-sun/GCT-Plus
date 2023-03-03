@@ -15,7 +15,7 @@ from Train.cvaetfcut_train import cvaetfcut_train
 from Train.mlpcvaetf_train import mlpcvaetf_train
 from Train.sepcvaetf_train import sepcvaetf_train
 from Train.sepcvaetf2_train import sepcvaetf2_train
-from Train.cvaetf_train import cvaetf_train
+from Train.train_cvaetf import train_cvaetf
 from Train.ctf_train import ctf_train
 from Train.attenctf_train import attenctf_train
 from Configuration.config import options, hard_constraints_opts
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     print('model type:', args.model_type)
 
     if args.model_type == 'cvaetf':
-        cvaetf_train(args, logger=logger)
+        train_cvaetf(args, logger=logger)
 
     elif args.model_type == 'ctf':
         ctf_train(args, logger=logger)

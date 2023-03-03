@@ -1,4 +1,7 @@
 import numpy as np
+import pandas as pd
+from collections import OrderedDict
+from pathos.multiprocessing import ProcessingPool as Pool
 
 from rdkit import RDLogger, rdBase
 from rdkit.Chem.Fingerprints.FingerprintMols import FingerprintMol
@@ -25,47 +28,56 @@ disable_rdkit_logging()
 
 """Property prediction function"""
 
-def logP(mol: Mol) -> float:
-    """ RDKit's partition coefficient """
+def logP(mol):
     return Descriptors.MolLogP(mol)
 
 
-def tPSA(mol: Mol) -> float:
-    """ RDKit's topological polar surface area """
+def tPSA(mol):
     return Descriptors.TPSA(mol)
 
 
-def QED(mol: Mol) -> float:
-    """ RDKit's Quantitative Estimates of Drug-likeness """
+def QED(mol):
     try:
         return Descriptors.qed(mol)
     except AtomValenceException:
-        print('QED - invalid smiles:', MolToSmiles(mol))
         return np.nan
 
 
-def SA(mol) -> float:
-    """ RDKit's Synthetic Accessibility score """
+def SAS(mol) -> float:
     return sascorer.calculateScore(mol)
 
 
 def NP(mol) -> float:
-    """ RDKit's Natural Product-likeness score """
     return npscorer.scoreMol(mol)
 
 
-property_prediction = {
+# property_prediction = {
+#     "logP": logP,
+#     "tPSA": tPSA,
+#     "QED" : QED,
+#     "SA"  : SAS,
+#     "NP"  : NP
+# }
+
+property_fcn = {
     "logP": logP,
     "tPSA": tPSA,
     "QED" : QED,
-    "SA"  : SA,
+    "SAS"  : SAS,
     "NP"  : NP
 }
 
 
-def MurckoScaffoldFromSmiles(smiles):
-    return MurckoScaffoldSmiles(smiles)
-    
+def predict_properties(smiles_list, property_list, n_jobs=1):
+    with Pool(n_jobs) as pool:
+        mol_list = list(pool.map(to_mol, smiles_list))
+
+    calculated_properties = OrderedDict()
+    for prop in property_list:
+        with Pool(n_jobs) as pool:
+            calculated_properties[prop] = list(pool.map(property_fcn[prop], mol_list))
+    return pd.DataFrame(calculated_properties)
+
 
 def to_fp_ECFP(smi):
     if smi:
@@ -73,7 +85,6 @@ def to_fp_ECFP(smi):
         if mol is None:
             return None
         return GetMorganFingerprintAsBitVect(mol, 2, 1024)
-        # return AllChem.GetMorganFingerprint(mol, radius=2)
 
 
 def tanimoto_similarity_pool(args):
@@ -105,6 +116,13 @@ def MurckoScaffoldSimilarity(smi1, smi2):
     return TanimotoSimilarity(fp1, fp2)
 
 
+def get_similarity(smiles_list1, smiles_list2, similarity_fcn, n_jobs):
+    with Pool(n_jobs) as pool:
+        res = pool.amap(similarity_fcn, smiles_list1, smiles_list2)
+    similarity_list = res.get()
+    return similarity_list
+
+
 def is_valid(smi):
     return 1 if to_mol(smi) else 0
 
@@ -112,7 +130,7 @@ def is_valid(smi):
 def predict_props(smiles, conditions=['logP', 'tPSA', 'QED']):
     mol = MolFromSmiles(smiles)
     if mol:
-        return [property_prediction[c](mol)
+        return [property_fcn[c](mol)
                 for c in conditions]
     return [np.nan]*len(conditions)
 
@@ -122,7 +140,7 @@ def props_predictor_wrapper(conditions):
         mol = MolFromSmiles(smiles)
         if mol is not None:
             valid = 1
-            props = [property_prediction[c](mol)
+            props = [property_fcn[c](mol)
                      for c in conditions]
         else:
             valid = 0
