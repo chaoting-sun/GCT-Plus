@@ -2,12 +2,13 @@
 
 # moses
 
-python3 -u \
+python3 \
     preprocess.py \
         -benchmark moses \
-        -all_property_list 'logP' 'tPSA' 'QED' 'SAS' \
+        -all_property_list logP tPSA QED SAS \
+        -property_list logP tPSA QED \
         -similarity_threshold 0.70 \
-        -n_jobs 16 \
+        -n_jobs 8 \
     # >/dev/null 2>&1 &
 
 # chembl_02

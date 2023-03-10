@@ -1,9 +1,11 @@
 import os
+import sys
 import time
 import pandas as pd
 from multiprocessing import Pool
 import torch
 from torchtext import data
+from torch.utils.data import Dataset
 
 from Utils.properties import to_mol, property_fcn
 
@@ -149,28 +151,53 @@ class BatchData:
             self.mconds = mconds.to(device)
 
 
+# def rebatch_data(src, econds=None, trg=None, dconds=None, pad_id=None,
+#                  max_strlen=None, pad_to_same_len=False, device=None,
+#                  include_delconds=True):
+#     def padding(obj, cond_len):
+#         obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
+#                         - cond_len), dtype=torch.long) * pad_id
+#         return torch.cat([obj, obj_pad], dim=1)
+
+#     batch_data = {}
+#     batch_data['device'] = device
+#     batch_data['src'] = padding(src, econds.size(-1)) if pad_to_same_len else src
+
+#     if econds is not None:
+#         batch_data['econds'] = econds
+#     if trg is not None:
+#         batch_data['trg'] = padding(trg, dconds.size(-1)) if pad_to_same_len else trg
+#     if dconds is not None:
+#         batch_data['dconds'] = dconds
+#     if include_delconds:
+#         batch_data['mconds'] = torch.sub(dconds, econds)
+    
+#     return BatchData(**batch_data)
+
+
+def get_tensor_size(t):
+    return t.element_size() * t.nelement()
+
+
 def rebatch_data(src, econds=None, trg=None, dconds=None, pad_id=None,
                  max_strlen=None, pad_to_same_len=False, device=None,
-                 include_delconds=True):
+                 include_mconds=True):
+    
     def padding(obj, cond_len):
         obj_pad = torch.ones(obj.size(0), abs(max_strlen - obj.size(1)
                         - cond_len), dtype=torch.long) * pad_id
         return torch.cat([obj, obj_pad], dim=1)
 
-    batch_data = {}
-    batch_data['device'] = device
-    batch_data['src'] = padding(src, econds.size(-1)) if pad_to_same_len else src
+    if src is not None and pad_to_same_len:
+        src = padding(src, econds.size(-1))
 
-    if econds is not None:
-        batch_data['econds'] = econds
-    if trg is not None:
-        batch_data['trg'] = padding(trg, dconds.size(-1)) if pad_to_same_len else trg
-    if dconds is not None:
-        batch_data['dconds'] = dconds
-    if include_delconds:
-        batch_data['mconds'] = torch.sub(dconds, econds)
-    
-    return BatchData(**batch_data)
+    if trg is not None and pad_to_same_len:
+        trg = padding(trg, econds.size(-1))
+
+    mconds = torch.sub(dconds, econds) if include_mconds else None
+
+    return BatchData(src=src, trg=trg, econds=econds, dconds=dconds,
+                     mconds=mconds, device=device)
 
 
 def get_dataset(data_folder, fields, file_name_list):
@@ -194,7 +221,7 @@ def get_iterator(train, valid, batch_size):
 
 
 def get_loader(data_iter, property_list, pad_id, max_strlen,
-               pad_to_same_len=False, device=None):
+               pad_to_same_len=False, device=None, include_mconds=False):
     def extract_conds(batch, data_type):
         prop_vals = []
         for p in property_list:
@@ -208,6 +235,87 @@ def get_loader(data_iter, property_list, pad_id, max_strlen,
                          pad_id,
                          max_strlen,
                          pad_to_same_len,
-                         device
+                         device,
+                         include_mconds
                          )
             for batch in data_iter)
+
+
+class SmilesDataset(Dataset):
+    def __init__(self, input_data, property_list, device, SRC=None,
+                 TRG=None, include_mconds=False, debug=False):
+        self.SRC = SRC
+        self.TRG = TRG
+        self.data = input_data
+        self.property_list = property_list
+        
+        self.pad_id = SRC.vocab.stoi['<pad>']
+        self.include_mconds = include_mconds
+        
+        self.device = device
+        self.debug = debug
+        
+    def __getitem__(self, rid):
+        item = {}
+        row = self.data.iloc[rid]
+
+        if 'src' in row:
+            assert self.SRC is not None
+            item['src'] = self.SRC.tokenize(row['src'])
+
+        if 'trg' in row:
+            assert self.TRG is not None
+            item['trg'] = self.TRG.tokenize(row['trg'])
+
+        if f'src_{self.property_list[0]}' in row:
+            item['econds'] = [row[f'src_{p}'] for p in self.property_list]
+            
+        if f'trg_{self.property_list[0]}' in row:
+            item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
+        
+        if self.include_mconds:
+            assert 'econds' in item
+            assert 'dconds' in item
+            item['mconds'] = [item['dconds'][i] - item['econds'][i]
+                              for i in range(len(self.property_list))]
+        return item
+
+    def __len__(self):
+        return len(self.data)    
+
+    @classmethod
+    def collate_fcn(cls, raw_batch, SRC, TRG, device):
+        prepared_batch = {}
+        if 'src' in raw_batch[0]:
+            prepared_batch['src'] = SRC.process(
+                [batch['src'] for batch in raw_batch]).to(device)
+            if not SRC.batch_first:
+                prepared_batch['src'] = prepared_batch['src'].T
+
+        if 'trg' in raw_batch[0]:
+            prepared_batch['trg'] = TRG.process(
+                [batch['trg'] for batch in raw_batch]).to(device)
+            if not TRG.batch_first:
+                prepared_batch['trg'] = prepared_batch['trg'].T
+
+        if 'econds' in raw_batch[0]:
+            prepared_batch['econds'] = torch.tensor(
+                [batch['econds'] for batch in raw_batch],
+                dtype=torch.float32).to(device)
+
+        if 'dconds' in raw_batch[0]:
+            prepared_batch['dconds'] = torch.tensor(
+                [batch['dconds'] for batch in raw_batch],
+                dtype=torch.float32).to(device)
+        
+        if 'mconds' in raw_batch[0]:
+            prepared_batch['mconds'] = torch.tensor(
+                [batch['mconds'] for batch in raw_batch],
+                dtype=torch.float32).to(device)
+        return prepared_batch
+
+
+# class MyCollator(object):
+#     def __init__(self, SRC, TRG):
+    
+    

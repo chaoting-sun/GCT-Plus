@@ -70,12 +70,12 @@ def add_args(parser):
     parent_parser.add_argument('-decode_type', type=str, default='decode')
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
 
-    parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Results')
+    parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
     parent_parser.add_argument('-n_jobs', type=int, default=4)
     parent_parser.add_argument('-model_name', type=str, required=True)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
     """
-    Continuity check    
+    Continuity check
     """
     cc_parser = subparsers.add_parser('continuity-check', parents=[parent_parser])
     cc_parser.add_argument('-continuity_check', action='store_true')
@@ -111,7 +111,7 @@ def add_args(parser):
     sgm_parser.add_argument('-data_name', type=str)
     sgm_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
     sgm_parser.add_argument('-n_samples', type=int, default=1000)
-    sgm_parser.add_argument('-n_selections', type=int, default=5)
+    sgm_parser.add_argument('-n_samples_each_time', type=int, default=1000)
 
     """
     Source rotator generation
@@ -130,6 +130,7 @@ def add_args(parser):
     """
     et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
     et_parser.add_argument('-encoder_test', action='store_true')
+    
     """
     decoder test
     """
@@ -191,6 +192,7 @@ if __name__ == "__main__":
                             scaler, SRC, TRG, COND, device, logger)
 
     if hasattr(args, 'src_generation_mmps'):
+        print('use function - fast_src_generation_mmps...')
         fast_src_generation_mmps(args, toklen_data, train_smiles, 
                                  scaler, SRC, TRG, COND, device, logger)
 

@@ -126,7 +126,9 @@ def property_field(property_list):
 
 
 def get_iter_field(property_list, field_path=None):
+    
     SRC, TRG = smiles_field(field_path)
+    
     PROP = property_field(property_list)
     
     src_field = [('src', SRC)]

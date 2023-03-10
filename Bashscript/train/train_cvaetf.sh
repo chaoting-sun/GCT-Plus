@@ -86,7 +86,6 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
         -num_epoch 40      \
         -max_strlen 100    \
         -property_list logP \
-        
         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf \
     >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
 

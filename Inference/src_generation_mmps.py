@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 from time import time
+from datetime import timedelta
 from torchtext import data
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
@@ -10,9 +11,19 @@ from pathos.multiprocessing import ProcessingPool as Pool
 from Inference.utils import prepare_generator
 # from Utils.properties import tanimoto_similarity as similarity_fcn
 from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn
-from Utils.properties import is_valid, predict_properties
+from Utils.properties import is_valid, predict_properties, get_mol_from_smiles
 from Utils.dataset import get_dataset, get_loader
 from Utils.field import untokenize
+from Utils.metric import get_error
+
+
+# train
+
+# 0.50: 62508693
+# 0.60: 
+# 0.70: 7111342
+# 0.75: 3989198
+# 0.80: 2354581
 
 
 class DataFrameDataset(Dataset):
@@ -270,35 +281,112 @@ def get_iterator(dataset, batch_size):
     return data_iter
 
 
-def get_similarity(smiles_list1, smiles_list2, n_jobs):
+def get_similarity(similarity_fcn, smiles_list1, smiles_list2, n_jobs):
     with Pool(n_jobs) as pool:
         res = pool.amap(similarity_fcn, smiles_list1, smiles_list2)
     similarity_list = res.get()
     return similarity_list
 
 
-def get_valid_smiles(smiles_list, n_jobs):
-    with Pool(n_jobs) as pool:
-        validity_list = np.array(pool.map(is_valid, smiles_list))
-    valid_smiles = []
-    for i, v in enumerate(validity_list):
-        if v == 1:
-            valid_smiles.append(smiles_list[i])
-    return valid_smiles
+def mse_fcn(delval):
+    return sum(delval) / len(delval)
 
 
-def fast_src_generation_mmps(args, toklen_data, train_smiles, 
-                             scaler, SRC, TRG, PROP, device, logger):
-    prepared_data_path = os.path.join(args.data_folder, 'prepared')
+def mae_fcn(delval):
+    abs_delval = [abs(v) for v in delval]
+    return sum(abs_delval) / len(abs_delval)
+
+
+def decode_smiles(z, prop, src_smi, trg_prop, generator, n_samples,
+                  n_samples_each_time, property_list, n_jobs, LOG):
+    
+    all_valid_smis, all_unique_smis, all_high_sims = [], [], []
+    dprop = { p: [] for p in property_list }
+    mse = { p: 0 for p in property_list }
+    mae = { p: 0 for p in property_list }
+    amsd = { p: 0 for p in property_list }
+    aard = { p: 0 for p in property_list }
+
+    for sample_no in range(n_samples // n_samples_each_time):
+        sid = n_samples_each_time * sample_no
+        eid = n_samples_each_time * (sample_no+1)
+        
+        LOG.info('sample smiles...')
+        gen_list, *_ = generator.sample_smiles(prop[sid:eid, :],
+                                               z[sid:eid, :],
+                                               transform=False
+                                               )
+
+        LOG.info('process smiles...')
+        valid_smis, valid_mols = get_mol_from_smiles(gen_list, n_jobs)
+        unique_smis = list(set(valid_smis))
+
+        all_valid_smis.extend(valid_smis)
+        all_unique_smis.extend(unique_smis)
+        
+        gen_prop = predict_properties(valid_mols, property_list, n_jobs)
+        
+        for p_no, p_name in enumerate(property_list):
+            dp = gen_prop[p_name] - trg_prop[p_no]
+            dprop[p_name].extend(dp.tolist())
+            
+            mse[p_name] = mse_fcn(dprop[p_name])
+            mae[p_name] = mae_fcn(dprop[p_name])
+            amsd[p_name] = (dp / trg_prop[p_no]).mean()
+            aard[p_name] = (dp / trg_prop[p_no]).abs().mean()
+                    
+        src_smis = [src_smi]*len(unique_smis)
+        sims = get_similarity(similarity_fcn, src_smis, unique_smis, n_jobs)
+        
+        for j, sim in enumerate(sims):
+            if sim >= 0.5:
+                all_high_sims.append(unique_smis[j])
+        
+        LOG.info(f'({n_samples_each_time*(sample_no+1)}) '
+                 f'#valid: {len(all_valid_smis)}\t'
+                 f'#unique: {len(all_unique_smis)}\t'
+                 f'#high sim: {len(all_high_sims)}'
+                )
+        LOG.info("mse: %s", mse)
+        LOG.info("mae: %s", mae)
+        LOG.info("amsd: %s", amsd)
+        LOG.info("aard: %s", aard)
+        
+    return (all_valid_smis, all_unique_smis, all_high_sims), (mse, mae, amsd, aard)
+
+
+def mae(trg_prop, gen_prop):
+    abs_dprop = np.zeros((len(trg_prop),))
+    for i in range(len(trg_prop)):
+        abs_dprop[i] = abs(gen_prop[i] - trg_prop[i])
+    return abs_dprop.sum() / len(abs_dprop)
+
+
+def mse(trg_prop, gen_prop):
+    dprop = np.zeros((len(trg_prop),))
+    for i in range(len(trg_prop)):
+        dprop[i] = gen_prop[i] - trg_prop[i]
+    return dprop.sum() / len(dprop)
+
+
+
+def fast_src_generation_mmps(args, toklen_data, train_smiles, scaler,
+                             SRC, TRG, PROP, device, logger): 
+    elapsed_time = -time()
 
     for epoch in args.epoch_list:
-        # args.src_smiles = smiles_list[i]
-        # args.trg_props = prop_list[i]
-        
+        main_save_folder = os.path.join(args.inference_path,
+                                        'fast_src_generation_mmps',
+                                        args.benchmark,
+                                        args.model_name,
+                                        str(epoch))
+        os.makedirs(main_save_folder, exist_ok=True)
+
         args.model_path = os.path.join(args.train_path,
                                        args.benchmark,
                                        args.model_name,
                                        f'model_{epoch}.pt')
+        
         generator = prepare_generator(args, SRC, TRG, toklen_data, scaler, device)
 
         save_folder = os.path.join(args.inference_path, 'src_generation', args.benchmark,
@@ -309,9 +397,8 @@ def fast_src_generation_mmps(args, toklen_data, train_smiles,
         LOG.info(args)
         
         fields = get_fields(SRC, PROP, args.property_list)
-        dataset = get_dataset(prepared_data_path, fields,
-                              [None, None, args.data_name]
-                              )[0]
+        dataset = get_dataset(os.path.join(args.data_folder, 'prepared'), fields,
+                              [None, None, args.data_name])[0]
 
         data_iter = get_iterator(dataset, batch_size=1)
         dataloader = get_loader(data_iter=data_iter,
@@ -320,59 +407,73 @@ def fast_src_generation_mmps(args, toklen_data, train_smiles,
                                 max_strlen=args.max_strlen,
                                 device=device
                                 )
-
-        n_samples_per_src = 10000
-        n_times = 100
-        n_each_time = n_samples_per_src // n_times
+        
+        results = { 'src': [] }
+        results.update({ f'src_{p}': [] for p in args.property_list })
+        results.update({ f'trg_{p}': [] for p in args.property_list })
+        results.update({ 'n_valid': [], 'n_unique': [], 'n_highsim': [] })
+        for p in args.property_list:
+            results[f'{p}_mse'] = []
+            results[f'{p}_mae'] = []
+            results[f'{p}_amsd'] = []
+            results[f'{p}_aard'] = []
 
         for d, batch in enumerate(dataloader):
+            if d == 100:
+                break
+
+            LOG.info(f'encode smiles {d}...')
+            
             src_smi = untokenize(batch.src[0], SRC.vocab)
+            src_prop = scaler.inverse_transform(batch.econds.cpu())[0]        
+            trg_prop = scaler.inverse_transform(batch.dconds.cpu())[0]
+
             _, mu, logvar = generator.encode_smiles(batch.src, batch.econds, transform=False)
             std = torch.exp(0.5*logvar)
             
-            # augment latent space
-            zs = torch.tile(mu, (n_samples_per_src, 1, 1))
-            for i in range(n_samples_per_src):
+            LOG.info('augment latent space...')
+
+            zs = torch.tile(mu, (args.n_samples, 1, 1))
+            for i in range(args.n_samples):
                 eps = torch.empty_like(mu).normal_(0, 0.4)
                 zs[i, :, :] = eps.mul(std).add(mu)
-            batch.dconds = torch.tile(batch.dconds, (n_samples_per_src, 1))
-            
-            all_valid_list = []
-            all_unique_list = []
-            high_sim_list = []
-            
-            for i in range(n_times):
-                start_id, end_id = n_times*i, n_times*(i+1)
-                gen_list, *_ = generator.sample_smiles(batch.dconds[start_id:end_id, :],
-                                                       zs[start_id:end_id, :],
-                                                       transform=False
-                                                       )
-                valid_list = get_valid_smiles(gen_list, args.n_jobs)
-                gen_props = predict_properties(valid_list, args.property_list, args.n_jobs).to_numpy()
-                print(gen_props)
-                exit()
-                
-                
-                unique_list = list(set(valid_list))
-                
-                all_valid_list.extend(valid_list)
-                
-                similarity_list = get_similarity([src_smi]*len(unique_list),
-                                                 unique_list, args.n_jobs)
-                
-                for j, sim in enumerate(similarity_list):
-                    if sim >= 0.5:
-                        high_sim_list.append(unique_list[j])
+            props = torch.tile(batch.dconds, (args.n_samples, 1))
 
-                all_unique_list.extend(unique_list)
-                all_unique_list = list(set(all_unique_list))
-                high_sim_list = list(set(high_sim_list))
-                
-                print(f'({100*(i+1)}) valid smiles: {len(all_valid_list)}\t'
-                      f'unique smiles: {len(all_unique_list)}\t'
-                      f'high sim smiles: {len(high_sim_list)}'
-                      )
+            LOG.info('decode smiles...')
 
-        scgn = SrcGeneration(args, SRC, PROP, generator, train_smiles, LOG, device)
-        scgn.generate(args.src_smiles, args.trg_props, save_folder)
+            smi_outs, errors = decode_smiles(zs,
+                                             props,
+                                             src_smi,
+                                             trg_prop,
+                                             generator,
+                                             args.n_samples,
+                                             args.n_samples_each_time,
+                                             args.property_list,
+                                             args.n_jobs,
+                                             LOG
+                                             )
+            valid_smis, unique_smis, highsim_smi = smi_outs
+            mse, mae, amsd, aard = errors
 
+            results['src'].append(src_smi)
+            results['n_valid'].append(len(valid_smis))
+            results['n_unique'].append(len(unique_smis))
+            results['n_highsim'].append(len(highsim_smi))
+
+            for i in range(len(args.property_list)):
+                results[f'src_{p}'].append(src_prop[i])
+                results[f'trg_{p}'].append(trg_prop[i])
+
+            for p in args.property_list:
+                results[f'{p}_mse'].append(mse[p])
+                results[f'{p}_mae'].append(mae[p])
+                results[f'{p}_amsd'].append(amsd[p])
+                results[f'{p}_aard'].append(aard[p])
+
+            print('elapsed time:', str(timedelta(seconds=elapsed_time+time())))
+
+            if (d+1) % 10 == 0:
+                res = pd.DataFrame(results)
+                res.to_csv(os.path.join(main_save_folder, 'results.csv'))
+
+        print('results:\n', results)

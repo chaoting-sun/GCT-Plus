@@ -9,7 +9,7 @@ import argparse
 
 # from Train.train import train
 # from Train.mlp_train import mlp_train
-from Train.attencvaetf_train import attencvaetf_train
+from Train.train_attencvaetf import attencvaetf_train
 from Train.mlpcvaetf_encoder_train import mlpcvaetf_encoder_train
 from Train.cvaetfcut_train import cvaetfcut_train
 from Train.mlpcvaetf_train import mlpcvaetf_train

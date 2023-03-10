@@ -104,9 +104,9 @@ class CVAETF(nn.Module):
         self.out = nn.Linear(d_model, trg_vocab)
 
         # initialize parameters
-        self._reset_parameters()
+        self.reset_parameters()
     
-    def _reset_parameters(self):
+    def reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)

@@ -131,16 +131,17 @@ def build_mlpcvaetfencoder(hyperParams, cvaetf_path, aug_cvaetf_path=None):
     return aug_cvaetf
 
 
-def build_attencvaetf(hyperParams, cvaetf_path, aug_cvaetf_path=None):
+def build_attencvaetf(hyperParams, original_model_path, model_path=None):
     aug_cvaetf = ATTENCVAETF(**hyperParams)
-    if aug_cvaetf_path:
-        aug_cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict'])
+
+    if model_path:
+        aug_cvaetf.load_state_dict(torch.load(model_path)['model_state_dict'])
     else:
-        cvaetf = build_cvaetf(hyperParams, cvaetf_path)
+        assert original_model_path is not None
+        cvaetf = build_cvaetf(hyperParams, original_model_path)
         # cvaetf.load_state_dict(torch.load(cvaetf_path))
-        cvaetf.load_state_dict(torch.load(cvaetf_path)['model_state_dict'])
         transfer_params(cvaetf, aug_cvaetf)
-    freeze_params(aug_cvaetf, train_names=['att_mu', 'att_log_var'])
+    freeze_params(aug_cvaetf, train_names=['atten_mu', 'atten_logvar'])
     return aug_cvaetf
 
 
@@ -165,24 +166,24 @@ def get_model(args, SRC_vocab_len, TRG_vocab_len):
         args.use_cvaetf_path = None
 
     if args.model_type == "ctf":
-        return build_ctf(hyperParams, args.use_model_path)
+        return build_ctf(hyperParams, model_path)
     if args.model_type == "attenctf":
-        return build_attenctf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_attenctf(hyperParams, args.original_model_path, model_path)
     if args.model_type == "cvaetfcut":
-        return build_cvaetfcut(hyperParams, args.use_model_path)
+        return build_cvaetfcut(hyperParams, args.original_model_path)
     if args.model_type == "cvaetf":
         return build_cvaetf(hyperParams, model_path)
     elif args.model_type == "mlpcvaetf_encoder":
-        return build_mlpcvaetfencoder(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_mlpcvaetfencoder(hyperParams, args.original_model_path, model_path)
     elif args.model_type == "mlpcvaetf":
         args.use_cvaetf_path = None
-        return build_mlpcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_mlpcvaetf(hyperParams, args.original_model_path, model_path)
     elif args.model_type == "sepcvaetf":
-        return build_sepcvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_sepcvaetf(hyperParams, args.original_model_path, model_path)
     elif args.model_type == "sepcvaetf2":
-        return build_sepcvaetf2(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_sepcvaetf2(hyperParams, args.original_model_path, model_path)
     elif args.model_type == "attencvaetf":
-        return build_attencvaetf(hyperParams, args.use_cvaetf_path, args.use_model_path)
+        return build_attencvaetf(hyperParams, args.original_model_path, model_path)
 
 
 # def get_model(args, SRC_vocab_len, TRG_vocab_len):

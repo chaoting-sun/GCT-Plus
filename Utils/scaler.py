@@ -30,7 +30,7 @@ def scaler_transform(condition, scaler_path=None):
 
 def build_scaler(properties):
     scaler = RobustScaler(quantile_range=(0.1, 0.9))
-    scaler.fit(properties, len(properties.columns))    
+    scaler.fit(properties, len(properties.columns))
     return scaler
 
 

@@ -68,9 +68,12 @@ property_fcn = {
 }
 
 
-def predict_properties(smiles_list, property_list, n_jobs=1):
-    with Pool(n_jobs) as pool:
-        mol_list = list(pool.map(to_mol, smiles_list))
+def predict_properties(mol_or_smi, property_list, n_jobs=1):
+    if isinstance(mol_or_smi[0], str):
+        with Pool(n_jobs) as pool:
+            mol_list = list(pool.map(to_mol, mol_or_smi))
+    else:
+        mol_list = mol_or_smi
 
     calculated_properties = OrderedDict()
     for prop in property_list:
@@ -195,3 +198,16 @@ def get_canonical_smile(smile):
     else:
         return None
     
+
+def get_mol_from_smiles(smiles, n_jobs):
+    with Pool(n_jobs) as pool:
+        mols = np.array(pool.map(to_mol, smiles))
+    valid_smis, valid_mols = [], []
+    for i in range(len(mols)):
+        if mols[i] is not None:
+            valid_smis.append(smiles[i])
+            valid_mols.append(mols[i])
+    return valid_smis, valid_mols
+
+
+

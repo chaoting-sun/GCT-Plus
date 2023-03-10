@@ -30,7 +30,7 @@ MODEL_TYPE=cvaetf
 MODEL_NAME=cvaetf
 BENCHMARK=chembl_02
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
     inference.py                                    \
         -model_type ${MODEL_TYPE} \
         -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset \
@@ -42,5 +42,6 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
         -model_name ${MODEL_NAME} \
         -data_folder /fileserver-gamma/chaoting/ML/dataset/${BENCHMARK}/ \
         -data_name test \
-        -n_steps 2 \
-        -epoch_list 40 \
+        -n_steps 1 \
+        -epoch_list 20 \
+    >/dev/null 2>&1 &
