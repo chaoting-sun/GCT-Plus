@@ -8,6 +8,7 @@ from moses.utils import mapper, get_mol
 from moses.metrics import SNNMetric
 
 
+
 def get_snn_from_mol(molList1, molList2):
     # Similarity to nearest neighbour
     # molList1_fp = SNNMetric().precalc()

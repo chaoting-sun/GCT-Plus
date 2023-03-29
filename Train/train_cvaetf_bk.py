@@ -32,7 +32,7 @@ def save_checkpoint(args, model, optimizer, save_path):
     hyper_param_names = ('N', 'd_model', 'd_ff', 'H', 'latent_dim',
                          'dropout', 'use_cond2dec', 'use_cond2lat',
                          'variational')
-    hyper_param_values = { 'nconds': len(args.property_list) }
+    hyper_param_values = {'nconds': len(args.property_list)}
     for name in hyper_param_names:
         hyper_param_values[name] = getattr(args, name)
 
@@ -49,8 +49,8 @@ def run_epoch(args, model, optimizer, dataloader,
     n_samples = 0
     n_printevery = 1
     tot_loss = tot_rce = tot_kld = 0
-    history = { 'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': [] }
-    
+    history = {'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': []}
+
     model_cost_time = update_cost_time = 0
     cost_time = -time()
 
@@ -76,10 +76,10 @@ def run_epoch(args, model, optimizer, dataloader,
 
         ys_mol = batch.trg[:, 1:].contiguous().view(-1)
         ys_cond = torch.unsqueeze(batch.dconds, 2).contiguous(
-            ).view(-1, len(args.property_list), 1)
+        ).view(-1, len(args.property_list), 1)
 
         update_cost_time -= time()
-        
+
         if train:
             optimizer.zero_grad()
         loss, RCE_mol, RCE_prop, KLD = loss_function(beta, preds_prop, preds_mol,
@@ -97,7 +97,7 @@ def run_epoch(args, model, optimizer, dataloader,
             tail = np.float(current_step) * \
                 np.power(np.float(args.lr_WarmUpSteps), -k2)
             lr = np.float(np.power(np.float(args.d_model), -k3)) * \
-                 min(head, tail)
+                min(head, tail)
 
         if train:
             for param_group in optimizer.param_groups:
@@ -105,18 +105,18 @@ def run_epoch(args, model, optimizer, dataloader,
 
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
-        
+
         tot_loss += loss.item()
         tot_rce += RCE_mol.item()
         tot_kld += KLD.item()
-        
+
         n_onebatch = len(batch.src)
         n_samples += n_onebatch
 
         history['RCE'].append(RCE_mol.item() / n_onebatch)
         history['KLD'].append(KLD.item() / n_onebatch)
         history['LOSS'].append(loss.item() / n_onebatch)
-        history['BETA'].append(beta)        
+        history['BETA'].append(beta)
         history['LR'].append(current_lr)
 
         # torch.cuda.empty_cache()
@@ -137,12 +137,12 @@ def run_epoch(args, model, optimizer, dataloader,
     avg_loss = tot_loss / n_samples
     avg_rce = tot_rce / n_samples
     avg_kld = tot_kld / n_samples
-    
-    if train: # training phase
+
+    if train:  # training phase
         return history, (avg_loss, avg_rce, avg_kld), current_step
-    else: # validation phase
+    else:  # validation phase
         return history, (avg_loss, avg_rce, avg_kld)
-    
+
 
 def train_model(args, model, optimizer, train_iter,
                 valid_iter, device, LOG):
@@ -171,19 +171,19 @@ def train_model(args, model, optimizer, train_iter,
             args.max_strlen, args.pad_to_same_len, device
         )
         model.train()
-        
+
         train_history, avg_loss, current_step = run_epoch(
             args, model, optimizer, dataloader, current_step,
             beta, args.train_nbatches, LOG, train=True
         )
         df = pd.DataFrame(train_history)
         df.to_csv(os.path.join(args.model_folder, f'train_{epoch}.csv'))
-        
+
         LOG.info(f'training end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 
         LOG.info(f'validation start, epoch: {epoch}')
-        
+
         dataloader = get_loader(
             valid_iter, args.property_list, args.pad_id,
             args.max_strlen, args.pad_to_same_len, device
@@ -197,7 +197,7 @@ def train_model(args, model, optimizer, train_iter,
             )
         df = pd.DataFrame(valid_hist)
         df.to_csv(os.path.join(args.model_folder, f'valid_{epoch}.csv'))
-        
+
         LOG.info(f'validation end\tloss: {avg_loss[0]},\t'
                  f'RCE: {avg_loss[1]},\tKLD: {avg_loss[2]}')
 

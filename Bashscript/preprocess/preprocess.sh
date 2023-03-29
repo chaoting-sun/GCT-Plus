@@ -5,10 +5,10 @@
 python3 \
     preprocess.py \
         -benchmark moses \
-        -all_property_list logP tPSA QED SAS \
-        -property_list logP tPSA QED \
-        -similarity_threshold 0.70 \
+        -prepared_properties logP tPSA QED \
+        -similarity 1.00 \
         -n_jobs 8 \
+    > preprocess.out 2>&1 & 
     # >/dev/null 2>&1 &
 
 # chembl_02

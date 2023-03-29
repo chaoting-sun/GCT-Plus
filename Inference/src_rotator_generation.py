@@ -6,7 +6,7 @@ import torch
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import predict_props
+# from Utils.properties import predict_props
 from Inference.utils import prepare_generator
 from Utils.properties import tanimoto_similarity as similarity_fcn
 

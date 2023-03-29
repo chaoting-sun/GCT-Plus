@@ -5,8 +5,22 @@ import dill as pickle
 import torch
 from torchtext import data
 # from torchtext.legacy import data
+from SmilesPE.pretokenizer import atomwise_tokenizer
 
-from Tokenize import moltokenize
+
+class moltokenize(object):
+    def tokenizer(self, sentence):
+        return [tok for tok in atomwise_tokenizer(sentence) if tok != " "]
+
+    @staticmethod
+    def untokenizer(tokens, sos_idx, eos_idx, itos):
+        smi = ""
+        for token in tokens:
+            if token == eos_idx:
+                break
+            elif token != sos_idx:
+                smi += itos[token]
+        return smi
 
 
 def smiles_fields(smiles_field_path=None):
@@ -99,23 +113,36 @@ def save_fields(src_fields, trg_fields, field_path):
     pickle.dump(trg_fields, open(trg_field_path, 'wb'))
 
 
-def smiles_field(smiles_field_path=None):
+def smiles_field(properties, smiles_field_path=None):
     t_src = moltokenize()
     t_trg = moltokenize()
-
-    SRC = data.Field(tokenize=t_src.tokenizer, batch_first=True)
-    TRG = data.Field(tokenize=t_trg.tokenizer, batch_first=True,
-                     init_token='<sos>', eos_token='<eos>')
+    
+    SRC = data.Field(
+        tokenize=t_src.tokenizer,
+        batch_first=True,
+        unk_token='<unk>'
+    )
+    TRG = data.Field(
+        tokenize=t_trg.tokenizer,
+        batch_first=True,
+        init_token='<sos>',
+        eos_token='<eos>',
+        unk_token='<unk>'
+    )
     
     if smiles_field_path is not None:
+        suffix = '-'.join(properties)
         try:
-            SRC = pickle.load(open(os.path.join(smiles_field_path, 'SRC.pkl'), 'rb'))
-            TRG = pickle.load(open(os.path.join(smiles_field_path, 'TRG.pkl'), 'rb'))
+            print(os.path.join(smiles_field_path, f'SRC_{suffix}.pkl'))
+            SRC = pickle.load(open(os.path.join(smiles_field_path, 
+                                                f'SRC_{suffix}.pkl'), 'rb'))
+            TRG = pickle.load(open(os.path.join(smiles_field_path, 
+                                                f'TRG_{suffix}.pkl'), 'rb'))
         except:
             print(">>> Files SRC.pkl/TRG.pkl not in:" + smiles_field_path)
             exit(1)
 
-    return (SRC, TRG)
+    return (SRC, TRG)   
 
 
 # torch.float32 is equal to torch.float
@@ -127,7 +154,7 @@ def property_field(property_list):
 
 def get_iter_field(property_list, field_path=None):
     
-    SRC, TRG = smiles_field(field_path)
+    SRC, TRG = smiles_field(property_list, field_path)
     
     PROP = property_field(property_list)
     
@@ -149,4 +176,5 @@ def untokenize(tokens, vocab):
         elif token != vocab.stoi['<sos>']:
             smi += vocab.itos[token]
     return smi
+
 

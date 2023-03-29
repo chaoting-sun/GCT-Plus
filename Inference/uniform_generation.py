@@ -8,7 +8,6 @@ from rdkit.Chem import MolFromSmiles
 import torch
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import get_mol, property_fcn, predict_props
 from Inference.metrics import get_all_metrics, print_all_metrics
 from Inference.utils import augment_props
 from Inference.utils import prepare_generator

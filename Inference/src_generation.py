@@ -6,10 +6,11 @@ import torch
 from torchtext.data import Example, Dataset
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import predict_props, property_fcn, predict_properties
+# from Utils.properties import predict_props, property_fn, predict_properties
 from Inference.utils import prepare_generator
 # from Utils.properties import MurckoScaffoldSimilarity as similarity_fcn
-from Utils.properties import is_valid, tanimoto_similarity as similarity_fcn
+from Utils.properties import tanimoto_similarity as similarity_fcn
+from Utils.smiles import is_valid
 
 
 smiles_list = [

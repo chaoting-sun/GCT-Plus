@@ -75,19 +75,19 @@
 #         -save_directory /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_aug-s${SIMILARITY}-t${TOLERANCE}/   \
 #     >>train_aug_t${TOLERANCE}_s${SIMILARITY}.out 2>&1 &
 
-GPU_IDX=0
-BENCHMARK=chembl_02
+# GPU_IDX=0
+# BENCHMARK=chembl_02
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
-    Train.py \
-        -model_type cvaetf \
-        -benchmark ${BENCHMARK} \
-        -start_epoch 1     \
-        -num_epoch 40      \
-        -max_strlen 100    \
-        -property_list logP \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf \
-    >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
+# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
+#     Train.py \
+#         -model_type cvaetf \
+#         -benchmark ${BENCHMARK} \
+#         -start_epoch 1     \
+#         -num_epoch 40      \
+#         -max_strlen 100    \
+#         -property_list logP \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf \
+#     >train_cvaetf_s${SIMILARITY}-t${TOLERANCE}.out 2>&1 &
 
 
 # GPU_IDX=0
@@ -102,3 +102,51 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python3 -u \
 #         -max_strlen 100    \
 #         -property_list logP tPSA QED \
 #         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/cvaetf_test \
+
+# export 'PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512'
+
+BENCHMARK=moses
+SIMILARITY=1.00
+
+# ScaCvaetfV1
+# MODELTYPE=scacvaetfv1
+# MODEL_NAME=${MODELTYPE}-s${SIMILARITY}
+# EPOCH=12
+
+# ScaCvaetfV2
+MODELTYPE=scacvaetfv3
+MODEL_NAME=${MODELTYPE}-s${SIMILARITY}-revised
+START_EPOCH=1
+
+CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun \
+    Train.py \
+        -benchmark ${BENCHMARK}      \
+        -model_type ${MODELTYPE}     \
+        -start_epoch ${START_EPOCH}  \
+        -num_epoch 50                \
+        -max_strlen 80               \
+        -property_list logP tPSA QED \
+        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+        -similarity ${SIMILARITY}    \
+        -use_scaffold                \
+        -batch_size 64               \
+    >train-${MODEL_NAME}.out 2>&1 &
+
+
+# ScaCvaetfV2
+# MODELTYPE=scacvaetfv2
+# MODEL_NAME=${MODELTYPE}-s${SIMILARITY}-25ep-enum
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3 CUDA_LAUNCH_BLOCKING=1 torchrun \
+#     Train.py \
+#         -benchmark ${BENCHMARK}      \
+#         -model_type ${MODELTYPE}     \
+#         -start_epoch 31              \
+#         -num_epoch 50                \
+#         -max_strlen 80               \
+#         -property_list logP tPSA QED \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+#         -similarity ${SIMILARITY}    \
+#         -use_scaffold                \
+#         -randomize                   \
+    # >train-${MODEL_NAME}.out 2>&1 &

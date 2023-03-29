@@ -205,7 +205,7 @@ class MultinomialSearch(Sampling):
             src_mask = (torch.ones(conds.size(0), 1, toklen[0]) !=
                 0).to(self.device)  # (bs,1,nc+src_smi)
             sequence = self.decode(z, conds, src_mask)
-            sequence = sequence.cpu().numpy()            
+            sequence = sequence.cpu().numpy()
         else:
             for i in range(len(z)):
                 z_in = z[i].to(self.device)

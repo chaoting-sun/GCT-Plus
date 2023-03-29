@@ -15,7 +15,7 @@ from Train.cvaetfcut_train import cvaetfcut_train
 from Train.mlpcvaetf_train import mlpcvaetf_train
 from Train.sepcvaetf_train import sepcvaetf_train
 from Train.sepcvaetf2_train import sepcvaetf2_train
-from Train.train_cvaetf import train_cvaetf
+from Train.trainer import train_cvaetf
 from Train.ctf_train import ctf_train
 from Train.attenctf_train import attenctf_train
 from Configuration.config import options, hard_constraints_opts
