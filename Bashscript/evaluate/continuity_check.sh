@@ -299,33 +299,32 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
 
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-# > model: transformer_ep25_aug-all_ep${EPOCH}
+GPU_IDX=3
 
-# GPU_IDX=3
-
-# MODEL_TYPE=transformer
-# DECODE_TYPE=decode
-# CHOICE="continuity-check"
-# DECODE_ALGO="greedy"
-# TOKLEN=30
-# EPOCH=30
+BENCHMARK=moses
+MODEL_TYPE=scacvaetfv2
+MODEL_NAME=${MODEL_TYPE}-s1.00
+DECODE_ALGO=multinomial
+TOKLEN=30
+EPOCH=25
 # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
-#     inference.py \
-#         -n_jobs 4 \
-#         -model_type ${MODEL_TYPE} \
-#         -use_model_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/${MODEL_TYPE}_ep25_aug-all/model_${EPOCH}.pt \
-#     continuity-check \
-#         -decode_algo ${DECODE_ALGO} \
-#         -decode_type ${DECODE_TYPE} \
-#         -storage_path /fileserver-gamma/chaoting/ML/cvae-transformer/Inference/${MODEL_TYPE}_ep25_aug-all_ep${EPOCH} \
-#         -continuity_check \
-#         -properties 2.8421 58.1053 0.8947 \
-#         -toklen ${TOKLEN} \
-#         -n_steps 50 \
-#         -n_samples 100 \
-#         -test_for conds \
-#     >>ContiCheck_model-${MODEL_TYPE}_ep-${EPOCH}.out 2>&1 &
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
+    inference.py \
+        -model_type ${MODEL_TYPE} \
+    continuity-check \
+        -continuity_check \
+        -data_folder /fileserver-gamma/chaoting/ML/dataset/${BENCHMARK}/ \
+        -decode_algo ${DECODE_ALGO}             \
+        -model_name ${MODEL_NAME}              \
+        -epoch ${EPOCH}                        \
+        -n_jobs 4 \
+
+        # -properties 2.8421 58.1053 0.8947 \
+        # -toklen ${TOKLEN} \
+        # -n_steps 50 \
+        # -n_samples 100 \
+        # -test_for conds \
+    # >>ContiCheck_model-${MODEL_TYPE}_ep-${EPOCH}.out 2>&1 &
 
 

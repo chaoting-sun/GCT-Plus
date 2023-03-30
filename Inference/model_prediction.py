@@ -9,23 +9,27 @@ class Predictor(object):
         self.model_decode = decode
         self.model_encode = encode
     
-    # def encode_mu(self, src, econds, src_mask):
-    #     _, mu, _ = self.encoder(src, econds, src_mask)
-    #     return mu
-    
     def encode(self, src, conds, src_mask):
         z, mu, log_var = self.model_encode(src, conds, src_mask)
         return z, mu, log_var
 
-    def predict(self, trg, z, conds, src_mask, trg_mask):
-        if self.use_cond2dec == True:
-            outputs = self.model_decode(trg, z, conds, src_mask,
-                                        trg_mask)[:, 3:, :]
+    def predict(self, **kwargs):
+        if self.use_cond2dec:
+            output_mol = self.model_decode(**kwargs)[:, 3:, :]
         else:
-            outputs = self.model_decode(trg, z, conds,
-                                        src_mask, trg_mask)
-        output_mol = outputs
+            output_mol = self.model_decode(**kwargs)
         return F.softmax(output_mol, dim=-1)
+
+    ## older version
+    # def predict(self, trg, z, conds, src_mask, trg_mask):
+    #     if self.use_cond2dec == True:
+    #         outputs = self.model_decode(trg, z, conds, src_mask,
+    #                                     trg_mask)[:, 3:, :]
+    #     else:
+    #         outputs = self.model_decode(trg, z, conds,
+    #                                     src_mask, trg_mask)
+    #     output_mol = outputs
+    #     return 
 
 
 # class Predictor(object):

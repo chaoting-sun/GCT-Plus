@@ -29,12 +29,18 @@ class Encoder(nn.Module):
 
     def forward(self, src, conds, mask):
         cond2enc = self.embed_cond2enc(conds)
-        cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1) 
+        cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
+        # print('conds:', conds)
+        # print('cond2enc:', cond2enc)
+        # print('weight:', self.embed_cond2enc.weight)
+        # print('bias:', self.embed_cond2enc.bias)
+        # exit()
         x = self.embed_sentence(src)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
         for i in range(self.N):
             x = self.layers[i](x, mask)
+
         x = self.norm(x)
 
         mu = self.fc_mu(x)
@@ -69,25 +75,39 @@ class Decoder(nn.Module):
         self.norm = Norm(d_model)
 
     def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
+        # e_outputs: (bs, nc+src_len, lat_dim)
+        # src_mask: (bs, 1, nc+src_len)
+        # trg_mask: (bs, trg_len-1, trg_len-1)
         x = self.embed(trg)
+        # x: (bs, trg_len-1, d_model)        
         e_outputs = self.fc_z(e_outputs)
+        # e_outputs: (bs, nc+src_len, d_model)
 
         if self.use_cond2dec == True:
             cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
-            x = torch.cat([cond2dec, x], dim=1) # trg + cond
+            x = torch.cat([cond2dec, x], dim=1)
+            # x: (bs, (nc+src_len)+(trg_len-1), d_model)
         elif self.use_cond2lat == True:
             cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
+            # cond2lat: (bs, nc, d_model)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1)
+            # e_outputs: (bs, nc+(nc+src_len), d_model)
         x = self.pe(x)
+
+        if self.use_cond2lat == True:
+            cond_mask = torch.unsqueeze(cond_input, -2)
+            cond_mask = torch.ones_like(cond_mask, dtype=bool)
+            src_mask = torch.cat([cond_mask, src_mask], dim=2)
+            # src_mask: (bs, 1, nc+(nc+src_len))
 
         for i in range(self.N):
             x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
         return self.norm(x)
 
-class CVAETF(nn.Module):
+class Cvaetf(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
-        super(CVAETF, self).__init__()
+        super(Cvaetf, self).__init__()
         # settings
         self.nconds = nconds
         self.use_cond2dec = use_cond2dec
@@ -111,6 +131,14 @@ class CVAETF(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
+    def encode(self, src, conds, src_mask):
+        z, mu, log_var = self.encoder(src, conds, src_mask)
+        return z, mu, log_var
+
+    def decode(self, trg, z, conds, src_mask, trg_mask):
+        x = self.decoder(trg, z, conds, src_mask, trg_mask)
+        return self.out(x)
+
     def forward(self, src, trg, econds, dconds, src_mask, trg_mask):
         z, mu, log_var = self.encoder(src, econds, src_mask)
         d_output = self.decoder(trg, z, dconds, src_mask, trg_mask)
@@ -123,13 +151,3 @@ class CVAETF(nn.Module):
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
         return output_prop, output_mol, mu, log_var, z
-
-    def encode(self, src, conds, src_mask):
-        z, mu, log_var = self.encoder(src, conds, src_mask)
-        return z, mu, log_var
-
-    def decode(self, trg, z, conds, src_mask, trg_mask):
-        x = self.decoder(trg, z, conds, src_mask, trg_mask)
-        return self.out(x)
-
-

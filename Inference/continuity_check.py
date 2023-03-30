@@ -6,11 +6,12 @@ from torchtext import data
 from rdkit.Chem import MolFromSmiles
 from moses.metrics import SNNMetric
 from pathos.multiprocessing import ProcessingPool as Pool
-
-from Utils.properties import get_mol, get_smiles
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
-from Utils.properties import predict_props
 from Utils.dataset import to_dataloader
+from Model.build_model import get_generator
+from Utils.smiles import murcko_scaffold, plot_smiles_group
+from Utils.field import smi_to_id
+
 
 
 class ContinuityCheck:
@@ -285,7 +286,7 @@ def build_save_path(args):
     return save_folder
 
 
-def continuity_check(args, generator, train_smiles, logger):
+def continuity_check1(args, generator, train_smiles, logger):
     save_folder = build_save_path(args)
 
     LOG = logger(f'continuity check on {args.test_for}',
@@ -299,3 +300,74 @@ def continuity_check(args, generator, train_smiles, logger):
         ccoc = ContinuityCheckOnConds(args, generator, train_smiles, LOG)
         ccoc.generate(save_folder)
     
+
+def continuity_check(
+        args,
+        toklen_data,
+        train_smiles,
+        test_smiles,
+        scaler,
+        SRC,
+        TRG,
+        device,
+        logger
+    ):
+    n_tests = 5
+    n_samples = 5
+    prop = [2, 50, 0.85]
+    
+    save_folder = os.path.join(args.infer_path, args.benchmark,
+                               'continuity_check', args.model_name)
+    os.makedirs(save_folder, exist_ok=True)
+    
+    LOG = logger(name='scaffold sampling', log_path=os.path.join(save_folder, 'record.log'))
+
+    LOG.info('Prepare generator...')
+
+    args.model_path = os.path.join(args.train_path, args.benchmark,
+                                   args.model_name, f'model_{args.epoch}.pt')
+    generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    
+    LOG.info('Prepare test data...')
+    
+    np.random.seed(0)
+        
+    test_smiles = np.random.choice(test_smiles, n_tests, replace=False)
+    with Pool(args.n_jobs) as pool:
+        src_list = list(pool.map(murcko_scaffold, test_smiles))
+
+    LOG.info('Prepare latent space input...')
+
+    toklen = 35
+    n_zs = 15
+    n_samples = 5
+
+    LOG.info('Sample smiles...')
+
+    for i, src in enumerate(src_list):    
+        LOG.info(f'Sample SMILES {i}...')    
+        LOG.info('source: %s', src)
+
+        src_ids = smi_to_id(src, TRG)
+
+        if args.model_type == 'scacvaetfv1':
+            sampled_z = generator.sample_z(toklen=len(src_ids)+toklen, n=2)
+        elif args.model_type == 'scacvaetfv2':
+            sampled_z = generator.sample_z(toklen=len(args.property_list)
+                                                 +len(src_ids)
+                                                 +toklen, n=2)
+
+        z_vec = (sampled_z[1] - sampled_z[0]) / (n_zs - 1)
+        all_zs = [sampled_z[0]+z_vec*j for j in range(n_zs)]
+        
+        collected_smi = []
+        
+        for j in range(len(all_zs)):
+            zs = all_zs[j].repeat(n_samples, 1, 1)        
+            trg_prop = np.repeat([prop], n_samples, axis=0)        
+            gen, _, _ = generator.sample_smiles(trg_prop, src_ids, zs, transform=True)
+            LOG.info('gen: %s', gen)
+            collected_smi.append(gen[0])
+
+        collected_smi = [src] + collected_smi
+        plot_smiles_group(collected_smi, f'{i}.png')

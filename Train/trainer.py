@@ -1,29 +1,16 @@
 import os
-import gc
-
 import torch
-from time import time
 import numpy as np
 import pandas as pd
-from functools import reduce
-from torchtext import data
+from time import time
 import torch.nn.functional as F
 import torch.distributed as dist
+import gc
+from functools import reduce
 from Utils.dataset import get_loader
 from Model.modules import create_source_mask, create_target_mask
-
-
-def reduce_val(val, size, method):
-    group = dist.new_group(list(range(size)))
-    tensor = torch.tensor([val])
-
-    if method == 'sum':
-        # result of reduction is stored in tensor and return None
-        dist.reduce(tensor, dst=0, op=dist.ReduceOp.SUM, group=group)
-    elif method == 'avg':
-        dist.reduce(tensor, dst=0, op=dist.ReduceOp.SUM, group=group)
-        tensor /= size
-    return tensor.item()
+# from GPUtil import showUtilization as gpu_usage
+# from torch.cuda.amp import GradScaler, autocast
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -53,82 +40,136 @@ def save_checkpoint(args, model, optimizer, save_path):
     for name in hyper_param_names:
         hyper_param_values[name] = getattr(args, name)
 
-    try:
-        model_state_dict = model.module.state_dict()
-    except AttributeError:
-        model_state_dict = model.state_dict()
-    # ref: https://github.com/pytorch/pytorch/issues/9176
-
     save_dict = {
-        'model_state_dict': model_state_dict,
-        'opt_state_dict'  : optimizer.state_dict(),
-        'model_params'    : hyper_param_values
+        'model_state_dict': model.state_dict(),
+        'opt_state_dict': optimizer.state_dict(),
+        'model_params': hyper_param_values
     }
     torch.save(save_dict, save_path)
 
 
-def run_epoch(args, model, optimizer, dataloader,
-              current_step, beta, LOG, train):
-
+def decode_check(preds_mol, TRG):
+    from Utils.smiles import get_mol
+    
+    prob = F.softmax(preds_mol, dim=-1)
+    decoded_strings = []
+    valid_mols = 0
+    for batch_id in range(prob.size(0)):
+        decoded_str = []
+        for position_id in range(prob.size(1)):
+            token_id = torch.multinomial(prob[batch_id, position_id], 1)[0]
+            if token_id == TRG.vocab.stoi['<eos>']:
+                break
+            decoded_char = TRG.vocab.itos[token_id]
+            decoded_str.append(decoded_char)
+        smiles = "".join(decoded_str)
+        decoded_strings.append(smiles)
+        if get_mol(smiles) is not None:
+            valid_mols += 1
+    print('valid ratio (%):', valid_mols / prob.size(0) * 100)
+    return decoded_strings
+        
+        
+def run_epoch(args, model, optimizer, dataloader, current_step,
+              beta, LOG, world_size, train):
     n_samples = 0
     n_printevery = 1
     history = {'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': []}
-
     model_cost_time = update_cost_time = 0
     cost_time = -time()
 
+    # Create a GradScaler for mixed precision training
+    # if train:
+    #     scaler = GradScaler()
+
     for i, batch in enumerate(dataloader):
         current_step += 1
-
+        n_onebatch = batch['src'].size(0)
         trg_input = batch['trg'][:, :-1]
-
-        # dim of out: (batch_size, max_trg_seq_length-1, d_model)
-        src_mask = create_source_mask(
-            batch['src'], args.pad_id, batch['econds'])
-        trg_mask = create_target_mask(
-            trg_input, args.pad_id, batch['dconds'],
-            args.use_cond2dec)
-
+        
         model_cost_time -= time()
+        
+        # Handle different model types
+        if args.model_type in ('cvaetf', 'scacvaetfv1', 'scacvaetfv3'):
+            src_mask = create_source_mask(
+                batch['src'], args.pad_id, batch['econds'])
+            trg_mask = create_target_mask(
+                trg_input, args.pad_id, batch['dconds'],
+                args.use_cond2dec)
 
-        preds_prop, preds_mol, mu, log_var, _ = model.forward(
-            src=batch['src'],
-            trg=trg_input,
-            econds=batch['econds'],
-            mconds=batch['mconds'],
-            dconds=batch['dconds'],
-            src_mask=src_mask,
-            trg_mask=trg_mask,
-        )
+            # with autocast():
+            preds_prop, preds_mol, mu, log_var, _ = model.forward(
+                src=batch['src'],
+                trg=trg_input,
+                econds=batch['econds'],
+                dconds=batch['dconds'],
+                src_mask=src_mask,
+                trg_mask=trg_mask,
+            )
+        
+        elif args.model_type == 'scacvaetfv2':
+            src_enc_mask = create_source_mask(
+                torch.cat((batch['src_scaffold'], batch['src']), 1),
+                args.pad_id, batch['econds'])
+            # src_enc_mask: (bs, 1, nc+sca+src)
+            src_dec_mask = create_source_mask(
+                batch['trg_scaffold'],
+                args.pad_id, batch['dconds'])
+            # src_dec_mask: (bs, 1, nc+<sos>sca<eos>)
+            trg_mask = create_target_mask(
+                trg_input, args.pad_id, batch['dconds'],
+                args.use_cond2dec)
 
+            # with autocast():
+            preds_prop, preds_mol, mu, log_var, _ = model.forward(
+                src=batch['src'],
+                trg=trg_input,
+                src_scaffold=batch['src_scaffold'],
+                trg_scaffold=batch['trg_scaffold'],
+                econds=batch['econds'],
+                dconds=batch['dconds'],
+                src_enc_mask=src_enc_mask,
+                src_dec_mask=src_dec_mask,
+                trg_mask=trg_mask,
+            )
+            
         model_cost_time += time()
 
-        ys_mol = batch['trg'][:, 1:].contiguous().view(-1)
+        ys_mol = trg_input.contiguous().view(-1)
         ys_cond = torch.unsqueeze(batch['dconds'], 2).contiguous(
-        ).view(-1, len(args.property_list), 1)
-
+            ).view(-1, len(args.property_list), 1)
+        
         update_cost_time -= time()
-
+        
         if train:
-            optimizer.zero_grad(set_to_none=True)
+            optimizer.zero_grad(set_to_none=True)    
 
-        loss, RCE_mol, RCE_prop, KLD = loss_function(beta, preds_prop, preds_mol, ys_cond, ys_mol, mu,
-                                                     log_var, args.use_cond2dec, args.pad_id)
-
+        # Calculate loss
+        # with autocast():
+        loss, RCE_mol, RCE_prop, KLD = loss_function(
+            beta, preds_prop, preds_mol, ys_cond, ys_mol,
+            mu, log_var, args.use_cond2dec, args.pad_id)
+        
+        # Update gradients and optimizer for training
         if train:
+            # scaler.scale(loss).backward()
+            # scaler.step(optimizer)
+            # scaler.update()
             loss.backward()
             optimizer.step()
-
+            
         update_cost_time += time()
 
+        # Learning rate scheduler
         if args.lr_scheduler == "WarmUpDefault":
             k1, k2, k3 = 0.5, 1.5, 0.5
             head = np.float(np.power(np.float(current_step), -k1))
             tail = np.float(current_step) * \
                 np.power(np.float(args.lr_WarmUpSteps), -k2)
             lr = np.float(np.power(np.float(args.d_model), -k3)) * \
-                min(head, tail)
-
+                      min(head, tail)
+            # lr = base_lr*np.sqrt(int(world_size*(args.batch_size/128)))
+        
         if train:
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
@@ -136,16 +177,14 @@ def run_epoch(args, model, optimizer, dataloader,
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
 
-        n_onebatch = len(batch['src'])
         n_samples += n_onebatch
 
         history['RCE'].append(RCE_mol.item() / n_onebatch)
         history['KLD'].append(KLD.item() / n_onebatch)
         history['LOSS'].append(loss.item() / n_onebatch)
+        # history['LOSS'].append(loss.detach().item() / n_onebatch)
         history['BETA'].append(beta)
         history['LR'].append(current_lr)
-
-        torch.cuda.empty_cache()
 
         total_cost_time = time() + cost_time
 
@@ -159,17 +198,11 @@ def run_epoch(args, model, optimizer, dataloader,
 
         if (i + 1) % n_printevery == 0:
             LOG.info(details)
-            # print(details)
 
     if train:  # training phase
         return history,  current_step
     else:  # validation phase
         return history
-
-
-def set_barrier(world_size):
-    if world_size > 1:
-        return
 
 
 def train_model(args, model, optimizer, train_loader, valid_loader,
@@ -203,7 +236,7 @@ def train_model(args, model, optimizer, train_loader, valid_loader,
 
         train_history, current_step = run_epoch(args,
                                                 model, optimizer, train_loader, current_step,
-                                                beta, LOG, train=True)
+                                                beta, LOG, world_size, train=True)
 
         LOG.info('Save training results...')
 
@@ -253,8 +286,8 @@ def train_model(args, model, optimizer, train_loader, valid_loader,
                     res_path = os.path.join(args.model_folder,
                                             f'{data_type}_{epoch}_r{rank_i}.csv')
                     his_list.append(pd.read_csv(res_path, index_col=[0]))
-                    if not args.debug:
-                        os.remove(res_path)
+                    # if not args.debug:
+                    #     os.remove(res_path)
 
                 df_rce = reduce(
                     lambda x, y: x[['RCE']] + y[['RCE']], his_list) / world_size

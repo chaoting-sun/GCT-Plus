@@ -73,16 +73,23 @@ class DecoderLayer(nn.Module):
         # 1. masked multi-head self-attention
         x2 = self.norm_1(x)
         # dim: -> (batch_size, trg_maxstr-1, d_model)
+
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         # 2. multi-head self-attention
         x2 = self.norm_2(x)
-        if self.use_cond2lat == True:
-            cond_mask = torch.unsqueeze(cond_input, -2)
-            cond_mask = torch.ones_like(cond_mask, dtype=bool)
-            src_mask = torch.cat([cond_mask, src_mask], dim=2)
+        # if self.use_cond2lat == True:
+        #     cond_mask = torch.unsqueeze(cond_input, -2)
+        #     cond_mask = torch.ones_like(cond_mask, dtype=bool)
+        #     src_mask = torch.cat([cond_mask, src_mask], dim=2)
+            # src_mask: (bs, 1, nc+(nc+src_len))
+        
         # dim: -> (batch_size, trg_maxstr-1, d_model)
 
         # print(f'x2:{x2.size()}, e_outputs: {e_outputs.size()}, src_mask: {src_mask.size()}')
+        # print(x2.size(), e_outputs.size(), src_mask.size())
+
+        # print('DecoderLayer2:', x2.size(), e_outputs.size(), src_mask.size())
+
         x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))
         # 3. position-wise feed-forward
         x2 = self.norm_3(x)

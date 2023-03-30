@@ -35,8 +35,11 @@ def augment_z(n, z, std=None):
 
 
 def prepare_generator(args, SRC, TRG, toklen_data, scaler, device):
-    model = get_model(args, len(SRC.vocab), len(TRG.vocab))
+    model = get_model(args, len(SRC.vocab), len(TRG.vocab), device)
     model = model.to(device)
+
+    print(f'#parameters: {sum(p.numel() for p in model.parameters())}')
+
     model.eval()
 
     predictor = Predictor(args.use_cond2dec,
@@ -49,6 +52,7 @@ def prepare_generator(args, SRC, TRG, toklen_data, scaler, device):
         'use_cond2dec': args.use_cond2dec,
         'decode_algo' : args.decode_algo,
         'toklen_data' : toklen_data,
+        'cond_dim'    : len(args.property_list),
         'scaler'      : scaler,
         'device'      : device,
         'TRG'         : TRG,

@@ -7,9 +7,9 @@ from rdkit.Chem import MolFromSmiles
 from moses.metrics import SNNMetric
 from pathos.multiprocessing import ProcessingPool as Pool
 
-from Utils.properties import get_mol, get_smiles
+from Utils.smiles import smi_to_mol, mol_to_smi
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
-from Utils.properties import predict_props
+# from Utils.properties import predict_props
 from Utils.dataset import to_dataloader
 from Model.build_model import get_model
 from Inference.model_prediction import Predictor
@@ -125,9 +125,9 @@ class ContinuityCheck:
             smiles = smiles["smiles"].dropna().tolist()
             
             with Pool(self.n_jobs) as pool:
-                mols = pool.map(get_mol, smiles)
+                mols = pool.map(smi_to_mol, smiles)
                 mols = [mol for mol in mols if mol]
-                smis = pool.map(get_smiles, mols) # canonical
+                smis = pool.map(mol_to_smi, mols) # canonical
             
             m = get_basic_metrics(smiles, self.train_smiles, self.n_jobs)
 

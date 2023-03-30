@@ -13,17 +13,18 @@ from Utils.log import get_logger
 from Utils.seed import set_seed 
 from Configuration.config import hard_constraints_opts
 from Utils import allocate_gpu
-from Utils.field import smiles_fields, condition_fields
-from Inference.uniform_generation import fast_uniform_generation
+from Utils.field import smiles_field, condition_fields
+# from Inference.uniform_generation import fast_uniform_generation
 # from Inference.generate_z import generate_z
 # from Inference.varying_z_generate import varying_z_generate
+# from Inference.continuity_check import continuity_check
 from Inference.continuity_check import continuity_check
-from Inference.fast_continuity_check import fast_continuity_check
-from Inference.src_generation import fast_src_generation
-from Inference.src_rotator_generation import fast_src_rotator_generation
-from Inference.test_encoder import fast_test_encoder
-from Inference.test_decoder import test_decoder
-from Inference.src_generation_mmps import fast_src_generation_mmps
+# from Inference.src_generation import fast_src_generation
+# from Inference.src_rotator_generation import fast_src_rotator_generation
+from Inference.test_encoder import test_encoder
+# from Inference.test_decoder import test_decoder
+# from Inference.src_generation_mmps import fast_src_generation_mmps
+from Inference.scaffold_sampling import scaffold_sampling
 
 # from Inference.atten_generate import atten_generate
 
@@ -72,17 +73,24 @@ def add_args(parser):
 
     parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
     parent_parser.add_argument('-n_jobs', type=int, default=4)
-    parent_parser.add_argument('-model_name', type=str, required=True)
+    parent_parser.add_argument('-data_folder', type=str)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
+    
+    parent_parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset')
+    parent_parser.add_argument('-infer_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
+    parent_parser.add_argument('-model_name', type=str, required=True)
+    parent_parser.add_argument('-epoch', type=int, required=True)
+
+    parent_parser.add_argument('-debug', action='store_true')
     """
     Continuity check
     """
     cc_parser = subparsers.add_parser('continuity-check', parents=[parent_parser])
     cc_parser.add_argument('-continuity_check', action='store_true')
-    cc_parser.add_argument('-properties', type=float, nargs='+', default=[3.075,93.411,0.609])
-    cc_parser.add_argument('-toklen', type=int, default=30)
-    cc_parser.add_argument('-n_steps', type=int, default=40)
-    cc_parser.add_argument('-n_samples', type=int, default=50)
+    # cc_parser.add_argument('-properties', type=float, nargs='+', default=[3.075,93.411,0.609])
+    # cc_parser.add_argument('-toklen', type=int, default=30)
+    # cc_parser.add_argument('-n_steps', type=int, default=40)
+    # cc_parser.add_argument('-n_samples', type=int, default=50)
     """
     Uniform generation
     """
@@ -96,7 +104,7 @@ def add_args(parser):
     sg_parser = subparsers.add_parser('src-generation', parents=[parent_parser])
     sg_parser.add_argument('-src_generation', action='store_true')
     sg_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
-    sg_parser.add_argument('-n_samples', type=int, default=1000)
+    sg_parser.add_argument('-n_samples', type=int, default=5000)
     sg_parser.add_argument('-n_selections', type=int, default=5)
     sg_parser.add_argument('-src_smiles', type=str)
     sg_parser.add_argument('-trg_props', type=float, nargs='+')
@@ -107,7 +115,6 @@ def add_args(parser):
     sgm_parser = subparsers.add_parser('src-generation-mmps', parents=[parent_parser])
     sgm_parser.add_argument('-src_generation_mmps', action='store_true')
 
-    sgm_parser.add_argument('-data_folder', type=str)
     sgm_parser.add_argument('-data_name', type=str)
     sgm_parser.add_argument('-n_steps', type=int, nargs='+', default=[1])
     sgm_parser.add_argument('-n_samples', type=int, default=1000)
@@ -130,12 +137,20 @@ def add_args(parser):
     """
     et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
     et_parser.add_argument('-encoder_test', action='store_true')
+    et_parser.add_argument('-model_type', type=str, required=True)
     
     """
     decoder test
     """
     dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
     dt_parser.add_argument('-decoder_test', action='store_true')
+
+    """
+    sample with scaffold
+    """
+    ss_parser = subparsers.add_parser('scaffold-sampling', parents=[parent_parser])
+    ss_parser.add_argument('-scaffold_sampling', action='store_true')
+    ss_parser.add_argument('-prop', type=float, nargs='+')
 
 
 def find_best_source():
@@ -166,42 +181,63 @@ if __name__ == "__main__":
     device = allocate_gpu()
     print("device:", device)
     
+    util_path = os.path.join(args.data_folder, 'utils')
+    
     bm = benchmark_settings[args.benchmark]
     args.max_strlen = bm['max_strlen']
 
-    scaler = get_scaler(args.property_list, os.path.join(args.data_folder, 'utils'))
-    SRC, TRG = smiles_fields(os.path.join(args.data_folder, 'utils'))
+    # get fields
+
+    if args.model_type == 'scacvaetfv1' or args.model_type == 'scacvaetfv2':
+        SRC, TRG = smiles_field(args.property_list, util_path, suffix='molgct')
+        scaler = joblib.load(os.path.join(util_path,
+            f'scaler_molgct.pkl'))
+
+    elif args.model_type == 'scacvaetfv3':
+        SRC, TRG = smiles_field(args.property_list, util_path)
+        scaler = joblib.load(os.path.join(util_path,
+            f'scaler_{"-".join(args.property_list)}.pkl'))
+
     COND = condition_fields(args.property_list)
     
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
 
-    print("Get train smiles...")
-    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'smiles_serial.csv'))
+    # get train/test smiles
+
+    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
     train_smiles = train_smiles['smiles'].tolist()
+    test_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
+    test_smiles = test_smiles['smiles'].tolist()    
 
     if hasattr(args, 'continuity_check'):
-        fast_continuity_check(args, toklen_data, train_smiles, 
-                              scaler, SRC, TRG, device, logger)
+        continuity_check(args, toklen_data, train_smiles, test_smiles,
+                         scaler, SRC, TRG, device, logger)
     
-    if hasattr(args, 'uniform_generation'):
-        fast_uniform_generation(args, train_smiles, SRC, TRG, 
-                                toklen_data, scaler, device, logger)
+    # if hasattr(args, 'uniform_generation'):
+    #     fast_uniform_generation(args, train_smiles, SRC, TRG, 
+    #                             toklen_data, scaler, device, logger)
         
-    if hasattr(args, 'src_generation'):
-        fast_src_generation(args, toklen_data, train_smiles, 
-                            scaler, SRC, TRG, COND, device, logger)
+    # if hasattr(args, 'src_generation'):
+    #     fast_src_generation(args, toklen_data, train_smiles, 
+    #                         scaler, SRC, TRG, COND, device, logger)
 
-    if hasattr(args, 'src_generation_mmps'):
-        print('use function - fast_src_generation_mmps...')
-        fast_src_generation_mmps(args, toklen_data, train_smiles, 
-                                 scaler, SRC, TRG, COND, device, logger)
+    # if hasattr(args, 'src_generation_mmps'):
+    #     print('use function - fast_src_generation_mmps...')
+    #     fast_src_generation_mmps(args, toklen_data, train_smiles, 
+    #                              scaler, SRC, TRG, COND, device, logger)
 
-    if hasattr(args, 'src_rotator_generation'):
-        fast_src_rotator_generation(args, toklen_data, train_smiles, 
-                                     scaler, SRC, TRG, COND, device, logger)
+    # if hasattr(args, 'src_rotator_generation'):
+    #     fast_src_rotator_generation(args, toklen_data, train_smiles, 
+    #                                  scaler, SRC, TRG, COND, device, logger)
 
     if hasattr(args, 'encoder_test'):
-        fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)
+        test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)
 
-    if hasattr(args, 'decoder_test'):
-        test_decoder(args, toklen_data, scaler, SRC, TRG, device)
+    # if hasattr(args, 'decoder_test'):
+    #     test_decoder(args, toklen_data, scaler, SRC, TRG, device)
+
+    elif hasattr(args, 'scaffold_sampling'):
+        scaffold_sampling(args, toklen_data, train_smiles, test_smiles,
+                          scaler, SRC, TRG, device, logger)
+        
+    

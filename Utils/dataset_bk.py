@@ -7,8 +7,7 @@ import torch
 from torchtext import data
 from torch.utils.data import Dataset
 
-from Utils.smiles import smi_to_mol, randomize_smiles
-from Utils.properties import property_fn
+from Utils.properties import to_mol, property_fcn
 from functools import partial
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -39,7 +38,7 @@ def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:
     condition_dict = {}
 
     pool = Pool(n_jobs)
-    mol = list(pool.map(smi_to_mol, dataset))
+    mol = list(pool.map(to_mol, dataset))
 
     for prop in condition_list:
         results = pool.map(property_fcn[prop], mol)
@@ -249,8 +248,7 @@ def get_loader(data_iter, property_list, pad_id, max_strlen,
 
 class SmilesDataset(Dataset):
     def __init__(self, input_data, property_list, SRC=None, TRG=None,
-                 include_mconds=False, use_scaffold=False,
-                 randomize=False):
+                 include_mconds=False, use_scaffold=False):
         self.SRC = SRC
         self.TRG = TRG
         self.data = input_data
@@ -259,34 +257,25 @@ class SmilesDataset(Dataset):
         self.pad_id = SRC.vocab.stoi['<pad>']
         self.include_mconds = include_mconds
         self.use_scaffold = use_scaffold
-        self.randomize = randomize
         
     def __getitem__(self, rid):
         item = {}
         row = self.data.iloc[rid]
-        src = trg = src_scaffold = trg_scaffold = None
 
         if 'src' in row:
-            src = randomize_smiles(row['src']) if self.randomize else row['src']
-            item['src'] = self.SRC.tokenize(src)
+            assert self.SRC is not None
+            item['src'] = self.SRC.tokenize(row['src'])
             item['econds'] = [row[f'src_{p}'] for p in self.property_list]
             if self.use_scaffold:
-                src_scaffold = randomize_smiles(row['src_scaffold']) if self.randomize else row['src_scaffold']
-                item['src_scaffold'] = self.SRC.tokenize(src_scaffold)
-                
+                assert isinstance(row['src_scaffold'], str) is True, row
+                item['src_scaffold'] = self.SRC.tokenize(row['src_scaffold'])
+        
         if 'trg' in row:
-            if src is not None:
-                trg = src
-            else:
-                trg = randomize_smiles(row['trg']) if self.randomize else row['trg']
-            item['trg'] = self.TRG.tokenize(trg)
+            assert self.TRG is not None
+            item['trg'] = self.TRG.tokenize(row['trg'])
             item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
             if self.use_scaffold:
-                if src_scaffold is not None:
-                    trg_scaffold = src_scaffold
-                else:
-                    trg_scaffold = randomize_smiles(row['trg_scaffold']) if self.randomize else row['trg_scaffold']
-                item['trg_scaffold'] = self.TRG.tokenize(trg_scaffold)
+                item['trg_scaffold'] = self.TRG.tokenize(row['trg_scaffold'])
 
         if self.include_mconds:
             assert 'econds' in item and 'dconds' in item
@@ -300,32 +289,22 @@ class SmilesDataset(Dataset):
     @classmethod
     def collate_fcn(cls, raw_batch, SRC, TRG, device):
         batch = {}
-        src = trg = None
         
-        if 'src_scaffold' in raw_batch[0]:
-            src = [b['src_scaffold']+b['src'] for b in raw_batch]            
-        elif 'src' in raw_batch[0]:
-            src = [b['src'] for b in raw_batch]
+        for smi in ('src', 'src_scaffold'):
+            if smi in raw_batch[0]:
+                batch[smi] = SRC.process([b[smi] for b in raw_batch]).to(device)
+                if not SRC.batch_first:
+                    batch[smi] = batch[smi].T
 
-        if 'trg_scaffold' in raw_batch[0]:
-            trg = [b['trg_scaffold']+b['trg'] for b in raw_batch]
-        elif 'trg' in raw_batch[0]:
-            trg = [b['trg'] for b in raw_batch]
-
-        if src is not None:
-            batch['src'] = SRC.process(src).to(device)
-            if not SRC.batch_first:
-                batch['src'] = batch['src'].T
-
-        if trg is not None:
-            batch['trg'] = TRG.process(trg).to(device)
-            if not TRG.batch_first:
-                batch['trg'] = batch['trg'].T
-
-        for prop in ['econds', 'dconds', 'mconds']:
+        for smi in ('trg', 'trg_scaffold'):
+            if smi in raw_batch[0]:
+                batch[smi] = TRG.process([b[smi] for b in raw_batch]).to(device)
+                if not TRG.batch_first:
+                    batch[smi] = batch[smi].T
+        
+        for prop in ('econds', 'dconds', 'mconds'):
             if prop in raw_batch[0]:
-                batch[prop] = torch.tensor(
-                    [b[prop] for b in raw_batch],
+                batch[prop] = torch.tensor([b[prop] for b in raw_batch],
                     dtype=torch.float32).to(device)
         return batch
     
@@ -338,7 +317,7 @@ class SmilesDataset(Dataset):
     #             [batch['src'] for batch in raw_batch]).to(device)
     #         if not SRC.batch_first:
     #             prepared_batch['src'] = prepared_batch['src'].T
-    ## gvh-127
+
     #     if 'trg' in raw_batch[0]:
     #         prepared_batch['trg'] = TRG.process(
     #             [batch['trg'] for batch in raw_batch]).to(device)
@@ -426,4 +405,4 @@ class DataloaderPreparation:
             shuffle,
             drop_last
         )
-
+        

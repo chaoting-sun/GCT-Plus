@@ -3,11 +3,20 @@ import pandas as pd
 import torch
 import numpy as np
 import dill as pickle
+import seaborn as sns
+from torchtext import data
+from sklearn.utils import shuffle
+import matplotlib.pyplot as plt
+from pathos.multiprocessing import ProcessingPool as Pool
+from Model.build_model import get_generator
+from Utils.dataset import SmilesDataset
+
 from Inference.utils import prepare_generator
 from torchtext.data import Example, Dataset
-from pathos.multiprocessing import ProcessingPool as Pool
 from Utils.properties import tanimoto_similarity as similarity_fcn
-from sklearn.utils import shuffle
+from Model.collate_fn import get_collate_fn
+from torch.utils.data import DataLoader
+from Model.modules import create_source_mask
 
 
 def distance_fcn(z1, z2):
@@ -123,7 +132,63 @@ def sample_low_similarity_pairs(each_iterval_cnt, SRC):
     return pair_ids
 
 
-def fast_test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device):
+@torch.no_grad()    
+def sample_encoder_outputs(args, toklen_data, scaler, SRC, TRG, COND, device):
+    args.model_path = os.path.join(args.train_path,
+                                   args.benchmark,
+                                   args.model_name,
+                                   f'model_{args.epoch}.pt')
+    generator = get_generator(args, SRC, TRG, toklen_data,
+                              scaler, device)
+
+    train = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_sca-s1.00.csv")
+    train = SmilesDataset(train, args.property_list, SRC, TRG, use_scaffold=True)
+    collate_fn = get_collate_fn(args.model_type, SRC, TRG, device)
+    dataloader = DataLoader(train, batch_size=256, drop_last=False,
+                            collate_fn=collate_fn, shuffle=False)
+
+    z_outputs = []
+    
+    for i, batch in enumerate(dataloader):
+        if args.model_type == 'scacvaetfv1':
+            src_mask = create_source_mask(
+                batch['src'],
+                TRG.vocab.stoi['<pad>'],
+                batch['econds']
+            )
+            z, mu, log_var = generator.encode(
+                src=batch['src'],
+                conds=batch['econds'],
+                src_mask=src_mask
+            )
+        elif args.model_type == 'scacvaetfv2':
+            src_enc_mask = create_source_mask(
+                torch.cat((batch['src_scaffold'], batch['src']), 1),
+                TRG.vocab.stoi['<pad>'], batch['econds'])
+            z, mu, log_var = generator.encode(
+                src=batch['src'],
+                src_scaffold=batch['src_scaffold'],
+                conds=batch['econds'],
+                src_mask=src_enc_mask
+            )
+        
+        for d in range(z.size(-1)):
+            z_outputs.append(z[:,:,d].view(-1).cpu().numpy())
+        break
+    
+    samples = np.random.normal(loc=0, scale=1, size=1000)
+    sns.kdeplot(samples, shade=True)
+    for z in z_outputs:
+        sns.kdeplot(z)
+    plt.savefig(f"z_density-{args.model_type}.png")
+    
+
+
+def test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device):
+    sample_encoder_outputs(args, toklen_data, scaler, SRC, TRG, COND, device)
+
+    exit()
+    
     # TODO: the same SMILES with different padding
 
     each_iterval_cnt = 50
