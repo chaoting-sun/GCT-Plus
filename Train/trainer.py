@@ -9,8 +9,8 @@ import gc
 from functools import reduce
 from Utils.dataset import get_loader
 from Model.modules import create_source_mask, create_target_mask
-# from GPUtil import showUtilization as gpu_usage
-# from torch.cuda.amp import GradScaler, autocast
+from GPUtil import showUtilization as gpu_usage
+from torch.cuda.amp import GradScaler, autocast
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -70,8 +70,8 @@ def decode_check(preds_mol, TRG):
     return decoded_strings
         
         
-def run_epoch(args, model, optimizer, dataloader, current_step,
-              beta, LOG, world_size, train):
+def run_epoch(args, model, optimizer, dataloader,
+              current_step, beta, LOG, train):
     n_samples = 0
     n_printevery = 1
     history = {'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': []}
@@ -79,8 +79,8 @@ def run_epoch(args, model, optimizer, dataloader, current_step,
     cost_time = -time()
 
     # Create a GradScaler for mixed precision training
-    # if train:
-    #     scaler = GradScaler()
+    if train:
+        scaler = GradScaler()
 
     for i, batch in enumerate(dataloader):
         current_step += 1
@@ -97,15 +97,15 @@ def run_epoch(args, model, optimizer, dataloader, current_step,
                 trg_input, args.pad_id, batch['dconds'],
                 args.use_cond2dec)
 
-            # with autocast():
-            preds_prop, preds_mol, mu, log_var, _ = model.forward(
-                src=batch['src'],
-                trg=trg_input,
-                econds=batch['econds'],
-                dconds=batch['dconds'],
-                src_mask=src_mask,
-                trg_mask=trg_mask,
-            )
+            with autocast():
+                preds_prop, preds_mol, mu, log_var, _ = model.forward(
+                    src=batch['src'],
+                    trg=trg_input,
+                    econds=batch['econds'],
+                    dconds=batch['dconds'],
+                    src_mask=src_mask,
+                    trg_mask=trg_mask,
+                )
         
         elif args.model_type == 'scacvaetfv2':
             src_enc_mask = create_source_mask(
@@ -120,44 +120,45 @@ def run_epoch(args, model, optimizer, dataloader, current_step,
                 trg_input, args.pad_id, batch['dconds'],
                 args.use_cond2dec)
 
-            # with autocast():
-            preds_prop, preds_mol, mu, log_var, _ = model.forward(
-                src=batch['src'],
-                trg=trg_input,
-                src_scaffold=batch['src_scaffold'],
-                trg_scaffold=batch['trg_scaffold'],
-                econds=batch['econds'],
-                dconds=batch['dconds'],
-                src_enc_mask=src_enc_mask,
-                src_dec_mask=src_dec_mask,
-                trg_mask=trg_mask,
-            )
+            with autocast():
+                preds_prop, preds_mol, mu, log_var, _ = model.forward(
+                    src=batch['src'],
+                    trg=trg_input,
+                    src_scaffold=batch['src_scaffold'],
+                    trg_scaffold=batch['trg_scaffold'],
+                    econds=batch['econds'],
+                    dconds=batch['dconds'],
+                    src_enc_mask=src_enc_mask,
+                    src_dec_mask=src_dec_mask,
+                    trg_mask=trg_mask,
+                )
             
         model_cost_time += time()
 
-        ys_mol = trg_input.contiguous().view(-1)
+        ys_mol = batch['trg'][:, 1:].contiguous().view(-1)
         ys_cond = torch.unsqueeze(batch['dconds'], 2).contiguous(
-            ).view(-1, len(args.property_list), 1)
-        
+        ).view(-1, len(args.property_list), 1)
+
         update_cost_time -= time()
-        
+
+        # Zero gradients for training
         if train:
-            optimizer.zero_grad(set_to_none=True)    
+            optimizer.zero_grad(set_to_none=True)
 
         # Calculate loss
-        # with autocast():
-        loss, RCE_mol, RCE_prop, KLD = loss_function(
-            beta, preds_prop, preds_mol, ys_cond, ys_mol,
-            mu, log_var, args.use_cond2dec, args.pad_id)
-        
+        with autocast():
+            loss, RCE_mol, RCE_prop, KLD = loss_function(
+                beta, preds_prop, preds_mol, ys_cond, ys_mol,
+                mu, log_var, args.use_cond2dec, args.pad_id)
+
         # Update gradients and optimizer for training
         if train:
-            # scaler.scale(loss).backward()
-            # scaler.step(optimizer)
-            # scaler.update()
-            loss.backward()
-            optimizer.step()
-            
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            # loss.backward()
+            # optimizer.step()
+
         update_cost_time += time()
 
         # Learning rate scheduler
@@ -167,9 +168,8 @@ def run_epoch(args, model, optimizer, dataloader, current_step,
             tail = np.float(current_step) * \
                 np.power(np.float(args.lr_WarmUpSteps), -k2)
             lr = np.float(np.power(np.float(args.d_model), -k3)) * \
-                      min(head, tail)
-            # lr = base_lr*np.sqrt(int(world_size*(args.batch_size/128)))
-        
+                min(head, tail)
+
         if train:
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
@@ -182,7 +182,6 @@ def run_epoch(args, model, optimizer, dataloader, current_step,
         history['RCE'].append(RCE_mol.item() / n_onebatch)
         history['KLD'].append(KLD.item() / n_onebatch)
         history['LOSS'].append(loss.item() / n_onebatch)
-        # history['LOSS'].append(loss.detach().item() / n_onebatch)
         history['BETA'].append(beta)
         history['LR'].append(current_lr)
 
@@ -236,7 +235,7 @@ def train_model(args, model, optimizer, train_loader, valid_loader,
 
         train_history, current_step = run_epoch(args,
                                                 model, optimizer, train_loader, current_step,
-                                                beta, LOG, world_size, train=True)
+                                                beta, LOG, train=True)
 
         LOG.info('Save training results...')
 

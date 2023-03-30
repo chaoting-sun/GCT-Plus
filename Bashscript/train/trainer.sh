@@ -114,11 +114,11 @@ SIMILARITY=1.00
 # EPOCH=12
 
 # ScaCvaetfV2
-MODELTYPE=scacvaetfv1
-MODEL_NAME=${MODELTYPE}-s${SIMILARITY}-revised2
+MODELTYPE=scacvaetfv3
+MODEL_NAME=${MODELTYPE}-s${SIMILARITY}-revised
 START_EPOCH=1
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 CUDA_LAUNCH_BLOCKING=1 torchrun \
+CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun \
     Train.py \
         -benchmark ${BENCHMARK}      \
         -model_type ${MODELTYPE}     \
@@ -129,8 +129,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 CUDA_LAUNCH_BLOCKING=1 torchrun \
         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
         -similarity ${SIMILARITY}    \
         -use_scaffold                \
-        -batch_size 32               \
-    # >train-${MODEL_NAME}.out 2>&1 &
+        -batch_size 64               \
+    >train-${MODEL_NAME}.out 2>&1 &
 
 
 # ScaCvaetfV2

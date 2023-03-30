@@ -113,6 +113,7 @@ def save_fields(src_fields, trg_fields, field_path):
     pickle.dump(trg_fields, open(trg_field_path, 'wb'))
 
 
+<<<<<<< HEAD
 def smiles_field(properties, field_path=None, suffix=None):
     t_src = moltokenize()
     t_trg = moltokenize()
@@ -136,6 +137,33 @@ def smiles_field(properties, field_path=None, suffix=None):
         try:
             SRC = pickle.load(open(os.path.join(field_path, f'SRC_{suffix}.pkl'), 'rb'))
             TRG = pickle.load(open(os.path.join(field_path, f'TRG_{suffix}.pkl'), 'rb'))
+=======
+def smiles_field(properties, smiles_field_path=None):
+    t_src = moltokenize()
+    t_trg = moltokenize()
+    
+    SRC = data.Field(
+        tokenize=t_src.tokenizer,
+        batch_first=True,
+        unk_token='<unk>'
+    )
+    TRG = data.Field(
+        tokenize=t_trg.tokenizer,
+        batch_first=True,
+        init_token='<sos>',
+        eos_token='<eos>',
+        unk_token='<unk>'
+    )
+    
+    if smiles_field_path is not None:
+        suffix = '-'.join(properties)
+        try:
+            print(os.path.join(smiles_field_path, f'SRC_{suffix}.pkl'))
+            SRC = pickle.load(open(os.path.join(smiles_field_path, 
+                                                f'SRC_{suffix}.pkl'), 'rb'))
+            TRG = pickle.load(open(os.path.join(smiles_field_path, 
+                                                f'TRG_{suffix}.pkl'), 'rb'))
+>>>>>>> fcf9ad655023b78d35671fb9106128a1df15153d
         except:
             print(">>> Files SRC.pkl/TRG.pkl not in:" + field_path)
             exit(1)
@@ -176,6 +204,7 @@ def untokenize(tokens, vocab):
     return smi
 
 
+<<<<<<< HEAD
 def id_to_smi(ids, TRG):
     """Convert ids into smiles based on TRG.
     
@@ -214,3 +243,5 @@ def smi_to_id(smi, TRG, add_sos=False, add_eos=False):
         ids.append(TRG.vocab.stoi['<eos>'])    
     return ids
 
+=======
+>>>>>>> fcf9ad655023b78d35671fb9106128a1df15153d

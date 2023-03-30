@@ -215,12 +215,7 @@ def main(rank, world_size):
     # prepare_input_data(args.property_list, args.benchmark, raw_folder,
     #                    prepared_folder, util_folder, args.debug)
     
-    if args.model_type == 'scacvaetfv1' or args.model_type == 'scacvaetfv2':
-        SRC, TRG = smiles_field(args.property_list, util_folder, suffix='molgct')
-    elif args.model_type == 'scacvaetfv3':
-        SRC, TRG = smiles_field(args.property_list, util_folder)        
-    
-    # iter_fields, SRC, TRG = get_iter_field(args.property_list, util_folder)
+    iter_fields, SRC, TRG = get_iter_field(args.property_list, util_folder)
 
     LOG.info(f'SRC: {SRC.vocab.stoi}')
     LOG.info(f'TRG: {TRG.vocab.stoi}')
@@ -296,7 +291,7 @@ def main(rank, world_size):
     )
 
     # args.lr = args.lr * np.sqrt(world_size)
-    # args.lr = args.lr * np.sqrt(int(world_size*(args.batch_size/128)))
+    args.lr = args.lr * np.sqrt(int(world_size*(args.batch_size/128)))
     # rescale lr: https://github.com/Lightning-AI/lightning/discussions/3706#discussioncomment-238302
 
     if args.start_epoch > 1:

@@ -30,11 +30,6 @@ class Encoder(nn.Module):
     def forward(self, src, conds, mask):
         cond2enc = self.embed_cond2enc(conds)
         cond2enc = cond2enc.view(conds.size(0), conds.size(1), -1)
-        # print('conds:', conds)
-        # print('cond2enc:', cond2enc)
-        # print('weight:', self.embed_cond2enc.weight)
-        # print('bias:', self.embed_cond2enc.bias)
-        # exit()
         x = self.embed_sentence(src)
         x = torch.cat([cond2enc, x], dim=1)
         x = self.pe(x)
@@ -151,3 +146,84 @@ class Cvaetf(nn.Module):
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
         return output_prop, output_mol, mu, log_var, z
+
+
+def collate_fcn(ins, SRC, TRG, device):
+    outs = {}
+    
+    src = ['src', 'src_scaffold']
+    trg = ['trg', 'trg_scaffold']
+    props = ['econds', 'dconds', 'mconds']
+
+    src_ids = SRC.process([e['src'] for e in ins])
+    src_scafold_ids = SRC.process([e['src_scafold'] for e in ins])
+    # if not SRC.batch_first:
+        
+
+
+    for s in src:
+        if s in ins[0]:
+            outs[s] = SRC.process([e[s] for e in ins]).to(device)
+            if not SRC.batch_first:
+                outs[s] = outs[s].T
+
+    for t in trg:
+        if t in ins[0]:
+            outs[t] = TRG.process([e[t] for e in ins]).to(device)
+            if not TRG.batch_first:
+                outs[t] = outs[t].T
+
+    # if 'src' in outs and 'src_scaffold' in outs:
+    #     outs['src'] = 
+    
+    for p in props:
+        if p in ins[0]:
+            outs[p] = torch.tensor([e[p] for e in ins],
+                dtype=torch.float32).to(device)
+
+
+
+
+    
+    # if 'src' in raw_batch[0]:
+    #     batch['src'] = SRC.process([+b['src'] for b in raw_batch]).to(device)
+    #     if not SRC.batch_first:
+    #         batch['src'] = batch['src'].T
+
+    # if 'src' in raw_batch[0]:
+    #     batch['src'] = SRC.process([+b['src'] for b in raw_batch]).to(device)
+    #     if not SRC.batch_first:
+    #         batch['src'] = batch['src'].T
+
+
+    # if 'src_scaffold' in raw_batch[0]:
+    #     src = [b['src_scaffold']+b['src'] for b in raw_batch]            
+    # elif 'src' in raw_batch[0]:
+    #     src = [b['src'] for b in raw_batch]
+
+    # if 'trg_scaffold' in raw_batch[0]:
+    #     trg = [b['trg_scaffold']+b['trg'] for b in raw_batch]     
+    # elif 'trg' in raw_batch[0]:
+    #     trg = [b['trg'] for b in raw_batch]
+
+    # print('src:', SRC.vocab.stoi)
+    # print('trg:', TRG.vocab.stoi)
+
+    # if src is not None:
+    #     batch['src'] = SRC.process(src).to(device)
+    #     if not SRC.batch_first:
+    #         batch['src'] = batch['src'].T
+    #     print(batch['src'])
+    # if trg is not None:
+    #     batch['trg'] = TRG.process(trg).to(device)
+    #     if not TRG.batch_first:
+    #         batch['trg'] = batch['trg'].T        
+    #     print(batch['trg'])
+    # exit()
+
+    # for prop in ('econds', 'dconds', 'mconds'):
+    #     if prop in raw_batch[0]:
+    #         batch[prop] = torch.tensor(
+    #             [b[prop] for b in raw_batch],
+    #             dtype=torch.float32).to(device)
+    # return batch

@@ -32,8 +32,10 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
 
     if mask is not None:
         mask = mask.unsqueeze(1)
-        scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, float("-inf"))
+        # scores = scores.masked_fill(mask == 0, -1e9)
         
+
     scores = F.softmax(scores, dim=-1)
     scores_attn = scores
 
@@ -67,6 +69,8 @@ class MultiHeadAttention(nn.Module):
         k = self.k_linear(k).view(bs, -1, self.h, self.d_k).transpose(1, 2)
         q = self.q_linear(q).view(bs, -1, self.h, self.d_k).transpose(1, 2)
         v = self.v_linear(v).view(bs, -1, self.h, self.d_k).transpose(1, 2)
+
+        # print(q.size(), k.size(), v.size())
 
         # calculate attention using function we will define next
         scores, scores_attn = attention(q, k, v, self.d_k, mask, self.dropout)
