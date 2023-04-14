@@ -29,5 +29,5 @@
 
 python3 train_results.py \
     -begin_epoch 1       \
-    -end_epoch 11        \
-    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/scacvaetfv3-s1.00-revised/
+    -end_epoch 30        \
+    -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/ctf1/

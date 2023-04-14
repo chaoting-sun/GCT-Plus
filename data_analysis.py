@@ -9,7 +9,7 @@ import joblib
 
 from time import time
 from Configuration.config import options
-from Utils.properties import property_prediction, tanimoto_similarity
+# from Utils.properties import property_prediction, tanimoto_similarity
 from Utils.field import smiles_fields
 import matplotlib.pyplot as plt
 import dill as pickle
@@ -111,11 +111,30 @@ def select_proper_smiles():
                 (df.length <= 38)]
     
 
+def scaffold_cnt_plot():
+    df = pd.read_csv('/fileserver-gamma/chaoting/ML/dataset/moses/raw/train.csv')
+    scaffold_cnt = pd.DataFrame(df['scaffold'].value_counts())
+    scaffold_cnt = scaffold_cnt.rename(columns={ 'scaffold': 'Count' })
+    scaffold_cnt['#'] = [i+1 for i in range(len(scaffold_cnt))]
+    scaffold_cnt = scaffold_cnt[:20]
+    print(scaffold_cnt.head())
+
+    import matplotlib.pyplot as plt
+    
+    fig, ax = plt.subplots()
+    ax.bar(scaffold_cnt['#'], scaffold_cnt['Count'])
+    ax.set_xticks(scaffold_cnt['#'])
+    ax.set_xlabel('#')
+    ax.set_ylabel('Count')
+    plt.savefig('./1.png')
+    
+    exit()
 
 
 if __name__ == '__main__':
-    select_proper_smiles()    
+    scaffold_cnt_plot()
 
+    select_proper_smiles()
     exit()
 
     parser = argparse.ArgumentParser()

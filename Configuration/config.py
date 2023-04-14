@@ -1,6 +1,73 @@
 import argparse
 
 
+def model_opts(parser):
+    parser.add_argument('-N', type=int, default=6, help="# of encoder/decoder")
+    parser.add_argument('-H', type=int, default=8, help="heads of attention")
+    parser.add_argument('-d_ff', type=int, default=2048, help="dimension in feed forward network")
+    parser.add_argument('-d_model', type=int, default=512, help="embedding dimension")
+    parser.add_argument('-latent_dim', type=int, default=128)
+    parser.add_argument('-dropout', type=float, default=0.1, help="Dropout probability")
+    parser.add_argument('-variational', type=bool, default=True) # should be removed later
+    parser.add_argument('-use_cond2dec', action='store_true')
+    parser.add_argument('-use_cond2lat', action='store_true')
+    # parser.add_argument('-use_cond2dec', type=bool, default=False)
+    # parser.add_argument('-use_cond2lat', type=bool, default=True)
+    
+
+def train_opts(parser):
+    model_opts(parser)
+    
+    """main options"""
+    parser.add_argument('-benchmark', type=str, default='moses')
+    parser.add_argument('-start_epoch', type=int, default=1)
+    parser.add_argument('-num_epoch', type=int, default=30)
+    parser.add_argument('-batch_size', type=int, default=32)
+    parser.add_argument('-property_list', nargs='+', default=[])
+    parser.add_argument('-model_type', type=str, required=True)
+    parser.add_argument('-model_folder', type=str, required=True)
+    parser.add_argument('-original_model_path', type=str)
+    parser.add_argument('-use_scaffold', action='store_true')
+    parser.add_argument('-similarity', type=float, default=1)
+
+    parser.add_argument('-randomize', action='store_true')
+    parser.add_argument('-pad_to_same_len', action='store_true')
+    parser.add_argument('-train_params', type=str, nargs='+')
+    parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
+    # parser.add_argument('-molgct_path', type=str, default='/fileserver-gamma/chaoting/ML/molGCT/')
+    # parser.add_argument('-max_strlen', type=int, default=80)
+    # parser.add_argument('-load_field', type=bool, default=True)
+    # parser.add_argument('-load_scaler', type=bool, default=True)
+    
+    parser.add_argument('-debug', action='store_true')
+    
+    """kl annealing"""
+    parser.add_argument('-use_KLA', type=bool, default=True,
+                        help='Use KL annealing during training')
+    parser.add_argument('-KLA_ini_beta', type=float, default=0.02,
+                        help='Initial KL annealing beta value')
+    parser.add_argument('-KLA_inc_beta', type=float, default=0.02,
+                        help='KL annealing beta increment value')
+    parser.add_argument('-KLA_max_beta', type=float, default=1.0,
+                        help='Maximum KL annealing beta value')
+    parser.add_argument('-KLA_beg_epoch', type=int, default=1,
+                        help='Epoch at which to begin KL annealing')
+    
+    """learning rate scheduler"""
+    parser.add_argument('-lr_scheduler', type=str, default="WarmUpDefault",
+                        help="The learning rate scheduler to use (WarmUpDefault or SGDR)")
+    parser.add_argument('-lr_WarmUpSteps', type=int, default=8000,
+                        help="The number of warmup steps to use for the WarmUpDefault scheduler")
+    parser.add_argument('-lr', type=float, default=0.0001,
+                        help="The base learning rate to use for the optimizer")
+    parser.add_argument('-lr_beta1', type=float, default=0.9,
+                        help="The beta1 value to use for the Adam optimizer")
+    parser.add_argument('-lr_beta2', type=float, default=0.98,
+                        help="The beta2 value to use for the Adam optimizer")
+    parser.add_argument('-lr_eps', type=float, default=1e-9,
+                        help="The epsilon value to use for the Adam optimizer")
+    
+
 def device_opts(parser):
     parser.add_argument('-n_jobs', type=int, default=1)
 
@@ -14,20 +81,6 @@ def preprocessing_opts(parser):
     parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
     parser.add_argument('-benchmark', type=str, default='moses')
     parser.add_argument('-all_property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
-
-
-def model_opts(parser):
-    # hard constraints
-    parser.add_argument('-model_type', type=str, default='cvaetf')
-    parser.add_argument('-N', type=int, default=6, help="# of encoder/decoder")
-    parser.add_argument('-d_model', type=int, default=512, help="embedding dimension")
-    parser.add_argument('-d_ff', type=int, default=2048, help="dimension in feed forward network")
-    parser.add_argument('-H', type=int, default=8, help="heads of attention")
-    parser.add_argument('-latent_dim', type=int, default=128)
-    parser.add_argument('-dropout', type=float, default=0.1, help="Dropout probability")
-    parser.add_argument('-use_cond2dec', type=bool, default=False)
-    parser.add_argument('-use_cond2lat', type=bool, default=True)
-    parser.add_argument('-variational', type=bool, default=True) # should be removed later
 
 
 property_bounds = {
@@ -88,10 +141,11 @@ def options(parser):
     
     # training/evaluation options
     subparsers = parser.add_subparsers(help='Choose to train or test')
-    train_opts(subparsers)
+    train_opts1(subparsers)
     evaluation_opts(subparsers)
 
     return parser
+
 
 
 def klAnnealing_opts(parser):
@@ -111,7 +165,7 @@ def optimTasks_opts(parser):
     parser.add_argument('-lr_eps', type=float, default=1e-9)
 
 
-def train_opts(parser):
+def train_opts1(parser):
     parent_parser = argparse.ArgumentParser(add_help=False)
 
     klAnnealing_opts(parent_parser)
@@ -216,3 +270,32 @@ def evaluation_opts(parser):
     att_parser.add_argument('-toklen', type=int, default=30)
     att_parser.add_argument('-n_samples', type=int, default=100)
     att_parser.add_argument('-target_props', nargs='+', default=[3.075,93.411,0.609])
+
+
+# def train_opts1(parser):
+#     model_opts(parser)
+#     klAnnealing_opts(parser)
+#     optimTasks_opts(parser)
+
+#     """main settings"""
+#     parser.add_argument('-benchmark', type=str, default='moses')
+#     parser.add_argument('-start_epoch', type=int, default=1)
+#     parser.add_argument('-num_epoch', type=int, default=30)
+#     parser.add_argument('-max_strlen', type=int, default=80)
+#     parser.add_argument('-property_list', nargs='+',
+#                         default=['logP', 'tPSA', 'QED'])
+#     parser.add_argument('-original_model_path', type=str)
+#     parser.add_argument('-model_folder', type=str, required=True)
+
+#     """sub settings"""
+#     parser.add_argument('-similarity', type=float, default=1)
+#     # parser.add_argument('-tolerance', type=float, default=0)
+#     parser.add_argument('-batch_size', type=int, default=32)
+#     parser.add_argument('-train_params', type=str, nargs='+')
+#     parser.add_argument('-randomize', action='store_true')
+#     parser.add_argument('-use_scaffold', action='store_true')
+#     parser.add_argument('-pad_to_same_len', action='store_true')
+#     parser.add_argument('-data_folder', type=str,
+#                         default='/fileserver-gamma/chaoting/ML/dataset/')
+
+#     parser.add_argument('-debug', action='store_true')

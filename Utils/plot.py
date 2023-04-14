@@ -19,9 +19,8 @@ def hist_box(data_frame, field, name="hist_box", path="./", title=None):
     plt.savefig(os.path.join(path, '{}.png'.format(name)), bbox_inches='tight')
     plt.close()
 
+
 def hist(data_frame, field, name="hist", path="./", title=None):
-
-
     title = title if title else field
 
     plt.hist(data_frame[field])
@@ -29,9 +28,10 @@ def hist(data_frame, field, name="hist", path="./", title=None):
     plt.savefig(os.path.join(path, '{}.png'.format(name)), bbox_inches='tight')
     plt.close()
 
-def hist_box_list(data_list, name="hist_box", path="./", title=None):
 
+def hist_box_list(data_list, name="hist_box", path="./", title=None):
     fig, axs = plt.subplots(1,2,figsize=(10,4))
+
     axs[0].hist(data_list, bins=100)
     axs[0].set_title(title)
     axs[1].boxplot(data_list)
@@ -40,8 +40,10 @@ def hist_box_list(data_list, name="hist_box", path="./", title=None):
     plt.savefig(os.path.join(path, '{}.png'.format(name)), bbox_inches='tight')
     plt.close()
 
+
 def scatter_hist(x, y, name, path, field=None, lims=None):
     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+
     n = len(x)
     xy = np.vstack([x+ 0.00001 * np.random.rand(n), y+ 0.00001 * np.random.rand(n)])
     z = gaussian_kde(xy)(xy)
@@ -82,3 +84,15 @@ def scatter_hist(x, y, name, path, field=None, lims=None):
     plt.savefig(os.path.join(path, '{}.png'.format(name)), bbox_inches='tight')
     plt.close()
 
+
+def kde_plot(df, save_path, xlabel, ylabel, xlimit=None,
+             figsize=(6.5, 5), lengend=True):
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
+    df.plot.kde(ax=ax, legend=lengend, xlim=xlimit)
+    if lengend:
+        ax.legend(fontsize=14)
+    ax.set_xlabel(xlabel, fontsize=20)
+    ax.set_ylabel(ylabel, fontsize=20)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    fig.savefig(save_path, bbox_inches="tight")

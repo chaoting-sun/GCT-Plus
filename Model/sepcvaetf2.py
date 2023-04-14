@@ -7,18 +7,18 @@
   - Method1: Decode -> Encoder + Sampler + MLP + Sampler + Decoder
   - Method2: Decode -> MLP + Sampler + Decoder
 """
-
-import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from .sublayers import Sampler
-from .layers import EncoderLayer, DecoderLayer
-from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, nopeak_mask, create_masks, create_source_mask, get_clones
-
+from Model import (
+    Sampler,
+    EncoderLayer,
+    DecoderLayer,
+    Embeddings,
+    PositionalEncoding,
+    Norm,
+    get_clones
+)
 
 class BLOCK(nn.Module):
     def __init__(self, z_dim):

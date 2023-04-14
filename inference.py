@@ -14,18 +14,18 @@ from Utils.seed import set_seed
 from Configuration.config import hard_constraints_opts
 from Utils import allocate_gpu
 from Utils.field import smiles_field, condition_fields
+from Inference.continuity_check import continuity_check
+from Inference.test_encoder import test_encoder
+from Inference.test_decoder import test_decoder
+from Inference.scaffold_sampling import scaffold_sampling
 # from Inference.uniform_generation import fast_uniform_generation
 # from Inference.generate_z import generate_z
 # from Inference.varying_z_generate import varying_z_generate
 # from Inference.continuity_check import continuity_check
-from Inference.continuity_check import continuity_check
 # from Inference.src_generation import fast_src_generation
 # from Inference.src_rotator_generation import fast_src_rotator_generation
-from Inference.test_encoder import test_encoder
 # from Inference.test_decoder import test_decoder
 # from Inference.src_generation_mmps import fast_src_generation_mmps
-from Inference.scaffold_sampling import scaffold_sampling
-
 # from Inference.atten_generate import atten_generate
 
 
@@ -59,23 +59,26 @@ def add_args(parser):
     latent points.
     """
     hard_constraints_opts(parser)
+    parser.add_argument('-use_scaffold', action='store_true')
 
     subparsers = parser.add_subparsers(help='choose test methods')
 
     parent_parser = argparse.ArgumentParser(add_help=False)
 
     parent_parser.add_argument('-benchmark', type=str, default='moses')
-    parent_parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED'])
+    parent_parser.add_argument('-property_list', nargs='+', default=[])
+    # parent_parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED'])
 
     parent_parser.add_argument('-encode_type', type=str, default='encode')
     parent_parser.add_argument('-decode_type', type=str, default='decode')
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
+    parent_parser.add_argument('-top_k', type=int) # top k selection in multinomial
 
     parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
     parent_parser.add_argument('-n_jobs', type=int, default=4)
     parent_parser.add_argument('-data_folder', type=str)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
-    
+
     parent_parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset')
     parent_parser.add_argument('-infer_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
     parent_parser.add_argument('-model_name', type=str, required=True)
@@ -144,6 +147,7 @@ def add_args(parser):
     """
     dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
     dt_parser.add_argument('-decoder_test', action='store_true')
+    dt_parser.add_argument('-model_type', type=str, required=True)
 
     """
     sample with scaffold
@@ -163,6 +167,27 @@ def find_best_source():
                 (abs(sp.QED-0.89) < 0.02)
                 ]
     print(sp)
+    exit()
+    
+
+def tmp():
+    df_old = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/train.csv')
+    df_new = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_sca-s1.00.csv')
+    
+    update = pd.DataFrame({
+        'src'         : df_old['src'],
+        'src_scaffold': df_new['src_scaffold'],
+        'src_logP'    : df_old['src_logP'],
+        'src_tPSA'    : df_old['src_tPSA'],
+        'src_QED'     : df_old['src_QED'],
+        'trg'         : df_old['trg'],
+        'trg_scaffold': df_new['trg_scaffold'],
+        'trg_logP'    : df_old['trg_logP'],
+        'trg_tPSA'    : df_old['trg_tPSA'],
+        'trg_QED'     : df_old['trg_QED'],        
+    })
+    update.to_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_v0_logP-tPSA-QED.csv')
+    print(update.head())
     exit()
 
 
@@ -188,7 +213,7 @@ if __name__ == "__main__":
 
     # get fields
 
-    if args.model_type == 'scacvaetfv1' or args.model_type == 'scacvaetfv2':
+    if args.model_type in ('ctf', 'vaetf', 'cvaetf', 'scacvaetfv1', 'scacvaetfv2'):
         SRC, TRG = smiles_field(args.property_list, util_path, suffix='molgct')
         scaler = joblib.load(os.path.join(util_path,
             f'scaler_molgct.pkl'))
@@ -204,13 +229,13 @@ if __name__ == "__main__":
 
     # get train/test smiles
 
-    train_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
-    train_smiles = train_smiles['smiles'].tolist()
-    test_smiles = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
-    test_smiles = test_smiles['smiles'].tolist()    
+    df_train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
+    train_smiles = df_train['smiles'].tolist()
+    df_test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
+    test_smiles = df_test['smiles'].tolist()
 
     if hasattr(args, 'continuity_check'):
-        continuity_check(args, toklen_data, train_smiles, test_smiles,
+        continuity_check(args, toklen_data, df_train, df_test,
                          scaler, SRC, TRG, device, logger)
     
     # if hasattr(args, 'uniform_generation'):
@@ -233,8 +258,8 @@ if __name__ == "__main__":
     if hasattr(args, 'encoder_test'):
         test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)
 
-    # if hasattr(args, 'decoder_test'):
-    #     test_decoder(args, toklen_data, scaler, SRC, TRG, device)
+    if hasattr(args, 'decoder_test'):
+        test_decoder(args, toklen_data, df_train, scaler, SRC, TRG, COND, device)
 
     elif hasattr(args, 'scaffold_sampling'):
         scaffold_sampling(args, toklen_data, train_smiles, test_smiles,

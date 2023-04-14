@@ -5,12 +5,10 @@ import pandas as pd
 from time import time
 import torch.nn.functional as F
 import torch.distributed as dist
-import gc
 from functools import reduce
-from Utils.dataset import get_loader
-from Model.modules import create_source_mask, create_target_mask
-from GPUtil import showUtilization as gpu_usage
-from torch.cuda.amp import GradScaler, autocast
+from Model.forward_propagation import forward_propagation
+# from GPUtil import showUtilization as gpu_usage
+# from torch.cuda.amp import GradScaler, autocast
 
 
 def KLAnnealer(epoch, KLA_ini_beta, KLA_inc_beta, KLA_beg_epoch):
@@ -23,7 +21,7 @@ def loss_function(beta, preds_prop, preds_mol, ys_cond,
     RCE_mol = F.cross_entropy(preds_mol.contiguous().view(-1, preds_mol.size(-1)),
                               ys_mol, ignore_index=pad_id, reduction='sum')
     KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
-    if use_cond2dec == True:
+    if use_cond2dec:
         RCE_prop = F.mse_loss(preds_prop, ys_cond, reduction='sum')
         loss = RCE_mol + RCE_prop + beta * KLD
     else:
@@ -74,90 +72,44 @@ def run_epoch(args, model, optimizer, dataloader,
               current_step, beta, LOG, train):
     n_samples = 0
     n_printevery = 1
-    history = {'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': []}
+    history = { 'RCE': [], 'KLD': [], 'LOSS': [], 'BETA': [], 'LR': [] }
     model_cost_time = update_cost_time = 0
+    
     cost_time = -time()
-
-    # Create a GradScaler for mixed precision training
-    if train:
-        scaler = GradScaler()
 
     for i, batch in enumerate(dataloader):
         current_step += 1
         n_onebatch = batch['src'].size(0)
-        trg_input = batch['trg'][:, :-1]
         
         model_cost_time -= time()
         
-        # Handle different model types
-        if args.model_type in ('cvaetf', 'scacvaetfv1', 'scacvaetfv3'):
-            src_mask = create_source_mask(
-                batch['src'], args.pad_id, batch['econds'])
-            trg_mask = create_target_mask(
-                trg_input, args.pad_id, batch['dconds'],
-                args.use_cond2dec)
-
-            with autocast():
-                preds_prop, preds_mol, mu, log_var, _ = model.forward(
-                    src=batch['src'],
-                    trg=trg_input,
-                    econds=batch['econds'],
-                    dconds=batch['dconds'],
-                    src_mask=src_mask,
-                    trg_mask=trg_mask,
-                )
+        results = forward_propagation[args.model_type](
+            model, batch, args.pad_id, args.use_cond2dec)
+        preds_prop, preds_mol, mu, log_var, _ = results
         
-        elif args.model_type == 'scacvaetfv2':
-            src_enc_mask = create_source_mask(
-                torch.cat((batch['src_scaffold'], batch['src']), 1),
-                args.pad_id, batch['econds'])
-            # src_enc_mask: (bs, 1, nc+sca+src)
-            src_dec_mask = create_source_mask(
-                batch['trg_scaffold'],
-                args.pad_id, batch['dconds'])
-            # src_dec_mask: (bs, 1, nc+<sos>sca<eos>)
-            trg_mask = create_target_mask(
-                trg_input, args.pad_id, batch['dconds'],
-                args.use_cond2dec)
-
-            with autocast():
-                preds_prop, preds_mol, mu, log_var, _ = model.forward(
-                    src=batch['src'],
-                    trg=trg_input,
-                    src_scaffold=batch['src_scaffold'],
-                    trg_scaffold=batch['trg_scaffold'],
-                    econds=batch['econds'],
-                    dconds=batch['dconds'],
-                    src_enc_mask=src_enc_mask,
-                    src_dec_mask=src_dec_mask,
-                    trg_mask=trg_mask,
-                )
-            
         model_cost_time += time()
 
+        if len(args.property_list) > 0:
+            ys_cond = torch.unsqueeze(batch['dconds'], 2).contiguous(
+            ).view(-1, len(args.property_list), 1)
+        else:
+            ys_cond = None
         ys_mol = batch['trg'][:, 1:].contiguous().view(-1)
-        ys_cond = torch.unsqueeze(batch['dconds'], 2).contiguous(
-        ).view(-1, len(args.property_list), 1)
 
         update_cost_time -= time()
-
+        
         # Zero gradients for training
         if train:
             optimizer.zero_grad(set_to_none=True)
-
-        # Calculate loss
-        with autocast():
-            loss, RCE_mol, RCE_prop, KLD = loss_function(
-                beta, preds_prop, preds_mol, ys_cond, ys_mol,
-                mu, log_var, args.use_cond2dec, args.pad_id)
+        
+        loss, RCE_mol, RCE_prop, KLD = loss_function(
+            beta, preds_prop, preds_mol, ys_cond, ys_mol,
+            mu, log_var, args.use_cond2dec, args.pad_id)
 
         # Update gradients and optimizer for training
         if train:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            # loss.backward()
-            # optimizer.step()
+            loss.backward()
+            optimizer.step()
 
         update_cost_time += time()
 
@@ -215,12 +167,10 @@ def train_model(args, model, optimizer, train_loader, valid_loader,
         # randomize the dataloader each epoch
 
         LOG.info(f'run epoch: {epoch}')
-
-        if args.use_KLA == True:
+        
+        if args.use_KLA:
             if epoch + 1 >= args.KLA_beg_epoch and beta < args.KLA_max_beta:
-                beta = KLAnnealer(epoch,
-                                  args.KLA_ini_beta,
-                                  args.KLA_inc_beta,
+                beta = KLAnnealer(epoch, args.KLA_ini_beta, args.KLA_inc_beta,
                                   args.KLA_beg_epoch)
         else:
             beta = 1
@@ -274,11 +224,11 @@ def train_model(args, model, optimizer, train_loader, valid_loader,
 
         if rank == 0:
             LOG.info('Save model...')
-
+            
             model_path = os.path.join(args.model_folder, f'model_{epoch}.pt')
             save_checkpoint(args, model, optimizer, model_path)
 
-        if rank == 0:
+        if world_size > 1 and rank == 0:
             for data_type in ('train', 'valid'):
                 his_list = []
                 for rank_i in range(world_size):

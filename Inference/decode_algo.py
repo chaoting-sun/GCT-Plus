@@ -4,7 +4,7 @@ import torch
 from time import time
 
 from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
-from Model.modules import create_target_mask, create_source_mask, nopeak_mask
+from Model.modules import get_trg_mask, get_src_mask
 
 
 class Sampling(object):
@@ -28,7 +28,7 @@ class Sampling(object):
 
     def sample_z_from_src(self, src, econds, mconds=None):
         """1. sample z from source and properties"""
-        src_mask = create_source_mask(src, self.pad_id, econds)
+        src_mask = get_src_mask(src, self.pad_id, econds)
         src_mask = src_mask.to(self.device)
         if mconds is not None:
             econds = (econds, mconds)
@@ -163,8 +163,8 @@ class MultinomialSearch(Sampling):
         with torch.no_grad():
             for i in range(self.max_strlen - 1):
                 # create a padding/nopeaking mask of target
-                trg_mask = create_target_mask(ys, self.pad_id, c,
-                                              self.use_cond2dec).to(self.device)
+                trg_mask = get_trg_mask(ys, self.pad_id, c,
+                                        self.use_cond2dec).to(self.device)
 
                 prob = self.predictor.predict(ys, z, conds, src_mask, trg_mask)
                 prob = prob[:, -1, :]

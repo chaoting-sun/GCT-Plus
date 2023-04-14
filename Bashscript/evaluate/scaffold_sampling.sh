@@ -3,7 +3,7 @@
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
-GPU_IDX=0
+GPU_IDX=1
 
 # MODEL_TYPE=scacvaetfv1
 # BENCHMARK=moses

@@ -9,9 +9,9 @@ from torch.utils.data import Dataset
 
 from Utils.smiles import smi_to_mol, randomize_smiles
 from Utils.properties import property_fn
-from functools import partial
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from Model.collate_fn import get_collate_fn
 
 
 def measure_time(f):
@@ -42,7 +42,7 @@ def get_condition(dataset, condition_list, n_jobs=1) -> pd.DataFrame:
     mol = list(pool.map(smi_to_mol, dataset))
 
     for prop in condition_list:
-        results = pool.map(property_fcn[prop], mol)
+        results = pool.map(property_fn[prop], mol)
         condition_dict[prop] = list(results)
     return pd.DataFrame.from_dict(condition_dict)
 
@@ -255,175 +255,121 @@ class SmilesDataset(Dataset):
         self.TRG = TRG
         self.data = input_data
         self.property_list = property_list
-        
-        self.pad_id = SRC.vocab.stoi['<pad>']
         self.include_mconds = include_mconds
         self.use_scaffold = use_scaffold
         self.randomize = randomize
+    
+    def tokenize_smiles(self, smi, field):
+        if self.randomize:
+            smi = randomize_smiles(smi)
+        return field.tokenize(smi)
         
     def __getitem__(self, rid):
         item = {}
         row = self.data.iloc[rid]
-        src = trg = src_scaffold = trg_scaffold = None
-
+        
         if 'src' in row:
-            src = randomize_smiles(row['src']) if self.randomize else row['src']
-            item['src'] = self.SRC.tokenize(src)
-            item['econds'] = [row[f'src_{p}'] for p in self.property_list]
-            if self.use_scaffold:
-                src_scaffold = randomize_smiles(row['src_scaffold']) if self.randomize else row['src_scaffold']
-                item['src_scaffold'] = self.SRC.tokenize(src_scaffold)
-                
+            item['src'] = self.tokenize_smiles(row['src'], self.SRC)            
+            if len(self.property_list) > 0:
+                item['econds'] = [row[f'src_{p}'] for p in self.property_list]
+            
         if 'trg' in row:
-            if src is not None:
-                trg = src
-            else:
-                trg = randomize_smiles(row['trg']) if self.randomize else row['trg']
-            item['trg'] = self.TRG.tokenize(trg)
-            item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
-            if self.use_scaffold:
-                if src_scaffold is not None:
-                    trg_scaffold = src_scaffold
-                else:
-                    trg_scaffold = randomize_smiles(row['trg_scaffold']) if self.randomize else row['trg_scaffold']
-                item['trg_scaffold'] = self.TRG.tokenize(trg_scaffold)
+            item['trg'] = self.tokenize_smiles(row['trg'], self.TRG)
+            if len(self.property_list) > 0:
+                item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
+
+        if self.use_scaffold:
+            if 'src_scaffold' in row:
+                item['src_scaffold'] = self.tokenize_smiles(row['src_scaffold'], self.SRC)
+            if 'trg_scaffold' in row:
+                item['trg_scaffold'] = self.tokenize_smiles(row['trg_scaffold'], self.TRG)
 
         if self.include_mconds:
-            assert 'econds' in item and 'dconds' in item
             item['mconds'] = [item['dconds'][i] - item['econds'][i]
-                              for i in range(len(self.property_list))]
+                            for i in range(len(self.property_list))]
         return item
 
     def __len__(self):
         return len(self.data)
 
-    @classmethod
-    def collate_fcn(cls, raw_batch, SRC, TRG, device):
-        batch = {}
-        src = trg = None
-        
-        if 'src_scaffold' in raw_batch[0]:
-            src = [b['src_scaffold']+b['src'] for b in raw_batch]            
-        elif 'src' in raw_batch[0]:
-            src = [b['src'] for b in raw_batch]
 
-        if 'trg_scaffold' in raw_batch[0]:
-            trg = [b['trg_scaffold']+b['trg'] for b in raw_batch]
-        elif 'trg' in raw_batch[0]:
-            trg = [b['trg'] for b in raw_batch]
-
-        if src is not None:
-            batch['src'] = SRC.process(src).to(device)
-            if not SRC.batch_first:
-                batch['src'] = batch['src'].T
-
-        if trg is not None:
-            batch['trg'] = TRG.process(trg).to(device)
-            if not TRG.batch_first:
-                batch['trg'] = batch['trg'].T
-
-        for prop in ['econds', 'dconds', 'mconds']:
-            if prop in raw_batch[0]:
-                batch[prop] = torch.tensor(
-                    [b[prop] for b in raw_batch],
-                    dtype=torch.float32).to(device)
-        return batch
+# class DataloaderPreparation:
+#     def __init__(self, rank, SRC, TRG, batch_size, model_type,
+#                  property_list, world_size=1, randomize=False,
+#                  use_scaffold=False):
+#         self.SRC = SRC
+#         self.TRG = TRG
+#         self.rank = rank
+#         self.world_size = world_size
+#         self.batch_size = batch_size
+#         self.property_list = property_list
+#         self.use_scaffold = use_scaffold
+#         self.randomize = randomize
+#         self.collate_fn = get_collate_fn(model_type, SRC, TRG, rank)
     
-    # @classmethod
-    # def collate_fcn(cls, raw_batch, SRC, TRG, device):
-    #     prepared_batch = {}
-        
-    #     if 'src' in raw_batch[0]:
-    #         prepared_batch['src'] = SRC.process(
-    #             [batch['src'] for batch in raw_batch]).to(device)
-    #         if not SRC.batch_first:
-    #             prepared_batch['src'] = prepared_batch['src'].T
-    ## gvh-127
-    #     if 'trg' in raw_batch[0]:
-    #         prepared_batch['trg'] = TRG.process(
-    #             [batch['trg'] for batch in raw_batch]).to(device)
-    #         if not TRG.batch_first:
-    #             prepared_batch['trg'] = prepared_batch['trg'].T
+#     def _get_sampler(self, dataset, shuffle=False,
+#                      drop_last=False):
+#         return DistributedSampler(dataset, self.world_size, self.rank,
+#                                   shuffle, drop_last)
 
-    #     if 'econds' in raw_batch[0]:
-    #         prepared_batch['econds'] = torch.tensor(
-    #             [batch['econds'] for batch in raw_batch],
-    #             dtype=torch.float32).to(device)
+#     def _get_dataset(self, dataframe, include_mconds=True):
+#         return SmilesDataset(dataframe, self.property_list, self.SRC,
+#                              self.TRG, include_mconds, self.use_scaffold,
+#                              self.randomize)
 
-    #     if 'dconds' in raw_batch[0]:
-    #         prepared_batch['dconds'] = torch.tensor(
-    #             [batch['dconds'] for batch in raw_batch],
-    #             dtype=torch.float32).to(device)
-        
-    #     if 'mconds' in raw_batch[0]:
-    #         prepared_batch['mconds'] = torch.tensor(
-    #             [batch['mconds'] for batch in raw_batch],
-    #             dtype=torch.float32).to(device)
-    #     return prepared_batch
+#     def get_dataloader(self, dataframe, is_train,
+#                        include_mconds=False, shuffle=False,
+#                        sampler=None):
+#         dataset = self._get_dataset(dataframe, include_mconds)
+    
+#         if self.world_size > 1:
+#             sampler = self._get_sampler(dataset,
+#                 shuffle=True if is_train else False)
+#         if self.world_size == 1 and is_train:
+#             # no need to shuffle if sampler is used
+#             shuffle = True
 
+#         return DataLoader(dataset, batch_size=self.batch_size,
+#                           drop_last=False, sampler=sampler,
+#                           shuffle=shuffle, collate_fn=self.collate_fn,
+#                           num_workers=0, pin_memory=False)
+    
 
 class DataloaderPreparation:
-    def __init__(self, SRC, TRG, properties, batch_size, is_train,
-                 rank, world_size=1, use_scaffold=True):
+    def __init__(self, rank, SRC, TRG, model_type, property_list,
+                 world_size=1, randomize=False, use_scaffold=False):
         self.SRC = SRC
         self.TRG = TRG
         self.rank = rank
         self.world_size = world_size
-        self.properties = properties
-        self.is_train = is_train
-        self.batch_size = batch_size
+        self.property_list = property_list
         self.use_scaffold = use_scaffold
+        self.randomize = randomize
+        self.collate_fn = get_collate_fn(model_type, SRC, TRG, rank)
     
-    def get_dataset(self, file_path, include_mconds=True):
-        return SmilesDataset(
-            pd.read_csv(file_path),
-            self.properties,
-            self.rank,
-            self.SRC,
-            self.TRG,
-            include_mconds,
-            self.use_scaffold
-        )
+    def _get_sampler(self, dataset, shuffle=False,
+                     drop_last=False):
+        return DistributedSampler(dataset, self.world_size, self.rank,
+                                  shuffle, drop_last)
 
-    def get_dataloader(self, dataset, pin_memory=False, num_workers=0):
-        if self.world_size > 1 and self.is_train:
-            sampler = self._get_sampler(dataset, shuffle=True)
-            shuffle = False # no need to shuffle if sampler exists
-        
-        elif self.world_size > 1 and not self.is_train:
-            sampler = self._get_sampler(dataset, shuffle=False)
-            shuffle = False
-        
-        elif self.world_size == 1 and self.is_train:
-            sampler = None
-            shuffle = True            
-            
-        elif self.world_size == 1 and not self.is_train:
-            sampler = None
-            shuffle = False        
-        
-        collate_fn = partial(SmilesDataset.collate_fcn, 
-                             SRC=self.SRC,
-                             TRG=self.TRG,
-                             device=self.rank)
+    def _get_dataset(self, dataframe, include_mconds=True):
+        return SmilesDataset(dataframe, self.property_list, self.SRC,
+                             self.TRG, include_mconds, self.use_scaffold,
+                             self.randomize)
 
-        return DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            sampler=sampler,
-            shuffle=shuffle,
-            collate_fn=collate_fn,
-            drop_last=False,
-        )
+    def get_dataloader(self, dataframe, batch_size, is_train,
+                       include_mconds=False, shuffle=False,
+                       sampler=None):
+        dataset = self._get_dataset(dataframe, include_mconds)
     
-    def _get_sampler(self, dataset, shuffle=False, drop_last=False):
-        return DistributedSampler(
-            dataset,
-            self.world_size,
-            self.rank,
-            shuffle,
-            drop_last
-        )
+        if self.world_size > 1:
+            sampler = self._get_sampler(dataset,
+                shuffle=True if is_train else False)
+        if self.world_size == 1 and is_train:
+            # no need to shuffle if sampler is used
+            shuffle = True
 
+        return DataLoader(dataset, batch_size=batch_size, drop_last=False,
+                          sampler=sampler, shuffle=shuffle,
+                          collate_fn=self.collate_fn, num_workers=0,
+                          pin_memory=False)

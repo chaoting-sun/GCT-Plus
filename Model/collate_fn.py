@@ -2,21 +2,38 @@ import torch
 from functools import partial
 
 
-def cvaetf_collate_fn(ins, SRC, TRG, device):
+def vaetf_collate_fn(ins, SRC, TRG, device):
     outs = {}
     
     outs['src'] = SRC.process([e['src'] for e in ins]).to(device)
     if not SRC.batch_first:
         outs['src'] = outs['src'].T
     
-    outs['trg'] = TRG.process([['trg'] for e in ins]).to(device)
+    outs['trg'] = TRG.process([e['trg'] for e in ins]).to(device)
     if not TRG.batch_first:
         outs['trg'] = outs['trg'].T
+    return outs
+
+        
+def cvaetf_collate_fn(ins, SRC, TRG, device):
+    outs = {}
+    
+    if 'src' in ins[0]:
+        outs['src'] = SRC.process([e['src'] for e in ins]).to(device)
+        if not SRC.batch_first:
+            outs['src'] = outs['src'].T
+    
+    if 'trg' in ins[0]:        
+        outs['trg'] = TRG.process([e['trg'] for e in ins]).to(device)
+        if not TRG.batch_first:
+            outs['trg'] = outs['trg'].T
 
     for p in ['econds', 'dconds']:
-        outs[p] = torch.tensor([e[p] for e in ins],
-            dtype=torch.float32).to(device)
-        
+        if p in ins[0]:
+            outs[p] = torch.tensor([e[p] for e in ins],
+                dtype=torch.float32).to(device)
+    return outs
+
 
 def scacvaetfv1_collate_fn(ins, SRC, TRG, device):
     """collate function for scascvaetf
@@ -31,23 +48,24 @@ def scacvaetfv1_collate_fn(ins, SRC, TRG, device):
             dconds: target properties
     """
     outs = {}
-    src = trg = None
     
-    src = [b['src_scaffold']+b['src'] for b in ins]
-    trg = [b['trg_scaffold']+b['trg'] for b in ins]
-
-    outs['src'] = SRC.process(src).to(device)
-    if not SRC.batch_first:
-        outs['src'] = outs['src'].T
-
-    outs['trg'] = TRG.process(trg).to(device)
-    if not TRG.batch_first:
-        outs['trg'] = outs['trg'].T
+    if 'src' in ins[0]:
+        src = [b['src_scaffold']+b['src'] for b in ins]
+        outs['src'] = SRC.process(src).to(device)
+        if not SRC.batch_first:
+            outs['src'] = outs['src'].T
+        
+    if 'trg' in ins[0]:
+        trg = [b['trg_scaffold']+b['trg'] for b in ins]
+        outs['trg'] = TRG.process(trg).to(device)
+        if not TRG.batch_first:
+            outs['trg'] = outs['trg'].T
 
     for prop in ['econds', 'dconds']:
-        outs[prop] = torch.tensor(
-            [b[prop] for b in ins],
-            dtype=torch.float32).to(device)
+        if prop in ins[0]:    
+            outs[prop] = torch.tensor(
+                [b[prop] for b in ins],
+                dtype=torch.float32).to(device)
     return outs
 
 
@@ -87,24 +105,28 @@ def scacvaetfv3_collate_fn(ins, SRC, TRG, device):
     outs = {}
     src = trg = None
     
-    src = [b['src_scaffold']+['<sep>']+b['src'] for b in ins]
-    trg = [b['trg_scaffold']+['<sep>']+b['trg'] for b in ins]
-    outs['src'] = SRC.process(src).to(device)
-    if not SRC.batch_first:
-        outs['src'] = outs['src'].T
-
-    outs['trg'] = TRG.process(trg).to(device)
-    if not TRG.batch_first:
-        outs['trg'] = outs['trg'].T
+    if 'src' in ins[0]:
+        src = [b['src_scaffold']+['<sep>']+b['src'] for b in ins]
+        outs['src'] = SRC.process(src).to(device)
+        if not SRC.batch_first:
+            outs['src'] = outs['src'].T
+    if 'trg' in ins[0]:
+        trg = [b['trg_scaffold']+['<sep>']+b['trg'] for b in ins]
+        outs['trg'] = TRG.process(trg).to(device)
+        if not TRG.batch_first:
+            outs['trg'] = outs['trg'].T
 
     for prop in ['econds', 'dconds']:
-        outs[prop] = torch.tensor(
-            [b[prop] for b in ins],
-            dtype=torch.float32).to(device)
+        if prop in ins[0]:            
+            outs[prop] = torch.tensor(
+                [b[prop] for b in ins],
+                dtype=torch.float32).to(device)
     return outs
 
 
 collate_fn = {
+    'ctf'        : cvaetf_collate_fn,
+    'vaetf'      : vaetf_collate_fn,
     'cvaetf'     : cvaetf_collate_fn,
     'scacvaetfv1': scacvaetfv1_collate_fn,
     'scacvaetfv2': scacvaetfv2_collate_fn,

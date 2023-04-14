@@ -1,13 +1,14 @@
-import numpy as np
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from .sublayers import Sampler
-from .layers import EncoderLayer, DecoderLayer
-from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, create_masks, get_clones
+from Model import (
+    Sampler,
+    EncoderLayer,
+    DecoderLayer,
+    Embeddings,
+    PositionalEncoding,
+    Norm,
+    get_clones
+) 
 
 
 class Encoder(nn.Module):
@@ -50,30 +51,35 @@ class Decoder(nn.Module):
         self.use_cond2dec = use_cond2dec
         self.use_cond2lat = use_cond2lat
         self.embed = Embeddings(d_model, vocab_size)
-        if self.use_cond2dec == True:
+        if self.use_cond2dec:
             self.embed_cond2dec = nn.Linear(nconds, d_model*nconds) #concat to trg_input
-        if self.use_cond2lat == True:
+        if self.use_cond2lat:
             self.embed_cond2lat = nn.Linear(nconds, d_model*nconds) #concat to trg_input
         self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.fc_z = nn.Linear(latent_dim, d_model)
-        self.layers = get_clones(DecoderLayer(h, d_model, dff, dropout, use_cond2dec, use_cond2lat), N)
+        self.layers = get_clones(DecoderLayer(h, d_model, dff, dropout), N)
         self.norm = Norm(d_model)
 
-    def forward(self, trg, e_outputs, cond_input, src_mask, trg_mask):
+    def forward(self, trg, e_outputs, src_mask, trg_mask, dconds):
         x = self.embed(trg)
 
         e_outputs = self.fc_z(e_outputs)
 
-        if self.use_cond2dec == True:
-            cond2dec = self.embed_cond2dec(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
+        if self.use_cond2dec:
+            cond2dec = self.embed_cond2dec(dconds).view(dconds.size(0), dconds.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1) # trg + cond
-        elif self.use_cond2lat == True:
-            cond2lat = self.embed_cond2lat(cond_input).view(cond_input.size(0), cond_input.size(1), -1)
+        
+        elif self.use_cond2lat:
+            cond2lat = self.embed_cond2lat(dconds).view(dconds.size(0), dconds.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1)
         x = self.pe(x)
 
+        if self.use_cond2lat:
+            cond_mask = torch.ones_like(torch.unsqueeze(dconds, -2), dtype=bool)
+            src_mask = torch.cat([cond_mask, src_mask], dim=2)
+
         for i in range(self.N):
-            x = self.layers[i](x, e_outputs, cond_input, src_mask, trg_mask)
+            x = self.layers[i](x, e_outputs, src_mask, trg_mask)
 
         return self.norm(x)
     
@@ -89,8 +95,8 @@ class CTF(nn.Module):
         
         # encoder/decoder
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
-                               nconds, dropout, variational)
-        self.sampler = Sampler(d_model, latent_dim, variational)
+                               nconds, dropout, variational=False)
+        self.sampler = Sampler(d_model, latent_dim, variational=False)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
                                nconds, dropout, use_cond2dec, use_cond2lat)
         # other layers
@@ -106,13 +112,13 @@ class CTF(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def encode(self, src, conds, src_mask):
-        x = self.encoder(src, conds, src_mask)
+    def encode(self, src, src_mask, econds):
+        x = self.encoder(src, econds, src_mask)
         z, mu, logvar = self.sampler(x)
         return z, mu, logvar
 
-    def decode(self, trg, z, conds, src_mask, trg_mask):
-        return self.out(self.decoder(trg, z, conds, src_mask, trg_mask))
+    def decode(self, trg, z, src_mask, trg_mask, dconds):
+        return self.out(self.decoder(trg, z, src_mask, trg_mask, dconds))
 
     def forward(self, src, trg, conds, src_mask, trg_mask):
         z, _, _ = self.encode(src, conds, src_mask)        

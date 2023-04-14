@@ -60,6 +60,26 @@ def plot(epoch, loss, name_list,
     plt.savefig(save_path)
 
 
+# def plot_results(model_folder, begin_epoch, end_epoch):
+#     data_loss = get_train_results(model_folder, begin_epoch, end_epoch)
+    
+#     plot(epoch=data_loss['# Epoch'],
+#          loss=data_loss,
+#          name_list=['train RCE'],
+#          title_name='Loss of Training Loss',
+#          lengend_name='Training Loss',
+#          save_path=os.path.join(model_folder, 'train_loss.png')
+#          )
+
+#     plot(epoch=data_loss['# Epoch'],
+#          loss=data_loss,
+#          name_list=['valid RCE'],
+#          title_name='Loss of Validation Loss',
+#          lengend_name='Validation Loss',
+#          save_path=os.path.join(model_folder, 'valid_loss.png')
+#          )
+    
+
 def plot_results(model_folder, begin_epoch, end_epoch):
     data_loss = get_train_results(model_folder, begin_epoch, end_epoch)
     

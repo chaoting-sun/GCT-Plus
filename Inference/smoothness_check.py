@@ -12,6 +12,7 @@ from Model.build_model import get_generator
 from Utils.smiles import get_mol, murcko_scaffold, murcko_scaffold_similarity, plot_smiles_group, plot_smiles, smi_to_mol
 from Utils.properties import mols_to_props, get_property_fn
 from Utils.metric import get_error_fn
+from Utils import DataloaderPreparation
 
 
 def compute_errors(
@@ -114,29 +115,6 @@ def compute_records(
     return records, unique_smi
 
 
-def get_trg_prop(benchmark, property_list):
-    if benchmark == 'guacamol':
-        trg_prop = {
-            'logP': [2.0, 4.0, 6.0],
-            'tPSA': [40.0, 80.0, 120.0],
-            'QED' : [0.3, 0.5, 0.7],
-            'SAS' : [2.0, 3.0, 4.0],
-        }
-    elif benchmark == 'moses':
-        trg_prop = {
-            'logP': [1.0, 2.0, 3.0],
-            'tPSA': [30.0, 60.0, 90.0],
-            'QED' : [0.6, 0.725, 0.85],
-            'SAS' : [2.0, 2.75, 3.5],
-        }
-    else:
-        exit(f'No benchmark named: {benchmark}')
-
-    prop_set = (trg_prop[p] for p in property_list)
-    prop_comb = list(itertools.product(*prop_set))
-    return [list(c) for c in prop_comb]
-
-
 def get_molgpt_valid_smi(src, smiles_list, include_mol,
                          sim_bound=0.8, n_jobs=1):    
     similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=src)
@@ -151,7 +129,23 @@ def get_molgpt_valid_smi(src, smiles_list, include_mol,
     return valid_smi
 
 
-def scaffold_sampling(
+def lerp(z1, z2, alpha):
+    """linear interpolation"""
+    z = (1 - alpha) * z1 + alpha * z2
+    return z
+
+
+def slerp(z1, z2, alpha):
+    """spherical linear interpolation"""
+    z1_normalized = z1 / np.linalg.norm(z1)
+    z2_normalized = z2 / np.linalg.norm(z2)
+
+    omega = np.arccos(np.dot(z1_normalized, z2_normalized))
+    z = (np.sin((1 - alpha) * omega) * z1 + np.sin(alpha * omega) * z2) / np.sin(omega)
+    return z
+
+
+def smoothness_check(
         args,
         toklen_data,
         train_smiles,
@@ -168,24 +162,17 @@ def scaffold_sampling(
     n_each_batch = 128
 
     # create file path and folder
-    save_folder = os.path.join(args.infer_path,
-                               args.benchmark,
-                               'scaffold_sampling',
-                               args.model_name,
-                               'test_scaffolds_true1'
-                               )
+    save_folder = os.path.join(args.infer_path, args.benchmark,
+                               'smoothness_check', args.model_name)
     os.makedirs(save_folder, exist_ok=True)
 
     LOG = logger(name='scaffold sampling', log_path=os.path.join(save_folder, 'record.log'))
 
     LOG.info('create a generator...')
 
-    args.model_path = os.path.join(args.train_path,
-                                   args.benchmark,
-                                   args.model_name,
-                                   f'model_{args.epoch}.pt')
-    generator = get_generator(args, SRC, TRG, toklen_data,
-                              scaler, device)
+    args.model_path = os.path.join(args.train_path, args.benchmark,
+                                   args.model_name, f'model_{args.epoch}.pt')
+    generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
 
     LOG.info('prepare error/property functions...')
 
@@ -193,76 +180,8 @@ def scaffold_sampling(
     property_fn = get_property_fn(args.property_list)
 
     LOG.info('prepare input scaffold and target properties...')
-    
-    np.random.seed(0)
+
     test_smiles = np.random.choice(test_smiles, n_tests, replace=False)
-    with Pool(args.n_jobs) as pool:
-        src_list = list(pool.map(murcko_scaffold, test_smiles))
-    # src_list = src[-2:]
     
-    # trg_prop_list = [[3.5, 89, 0.894693]]
-
-    # src_list = [
-    #     'O=C(Cc1ccccc1)NCc1ccccc1',
-    #     'c1cnc2[nH]ccc2c1',
-    #     'c1ccc(-c2ccnnc2)cc1',
-    #     'c1ccc(-n2cnc3ccccc32)cc1',
-    #     'O=C(c1cc[nH]c1)N1CCN(c2ccccc2)CC1'
-    # ]
+    property_fn = get_property_fn(args.property_list)
     
-    trg_prop_list = get_trg_prop(args.benchmark, args.property_list)    
-        
-    for src_id, src in enumerate(src_list):
-        for pid, prop in enumerate(trg_prop_list):
-            LOG.info('sample smiles...')
-            LOG.info('target properties: %s', prop)
-    
-            trg_prop = np.repeat([prop], n_samples, axis=0)
-            src_ids = [TRG.vocab.stoi[t] for t in src]
-
-            gen, toklen, toklen_gen = [], [], []            
-            n_batch = int(np.ceil(n_samples / n_each_batch))
-            
-            for b in range(n_batch):
-                sid = n_each_batch * b
-                eid = n_each_batch * (b+1)
-                if eid > n_samples:
-                    eid = n_samples                
-                LOG.info(f'sample from {sid} to {eid}')
-
-                gs, tl, tlg = generator.sample_smiles(
-                    trg_prop[sid:eid, :], src_ids,
-                    transform=True)
-                gen.extend(gs)
-                toklen.extend(tl)
-                toklen_gen.extend(tlg)
-                
-            LOG.info('compute records...')
-
-            records, unique_smi = compute_records(
-                src, gen, prop, property_fn,
-                error_fn, murcko_scaffold_similarity,
-                train_smiles, args.n_jobs)
-
-            LOG.info('save records...')
-            LOG.info(records)
-            
-            records = OrderedDict([(k, [records[k]])
-                                   for k in records])
-            records = pd.DataFrame(records)
-            if pid == 0:
-                records.to_csv(os.path.join(save_folder, f'record{src_id}.csv'),
-                               index=False)
-            else:
-                records.to_csv(os.path.join(save_folder, f'record{src_id}.csv'),
-                               index=False, mode='a', header=False)
-            
-            # LOG.info('plot smiles...')
-            
-            # plot_smiles(src_sca, os.path.join(save_folder, f'scaffold{sid}.png'))
-            # print(len(unique_smi))
-            # sampled_smi = np.random.choice(unique_smi, 24, replace=False)
-            # plot_smiles_group(sampled_smi,
-            #                   save_path=os.path.join(save_folder, f'prediction{sid}.png'),
-            #                   n_per_mol=6,
-            #                   n_jobs=args.n_jobs)

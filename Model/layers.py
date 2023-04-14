@@ -50,10 +50,7 @@ class EncoderLayer(nn.Module):
 
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
-    def __init__(self, heads, d_model, dff, dropout, use_cond2dec, use_cond2lat):
-        self.use_cond2dec = use_cond2dec
-        self.use_cond2lat = use_cond2lat
-
+    def __init__(self, heads, d_model, dff, dropout):
         super(DecoderLayer, self).__init__()
         # 1. masked multi-head self-attention
         self.norm_1 = Norm(d_model)
@@ -69,32 +66,72 @@ class DecoderLayer(nn.Module):
         self.dropout_3 = nn.Dropout(dropout)
 
 
-    def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):
+    def forward(self, x, e_outputs, src_mask, trg_mask):
         # 1. masked multi-head self-attention
-        x2 = self.norm_1(x)
-        # dim: -> (batch_size, trg_maxstr-1, d_model)
-
-        x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
-        # 2. multi-head self-attention
-        x2 = self.norm_2(x)
-        # if self.use_cond2lat == True:
-        #     cond_mask = torch.unsqueeze(cond_input, -2)
-        #     cond_mask = torch.ones_like(cond_mask, dtype=bool)
-        #     src_mask = torch.cat([cond_mask, src_mask], dim=2)
-            # src_mask: (bs, 1, nc+(nc+src_len))
         
-        # dim: -> (batch_size, trg_maxstr-1, d_model)
-
-        # print(f'x2:{x2.size()}, e_outputs: {e_outputs.size()}, src_mask: {src_mask.size()}')
-        # print(x2.size(), e_outputs.size(), src_mask.size())
-
-        # print('DecoderLayer2:', x2.size(), e_outputs.size(), src_mask.size())
-
+        x2 = self.norm_1(x)
+        # x2: (batch_size, trg_maxstr-1, d_model)
+        x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
+        
+        # 2. multi-head self-attention
+        
+        x2 = self.norm_2(x)
         x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))
+        
         # 3. position-wise feed-forward
+        
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x
+    
+    
+# class DecoderLayer(nn.Module):
+#     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
+#     def __init__(self, heads, d_model, dff, dropout, use_cond2dec, use_cond2lat):
+#         self.use_cond2dec = use_cond2dec
+#         self.use_cond2lat = use_cond2lat
+
+#         super(DecoderLayer, self).__init__()
+#         # 1. masked multi-head self-attention
+#         self.norm_1 = Norm(d_model)
+#         self.attn_1 = MultiHeadAttention(heads, d_model, dropout)
+#         self.dropout_1 = nn.Dropout(dropout)
+#         # 2. multi-head self-attention
+#         self.norm_2 = Norm(d_model)
+#         self.attn_2 = MultiHeadAttention(heads, d_model, dropout)
+#         self.dropout_2 = nn.Dropout(dropout)
+#         # 3. positionwise feed-forward
+#         self.norm_3 = Norm(d_model)
+#         self.ff = FeedForward(d_model, dff, dropout)
+#         self.dropout_3 = nn.Dropout(dropout)
+
+
+#     def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):
+#         # 1. masked multi-head self-attention
+#         x2 = self.norm_1(x)
+#         # dim: -> (batch_size, trg_maxstr-1, d_model)
+
+#         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
+#         # 2. multi-head self-attention
+#         x2 = self.norm_2(x)
+#         # if self.use_cond2lat == True:
+#         #     cond_mask = torch.unsqueeze(cond_input, -2)
+#         #     cond_mask = torch.ones_like(cond_mask, dtype=bool)
+#         #     src_mask = torch.cat([cond_mask, src_mask], dim=2)
+#             # src_mask: (bs, 1, nc+(nc+src_len))
+        
+#         # dim: -> (batch_size, trg_maxstr-1, d_model)
+
+#         # print(f'x2:{x2.size()}, e_outputs: {e_outputs.size()}, src_mask: {src_mask.size()}')
+#         # print(x2.size(), e_outputs.size(), src_mask.size())
+
+#         # print('DecoderLayer2:', x2.size(), e_outputs.size(), src_mask.size())
+
+#         x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, src_mask))
+#         # 3. position-wise feed-forward
+#         x2 = self.norm_3(x)
+#         x = x + self.dropout_3(self.ff(x2))
+#         return x
 
 
     # def forward(self, x, e_outputs, cond_input, src_mask, trg_mask):

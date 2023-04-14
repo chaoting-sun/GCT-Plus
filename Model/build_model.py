@@ -1,20 +1,50 @@
-import os
 import torch
 from collections import OrderedDict
-
-from .ctf import CTF
-from .cvaetfcut import CVAETFCUT
-from .mlpcvaetf import MLPCVAETF
-from .mlpcvaetf_encoder import MLPCVAETFEncoder
-from .attencvaetf import ATTENCVAETF
-from .mlp import MLP_Train
-from .sepcvaetf import SEPCVAETF
-from .sepcvaetf2 import SEPCVAETF2
-from .attenctf import ATTENCTF
-
-from Model.cvaetf import Cvaetf
-from Model.scacvaetfv2 import ScaCvaetfV2
 from Inference.decode_algo_test import sampling_tools
+from Model import (
+    CTF,
+    Vaetf,
+    Cvaetf,
+    ATTENCVAETF,
+    SEPCVAETF,
+    SEPCVAETF2,
+    ATTENCTF,
+    ScaCvaetfV2
+)
+
+"""
+model mapper
+"""
+
+model_dict = {
+    'vaetf'      : Vaetf,
+    'cvaetf'     : Cvaetf,
+    'scacvaetfv1': Cvaetf,
+    'scacvaetfv2': ScaCvaetfV2,
+    'scacvaetfv3': Cvaetf,
+    'ctf'        : CTF,
+    'attenctf'   : ATTENCTF,
+    'attencvaetf': ATTENCVAETF,
+    'sepcvaetf'  : SEPCVAETF,
+    'sepcvaetf2' : SEPCVAETF2,
+}
+
+
+transfer_model_dict = {
+    'scacvaetfv2': 'scacvaetfv2',
+    'attenctf'   : 'ctf',
+    'attencvaetf': 'cvaetf',
+    'mlpcvaetf'  : 'cvaetf',
+    'sepcvaetf'  : 'cvaetf',
+    'sepcvaetf2' : 'cvaetf',
+}
+
+
+transfer_train_params =  {
+    'attenctf'   : ['rotator'],
+    'attencvaetf': ['atten_mu', 'atten_logvar', 'atten_z'],
+    'sepcvaetf'  : ['mu_rotator', 'logvar_rotator'],
+}
 
 
 def transfer_params(trained_model, new_model):
@@ -43,37 +73,6 @@ def freeze_params(model, freeze_names=None, train_names=None):
             else:
                 param.requires_grad = False
     return model
-
-
-model_dict = {
-    'cvaetf'     : Cvaetf,
-    'scacvaetfv1': Cvaetf,
-    'scacvaetfv2': ScaCvaetfV2,
-    'scacvaetfv3': Cvaetf,
-    'ctf'        : CTF,
-    'attenctf'   : ATTENCTF,
-    'attencvaetf': ATTENCVAETF,
-    'mlpcvaetf'  : MLPCVAETF,
-    'sepcvaetf'  : SEPCVAETF,
-    'sepcvaetf2' : SEPCVAETF2,
-}
-
-
-transfer_model_dict = {
-    'scacvaetfv2': 'scacvaetfv2',
-    'attenctf'   : 'ctf',
-    'attencvaetf': 'cvaetf',
-    'mlpcvaetf'  : 'cvaetf',
-    'sepcvaetf'  : 'cvaetf',
-    'sepcvaetf2' : 'cvaetf',
-}
-
-
-transfer_train_params =  {
-    'attenctf'   : ['rotator'],
-    'attencvaetf': ['atten_mu', 'atten_logvar', 'atten_z'],
-    'sepcvaetf'  : ['mu_rotator', 'logvar_rotator'],
-}
 
 
 def extract_params(args, src_vocab_len, trg_vocab_len):
@@ -126,31 +125,6 @@ def get_model(args, src_vocab_len, trg_vocab_len, rank):
     return model
 
 
-    # if args.model_type == "ctf":
-    #     return build_ctf(hyperParams, model_path)
-    # if args.model_type == "attenctf":
-    #     return build_attenctf(hyperParams, args.original_model_path, model_path, rank)
-    # if args.model_type == "cvaetfcut":
-    #     return build_cvaetfcut(hyperParams, args.original_model_path)
-    # if args.model_type == "cvaetf":
-    #     return build_cvaetf(rank, hyperParams, original_model_path)
-    # elif args.model_type == "mlpcvaetf_encoder":
-    #     return build_mlpcvaetfencoder(hyperParams, args.original_model_path, model_path)
-    # elif args.model_type == "mlpcvaetf":
-    #     args.use_cvaetf_path = None
-    #     return build_mlpcvaetf(hyperParams, args.original_model_path, model_path)
-    # elif args.model_type == "sepcvaetf":
-    #     return build_sepcvaetf(hyperParams, args.original_model_path, model_path)
-    # elif args.model_type == "sepcvaetf2":
-    #     return build_sepcvaetf2(hyperParams, args.original_model_path, model_path)
-    # elif args.model_type == "attencvaetf":
-    #     return build_attencvaetf(rank,
-    #                              hyperParams,
-    #                              original_model_path,
-    #                              model_path
-    #                              )
-
-
 def get_generator(args, SRC, TRG, toklen_data, scaler, device):
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), device)
     model = model.to(device)
@@ -159,6 +133,7 @@ def get_generator(args, SRC, TRG, toklen_data, scaler, device):
     print(f'#parameters: {sum(p.numel() for p in model.parameters())}')
 
     kwargs = {
+        'top_k'       : args.top_k,
         'latent_dim'  : args.latent_dim,
         'max_strlen'  : args.max_strlen,
         'use_cond2dec': args.use_cond2dec,
@@ -167,6 +142,7 @@ def get_generator(args, SRC, TRG, toklen_data, scaler, device):
         'cond_dim'    : len(args.property_list),
         'scaler'      : scaler,
         'device'      : device,
+        'SRC'         : SRC,
         'TRG'         : TRG,
     }
     

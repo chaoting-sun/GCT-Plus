@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from rdkit.Chem.Fingerprints.FingerprintMols import FingerprintMol
 from rdkit.DataStructs.cDataStructs import TanimotoSimilarity
+from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
 # def to_mol(smi):
 #     if isinstance(smi, str) and smi and len(smi)>0 and smi != 'nan':
 #         return Chem.MolFromSmiles(smi)
@@ -36,6 +37,27 @@ def get_mol(smi_or_mol):
             return None
         return mol
     return smi_or_mol
+
+
+def to_fp_ECFP(smi):
+    if smi:
+        mol = MolFromSmiles(smi)
+        if mol is None:
+            return None
+        return GetMorganFingerprintAsBitVect(mol, 2, 1024)
+
+
+def tanimoto_similarity(smi1, smi2):
+    fp1, fp2 = None, None
+    if smi1 and type(smi1)==str and len(smi1)>0:
+        fp1 = to_fp_ECFP(smi1)
+    if smi2 and type(smi2)==str and len(smi2)>0:
+        fp2 = to_fp_ECFP(smi2)
+
+    if fp1 is not None and fp2 is not None:
+        return TanimotoSimilarity(fp1, fp2)
+    else:
+        return None
 
 
 # def get_murcko_scaffold(smi_or_mol):
@@ -390,7 +412,7 @@ def randomize_smiles(smiles):
 
 
 if __name__ == '__main__':
-    smiles = 'CC(=O)Nc1ccc(OC(=O)c2ccccc2O)cc1'
+    smiles = 'COc1ccc(OC)c(Cc2cnc3nc(N)nc(N)c3c2C)c1'
     
     for i in range(100):
         print(randomize_smiles(smiles))

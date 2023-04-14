@@ -9,9 +9,8 @@ from pathos.multiprocessing import ProcessingPool as Pool
 from Inference.metrics import get_all_metrics, get_snn_from_mol, get_basic_metrics, print_all_metrics
 from Utils.dataset import to_dataloader
 from Model.build_model import get_generator
-from Utils.smiles import murcko_scaffold, plot_smiles_group
+from Utils.smiles import murcko_scaffold, plot_smiles_group, get_mol
 from Utils.field import smi_to_id
-
 
 
 class ContinuityCheck:
@@ -301,20 +300,36 @@ def continuity_check1(args, generator, train_smiles, logger):
         ccoc.generate(save_folder)
     
 
+def augment_z(n, z, std=None):
+    assert torch.is_tensor(z) is True
+    # and z.dim() == 3
+    z = z.repeat(n, 1, 1)
+    if std:
+        z += torch.empty_like(z).normal_(mean=0, std=std)
+        return z
+    return z
+
+
+def distance(z1, z2):
+    return torch.sqrt(torch.sum((z2 - z1)**2)).item()
+
+
 def continuity_check(
         args,
         toklen_data,
-        train_smiles,
-        test_smiles,
+        df_train,
+        df_test,
         scaler,
         SRC,
         TRG,
         device,
         logger
     ):
-    n_tests = 5
-    n_samples = 5
-    prop = [2, 50, 0.85]
+
+    n_tests = 10
+    n_samples = 32
+    toklen = 40
+    n_zs = 10
     
     save_folder = os.path.join(args.infer_path, args.benchmark,
                                'continuity_check', args.model_name)
@@ -328,46 +343,70 @@ def continuity_check(
                                    args.model_name, f'model_{args.epoch}.pt')
     generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
     
-    LOG.info('Prepare test data...')
-    
-    np.random.seed(0)
-        
-    test_smiles = np.random.choice(test_smiles, n_tests, replace=False)
-    with Pool(args.n_jobs) as pool:
-        src_list = list(pool.map(murcko_scaffold, test_smiles))
-
-    LOG.info('Prepare latent space input...')
-
-    toklen = 35
-    n_zs = 15
-    n_samples = 5
+    # LOG.info('Prepare test data...')            
+    # np.random.seed(4)
+    # test_smiles = np.random.choice(test_smiles, n_tests, replace=False)
+    # with Pool(args.n_jobs) as pool:
+    #     src_list = list(pool.map(murcko_scaffold, test_smiles))
 
     LOG.info('Sample smiles...')
 
-    for i, src in enumerate(src_list):    
-        LOG.info(f'Sample SMILES {i}...')    
-        LOG.info('source: %s', src)
-
+    for i in range(n_tests):
+        # target property & src smiles
+        trg_prop = []
+        for p in args.property_list:
+            trg_prop.append(df_train[p].sample(n=1).iloc[0])
+        src = df_test['smiles'].sample(n=1).iloc[0]
+        src = murcko_scaffold(src)
         src_ids = smi_to_id(src, TRG)
+        
+        LOG.info(f'src: {src}')
+        LOG.info(f'trg_prop: {trg_prop}')
 
+        with open(os.path.join(save_folder, f'record_{i}-src.txt'), 'w') as f:
+            f.write(src+','+','.join(str(x) for x in trg_prop))
+        
         if args.model_type == 'scacvaetfv1':
             sampled_z = generator.sample_z(toklen=len(src_ids)+toklen, n=2)
         elif args.model_type == 'scacvaetfv2':
-            sampled_z = generator.sample_z(toklen=len(args.property_list)
-                                                 +len(src_ids)
-                                                 +toklen, n=2)
+            sampled_z = generator.sample_z(toklen=len(args.property_list)+len(src_ids)+toklen, n=2)
+        elif args.model_type == 'scacvaetfv3':
+            sampled_z = generator.sample_z(toklen=len(src_ids)+toklen+1, n=2) # +1 -> sep
+
+        dist = distance(sampled_z[0], sampled_z[1])
+        assert dist / n_zs >= 1
+
+        LOG.info(f'dist: {dist}')
 
         z_vec = (sampled_z[1] - sampled_z[0]) / (n_zs - 1)
         all_zs = [sampled_z[0]+z_vec*j for j in range(n_zs)]
         
-        collected_smi = []
+        gen_mols = []
         
         for j in range(len(all_zs)):
-            zs = all_zs[j].repeat(n_samples, 1, 1)        
-            trg_prop = np.repeat([prop], n_samples, axis=0)        
-            gen, _, _ = generator.sample_smiles(trg_prop, src_ids, zs, transform=True)
-            LOG.info('gen: %s', gen)
-            collected_smi.append(gen[0])
+            if args.decode_algo == 'greedy':
+                zs = augment_z(n_samples, all_zs[j], std=1)
+            elif args.decode_algo == 'multinomial':
+                zs = augment_z(n_samples, all_zs[j], std=0)
+    
+            trg_props = np.repeat([trg_prop], n_samples, axis=0)
+            gen, _, _ = generator.sample_smiles(trg_props, src_ids, zs, transform=True)
+            LOG.info(f'({j}) gen: {gen}')
+            plot_smiles_group(gen, f'{i}-{j}.png')
 
-        collected_smi = [src] + collected_smi
-        plot_smiles_group(collected_smi, f'{i}.png')
+            with Pool(args.n_jobs) as pool:
+                mols = pool.map(get_mol, gen)
+            gen_mols.append([m for m in mols if m is not None])
+
+        snn_prev, snn_start = [], []
+        
+        for j in range(1, len(gen_mols)):
+            snn_prev.append(get_snn_from_mol(gen_mols[j-1], gen_mols[j]))
+            snn_start.append(get_snn_from_mol(gen_mols[0], gen_mols[j]))
+            LOG.info(f'snn_prev: {snn_prev}, snn_start: {snn_start}')
+        
+        snn = pd.DataFrame({ 'snn_prev': snn_prev, 'snn_start': snn_start })
+        snn.to_csv(os.path.join(save_folder, f'record_{i}-snn.csv'))
+        
+        # collected_smi = [src] + collected_smi
+        # plot_smiles_group(collected_smi, f'{i}.png')

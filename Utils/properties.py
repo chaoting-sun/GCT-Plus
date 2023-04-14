@@ -108,7 +108,7 @@ def mols_to_props(mols, property_fns, col_names=None, n_jobs=1):
     props = OrderedDict()
     for i, (p, fn) in enumerate(property_fns.items()):
         name = p if col_names is None else col_names[i]
-        with Pool(n_jobs) as pool:  
+        with Pool(n_jobs) as pool:
             props[name] = list(pool.map(fn, mols))
     return pd.DataFrame(props)
     

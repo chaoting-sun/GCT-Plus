@@ -2,13 +2,17 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from .sublayers import Sampler
-from .layers import EncoderLayer, DecoderLayer
-from .modules import Embeddings, PositionalEncoding
-from .modules import Norm, create_masks, get_clones
 from .ctf import CTF
+from Model import (
+    Sampler,
+    EncoderLayer,
+    DecoderLayer,
+    Embeddings,
+    PositionalEncoding,
+    Norm,
+    get_clones
+) 
+ 
 
 
 class Encoder(nn.Module):

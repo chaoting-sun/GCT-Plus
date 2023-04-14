@@ -1,14 +1,14 @@
-import numpy as np
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-
-from .layers import EncoderLayer, DecoderLayer
-from .sublayers import Sampler
-from .modules import Embeddings, PositionalEncoding, Norm, create_masks, get_clones
-
+from Model import (
+    Sampler,
+    EncoderLayer,
+    DecoderLayer,
+    Embeddings,
+    PositionalEncoding,
+    Norm,
+    get_clones
+) 
 
 class Encoder(nn.Module):
     "Pass N encoder layers, followed by a layernorm"
@@ -147,29 +147,3 @@ class ScaCvaetfV2(nn.Module):
         return output_prop, output_mol, mu, log_var, z
     
     
-# def collate_fcn(ins, SRC, TRG, device):
-#     outs = {}
-
-#     src = ['src', 'src_scaffold']
-#     trg = ['trg', 'trg_scaffold']
-#     props = ['econds', 'dconds', 'mconds']
-    
-#     for s in src:
-#         if s in ins[0]:
-#             outs[s] = SRC.process([e[s] for e in ins]).to(device)
-#             if not SRC.batch_first:
-#                 outs[s] = outs[s].T
-#             # List[int]: [t1, ..., tn, <pad>, ...]
-    
-#     for t in trg:
-#         if t in ins[0]:
-#             outs[t] = TRG.process([e[t] for e in ins]).to(device)
-#             if not TRG.batch_first:
-#                 outs[t] = outs[t].T
-#             # List[int]: [<sos>, t1, ..., tn, <eos>, <pad>, ...]
-        
-#     for p in props:
-#         if p in ins[0]:
-#             outs[p] = torch.tensor([e[p] for e in ins],
-#                 dtype=torch.float32).to(device)
-#     return outs
