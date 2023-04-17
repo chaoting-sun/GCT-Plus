@@ -151,6 +151,192 @@ def get_molgpt_valid_smi(src, smiles_list, include_mol,
     return valid_smi
 
 
+class RecordComputation:
+    def __init__(self, property_list, n_jobs=8):
+        self.n_jobs = n_jobs
+        self.property_fn = get_property_fn(property_list)
+        self.error_fn = get_error_fn(['MSE', 'MAE', 'AMSD', 'AARD'])
+    
+    
+    def get_valid(self, smiles_list, structure=None,
+                  method='molgpt'):
+        if method == 'molgpt':
+            assert structure is not None
+            similarity_fn = partial(murcko_scaffold_similarity,
+                                    smi_or_mol2=structure)
+            with Pool(self.n_jobs) as pool:
+                similarity = pool.map(similarity_fn, smiles_list)
+            valid_smi = []
+            for i, sim in enumerate(similarity):
+                if sim != None and sim >= 0.80:
+                    valid_smi.append(smiles_list[i])
+        else:
+            with Pool(self.n_jobs) as pool:
+                valid_smi = pool.map(get_mol, smiles_list)
+        
+        with Pool(self.n_jobs) as pool:
+            valid_mol = pool.map(get_mol, valid_smi)
+        return valid_smi, valid_mol
+    
+    
+    def compute_basis_metric(self, gen_smi, structure):
+        records = OrderedDict()
+        
+        valid_smi, valid_mol = self.get_valid(gen_smi, structure=structure)
+        unique_smi = list(set(valid_smi))
+        
+        records['structure'] = structure
+        records['validity'] = len(valid_smi) / len(gen_smi)
+        
+    
+
+    # records = OrderedDict()
+
+    # valid_mol, valid_smi = smi_to_mol(gen_smi, include_smi=True, n_jobs=n_jobs)
+    # # valid_smi, valid_mol = get_molgpt_valid_smi(
+    # #     src_smi, gen_smi, include_mol=True,
+    # #     n_jobs=n_jobs)    
+    # # print('valid', valid_smi, valid_mol)
+
+    # unique_smi = list(set(valid_smi))
+    # # valid_smi is canonicalized
+    
+    # # properties
+    # src_mol = get_mol(src_smi)
+    # records['src'] = src_smi
+    # for i, p in enumerate(property_fn):
+    #     records[f'src_{p}'] = property_fn[p](src_mol)
+    # for i, p in enumerate(property_fn):    
+    #     records[f'trg_{p}'] = trg_prop[i]
+
+    # # validity
+    # records['valid'] = len(valid_smi) / len(gen_smi)
+    
+    # if len(valid_smi) > 0:
+    #     # uniqueness, novelty, diversity, SSF
+    #     records['unique'] = len(unique_smi) / len(valid_smi)
+    #     records['novel'] = metrics.novelty(valid_smi, train_smiles, n_jobs)
+    #     records['diversity'] = metrics.internal_diversity(valid_smi, n_jobs)
+    #     with Pool(n_jobs) as pool:
+    #         murcko_sca = pool.map(murcko_scaffold, valid_smi)
+    #     records['SSF'] = (sum([1 for sca in murcko_sca
+    #                       if sca == src_smi]) / len(murcko_sca))
+        
+    #     # similarity
+    #     similarity_to_src = partial(similarity_fn, smi_or_mol2=src_mol)
+    #     with Pool(n_jobs) as pool:
+    #         similarity = pool.map(similarity_to_src, valid_mol)
+    #     records['avg_similarity'] = sum(similarity) / len(similarity)
+
+    #     # error        
+    #     gen_prop = mols_to_props(valid_mol, property_fn, n_jobs=n_jobs)
+    #     for i, p in enumerate(property_fn):
+    #         genv_list = gen_prop[p]
+    #         trgv_list = [trg_prop[i] for _ in range(len(gen_prop))]
+    #         records[f'SD_{p}'] = genv_list.std()
+    #         for e in error_fn:
+    #             records[f'{e}_{p}'] = error_fn[e](trgv_list, genv_list)
+        
+    # else:
+    #     records['unique'] = records['novel'] = records['diversity'] = records['SSF'] = 0
+    #     records['avg_similarity'] = 0
+    #     for p in property_fn:
+    #         records[f'SD_{p}'] = 0
+    #         for e in error_fn:
+    #             records[f'{e}_{p}'] = 0
+    #     murcko_sca = []
+
+
+
+"""
+smiles generation
+- fn1: input
+"""
+
+
+
+class StructureConditionedSampling:
+    def __init__(self, args, generator, property_list,
+                 error_fn, property_fn):
+        self.generator = generator
+        self.error_fn = error_fn
+        self.property_fn = property_fn
+        self.property_list = property_list
+        
+    def generate_conditioned_smiles_sample(self, structure, n, prop=None,
+                                           transform=True, batch_size=512):
+        gens, toklens, toklen_gens = [], [], []
+
+        prop = np.repeat([prop], n, axis=0)
+        n_batch = int(np.ceil(n / batch_size))
+        
+        for i in range(n_batch):
+            sid = batch_size * i
+            eid = batch_size * (i+1) if eid <= n else n
+            
+            gen, toklen, toklen_gen = self.generator.sample_smiles(
+                prop[sid:eid, :], structure, transform=transform
+            )
+            gens.extend(gen)
+            toklens.extend(toklen)
+            toklen_gens.extend(toklen_gen)
+
+        return gens, toklens, toklen_gens
+
+     
+    def sample_smiles(self, df_data, n, LOG):
+        for i in range(len(df_data)):
+            structure = df_data.loc[i, 'scaffold']
+            properties = df_data.loc[i, self.property_list]
+            
+            LOG.info('generate smiles conditioned on structures (and properties)')
+            
+            outputs = self.generate_conditioned_smiles_sample(structure, n,
+                                                              properties)
+            gens, toklens, toklen_gens = outputs
+            
+            LOG.info('compute records...')
+
+            records, unique_smi = compute_records(
+                src, gen, prop, property_fn,
+                error_fn, murcko_scaffold_similarity,
+                train_smiles, args.n_jobs)
+
+            LOG.info('save records...')
+            LOG.info(records)
+            
+            records = OrderedDict([(k, [records[k]])
+                                   for k in records])
+            records = pd.DataFrame(records)
+            if pid == 0:
+                records.to_csv(os.path.join(save_folder, f'record{src_id}.csv'),
+                               index=False)
+            else:
+                records.to_csv(os.path.join(save_folder, f'record{src_id}.csv'),
+                               index=False, mode='a', header=False)
+            
+            # LOG.info('plot smiles...')
+            
+            # plot_smiles(src_sca, os.path.join(save_folder, f'scaffold{sid}.png'))
+            # print(len(unique_smi))
+            # sampled_smi = np.random.choice(unique_smi, 24, replace=False)
+            # plot_smiles_group(sampled_smi,
+            #                   save_path=os.path.join(save_folder, f'prediction{sid}.png'),
+            #                   n_per_mol=6,
+            #                   n_jobs=args.n_jobs)        
+    
+
+
+
+
+
+
+    
+    
+    
+        
+
+
 def scaffold_sampling(
         args,
         toklen_data,

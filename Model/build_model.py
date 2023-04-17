@@ -138,6 +138,7 @@ def get_generator(args, SRC, TRG, toklen_data, scaler, device):
         'max_strlen'  : args.max_strlen,
         'use_cond2dec': args.use_cond2dec,
         'decode_algo' : args.decode_algo,
+        'n_jobs'      : args.n_jobs,
         'toklen_data' : toklen_data,
         'cond_dim'    : len(args.property_list),
         'scaler'      : scaler,

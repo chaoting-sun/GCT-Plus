@@ -44,15 +44,15 @@ def get_src_mask(src, pad_idx, conditions=None):
     return src_mask
 
 
-def get_trg_mask(target, pad_idx, use_cond2dec, conditions=None):
+def get_trg_mask(target, pad_id, use_cond2dec, conditions=None):
     # padding mask -> (bs,1,nc+strlen)
-    trg_mask = (target != pad_idx).unsqueeze(-2)
+    trg_mask = (target != pad_id).unsqueeze(-2)
     if use_cond2dec:
         cond_mask = get_cond_mask(conditions)
         trg_mask = torch.cat([cond_mask, trg_mask], dim=2)
     # no peak mask -> (bs,1,nc+strlen) or (bs,1,strlen)
     cond_dim = 0 if conditions is None else conditions.size(-1)
-    np_mask = nopeak_mask(target.size(1), use_cond2dec, pad_idx, cond_dim)
+    np_mask = nopeak_mask(target.size(1), use_cond2dec, pad_id, cond_dim)
     np_mask = np_mask.to(target.get_device())
     
     return trg_mask & np_mask

@@ -110,7 +110,10 @@ def main(rank, world_size):
             world_size=world_size
         )
 
-    set_seed(0)  # 0, 100, 200, 400
+    # set_seed(0) # 0
+    # set_seed(100) # 100
+    # set_seed(200) # 200
+    set_seed(1000) # 1000
 
     parser = argparse.ArgumentParser()
     train_opts(parser)

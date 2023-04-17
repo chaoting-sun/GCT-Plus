@@ -4,6 +4,7 @@ import pandas as pd
 from Inference.utils import prepare_generator
 import torch
 import random
+from time import time
 from Model.build_model import get_generator
 from Utils import DataloaderPreparation
 from Utils.properties import get_property_fn, mols_to_props
@@ -202,44 +203,6 @@ def sample_molecule_pairs(df, n_pairs, property_list, same_scaffold=True,
     final_pairs = pd.concat(final_pairs, axis=0).reset_index(drop=True)
     print(final_pairs)
     return final_pairs
-   
-
-# def sample_molecule_pair(df, property_list, same_scaffold=True, constraint=None):
-#     dfcopy = df.copy()
-
-#     if same_scaffold:
-#         rand_id = np.random.choice(len(dfcopy))
-#         sca = dfcopy.loc[rand_id, 'scaffold']
-#         dfcopy = dfcopy[dfcopy.scaffold == sca].reset_index(drop=True)
-
-#     if len(dfcopy) < 2:
-#         return sample_molecule_pair(df, property_list, same_scaffold, constraint)
-
-#     while True:
-#         pair = dfcopy.sample(n=2).reset_index(drop=True)
-#         if constraint is not None:
-#             is_valid = np.zeros((len(property_list),), dtype=bool)
-#             for i, (p, delp) in enumerate(constraint.items()):
-#                 if abs(pair.loc[0,p] - pair.loc[1,p]) <= delp:
-#                     is_valid[i] = True
-#             if np.all(is_valid):
-#                 break
-#         else:
-#             break
-
-#     pair = pair[['smiles', 'scaffold']+property_list]
-#     row1 = pair.iloc[[0]].rename(
-#         columns={**{ 'smiles': 'src_0',
-#                     'scaffold': 'scaffold_0'},
-#                  **{ p: f'{p}_0' for p 
-#                     in property_list }}).reset_index(drop=True)
-#     row2 = pair.iloc[[1]].rename(
-#         columns={**{ 'smiles': 'src_1',
-#                     'scaffold': 'scaffold_1'},
-#                  **{ p: f'{p}_1' for p
-#                     in property_list }}).reset_index(drop=True)
-    
-#     return pd.concat([row1, row2], axis=1)
 
 
 def interpolate_latent_spaces(lat1, lat2, cond1, cond2, n, method='slerp'):
@@ -302,9 +265,32 @@ def topk(arr, k):
     return ids
 
 
+def smoothness_from_simstart(sim_start):
+    pass
+
+
+def smoothness_from_simstart(sim_start):
+    sim_perfect = np.linspace(sim_start[0], sim_start[-1], len(sim_start))
+    difference = [abs(i-j) for i, j in zip(sim_start, sim_perfect)]
+    return 1 - sum(difference) / len(difference)
+    # scacvaetf: 0.7159285063144353
+    # cvaetf: 0.6855989441898116
+    # vaetf: 0.7464250655597153
+    # 0.6253151181904179
+
+
 def get_smoothness_by_simprev(tasim_prev, threshold=0.50):
     return len([t for t in tasim_prev
                 if t >= threshold]) / len(tasim_prev)
+
+
+def get_smoothness_by_simstart(tasim_start_from_begin, tasim_start_from_end):
+    """get smoothness from a list of TaSim(current, previous)"""
+    delv_begin = np.array([tasim_start_from_begin[i] - tasim_start_from_begin[i-1]
+                          for i in range(1, len(tasim_start_from_begin))])
+    delv_end = np.array([tasim_start_from_end[i] - tasim_start_from_end[i-1]
+                        for i in range(1, len(tasim_start_from_end))])
+    return 1- (delv_begin.std(ddof=1)*delv_end.std(ddof=1))**0.5
 
 
 import itertools
@@ -320,14 +306,30 @@ def get_trg_prop(property_list):
     return [list(c) for c in prop_comb]
 
 
-def get_smoothness_by_simstart(tasim_start_from_begin, tasim_start_from_end):
-    """get smoothness from a list of TaSim(current, previous)"""
-    delv_begin = np.array([tasim_start_from_begin[i] - tasim_start_from_begin[i-1]
-                          for i in range(1, len(tasim_start_from_begin))])
-    delv_end = np.array([tasim_start_from_end[i] - tasim_start_from_end[i-1]
-                        for i in range(1, len(tasim_start_from_end))])
-    return 1- (delv_begin.std(ddof=1)*delv_end.std(ddof=1))**0.5
+class InferenceInput:
+    def __init__(self, use_scaffold, property_list):
+        self.use_scaffold = use_scaffold
+        self.property_list = property_list
+    
+    def wrap_encoder_input(self, smiles_list, transform,
+                           scaffold_list, econds):
+        kwargs = { 'smiles_list': smiles_list }
+        if self.use_scaffold:
+            kwargs['scaffold_list'] = scaffold_list
+        if len(self.property_list) > 0:
+            kwargs['econds'] = econds
+            kwargs['transform'] = transform
+        return kwargs
 
+    def wrap_decoder_input(self, zs, transform,
+                           sca_smi=None, dconds=None):
+        kwargs = { 'zs': zs }
+        if self.use_scaffold:
+            kwargs['sca_smi'] = sca_smi
+        if len(self.property_list) > 0:
+            kwargs['dconds'] = [dconds]
+            kwargs['transform'] = [transform]
+        return kwargs
 
 
 class SmilesInterpolation:
@@ -369,8 +371,6 @@ class SmilesInterpolation:
         rec = { 'esmi': [], 'dsmi': [], 'gsmi': [] }
         
         for p in range(len(pairs)):
-            print('p:', p)
-            
             esmi = pairs.loc[p, 'src_0']
             dsmi = pairs.loc[p, 'src_1']            
             encoder_scaffold = pairs.loc[p, 'scaffold_0']
@@ -393,9 +393,9 @@ class SmilesInterpolation:
                 new_z = eps.mul(std).add(mu)
     
                 kwargs = self.wrap_decoder_input(zs=new_z,
-                                                transform=transform,
-                                                sca_smi=decoder_scaffold,
-                                                dconds=dconds)
+                                                 transform=transform,
+                                                 sca_smi=decoder_scaffold,
+                                                 dconds=dconds)
                 gsmi, *_ = self.generator.sample_smiles(**kwargs)
                 gsmi = gsmi[0]
                 
@@ -412,12 +412,6 @@ class SmilesInterpolation:
             plot_smiles_group([esmi, dsmi, gsmi], os.path.join(save_folder, f'{p}.png'))
             if p == 10:
                 break
-
-
-  
-        
-            
-        
     
     def generate_interpolated_smiles(self, pairs, save_folder,
                                      trg_conds=None, transform=True):
@@ -494,7 +488,7 @@ class SmilesInterpolation:
                     ip_logvar = interpolate_encoder_output(
                         logvar0, logvar1, toklen, alpha,
                         self.interpolate_fn)
-
+                    
                     if self.model_type == 'ctf':
                         ip_std = torch.empty_like(ip_logvar).normal_(mean=0, std=std_current)
                     else:
@@ -550,6 +544,8 @@ class SmilesInterpolation:
         best_tasim_prev = None
         best_p = 0
 
+        k = 0
+        
         for p in range(len(pairs)):
             tasim_prev = []
             tasim_start_from_begin = []
@@ -573,7 +569,11 @@ class SmilesInterpolation:
             
             tasim_start_rec[p] = tasim_start_from_begin
             tasim_prev_rec[p] = tasim_prev
+            
+            # compute smoothness
 
+            k += smoothness_from_simstart(tasim_start_from_begin)
+            
             smoothness_start = get_smoothness_by_simstart(tasim_start_from_begin, tasim_start_from_end)
             smoothness_prev = get_smoothness_by_simprev(tasim_prev[1:])
 
@@ -584,6 +584,8 @@ class SmilesInterpolation:
                 best_tasim_start = tasim_start_from_begin
                 best_tasim_prev = tasim_prev
                 best_p = p
+        
+        print('mean of smoothness:', k / len(pairs))
         
         smoothness_rec = pd.DataFrame(smoothness_rec)
         smoothness_rec.to_csv(os.path.join(save_folder, f'smoothness{suffix}.csv'))
@@ -653,7 +655,7 @@ def generate_smiles_by_interpolation(args, generator, df_dataset, SRC, TRG,
 
     # file path
 
-    main_folder = os.path.join(args.infer_path, args.benchmark, f'test_decoder_ip13')
+    main_folder = os.path.join(args.infer_path, args.benchmark, f'test_decoder')
     os.makedirs(main_folder, exist_ok=True)
 
     data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
@@ -927,8 +929,8 @@ def test_decoder(args, toklen_data, df_train, scaler,
                                         args.use_scaffold, property_constraint=None,
                                         similarity_threshold=0.5)
         pairs.to_csv(data_path)
-
-    if False:
+    
+    if True:
         SIP = SmilesInterpolation(args, generator)
 
         # constraints = { 'logP': 3, 'tPSA': 20, 'QED': 0.4 } # the property constraints of pairs
@@ -948,7 +950,7 @@ def test_decoder(args, toklen_data, df_train, scaler,
             SIP.generate_interpolated_smiles(pairs, save_folder, trg_conds, transform=True)
     
     
-    if True:
+    if False:
         data_path = os.path.join(main_folder, f"{data_src}_pair.csv")
         pairs = pd.read_csv(data_path, index_col=[0])
         
