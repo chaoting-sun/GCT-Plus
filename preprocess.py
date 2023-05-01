@@ -70,9 +70,8 @@ def save_raw_data(save_folder, data_type, property_list,
     return raw_data
 
 
-def get_vocab(data_folder, file_name, prepared_properties,
-              add_sep=True):
-    SRC, TRG = smiles_field(prepared_properties)
+def get_vocab(data_folder, file_name, add_sep=False):
+    SRC, TRG = smiles_field(add_sep=add_sep)
     
     train = get_dataset(data_folder=data_folder,
                         fields=[('smiles', SRC)],
@@ -90,9 +89,9 @@ def get_vocab(data_folder, file_name, prepared_properties,
     else:
         TRG.build_vocab(train)
     pkl.dump(SRC, open(os.path.join(util_folder, 
-        f'SRC_{"-".join(prepared_properties)}.pkl'), 'wb'))
+        f'SRC{"_sep" if add_sep else ""}.pkl'), 'wb'))
     pkl.dump(TRG, open(os.path.join(util_folder,
-        f'TRG_{"-".join(prepared_properties)}.pkl'), 'wb'))
+        f'TRG{"_sep" if add_sep else ""}.pkl'), 'wb'))
     return SRC, TRG
 
 
@@ -196,8 +195,8 @@ def search_similar_pairs(save_folder, smiles_file_name, pair_file_name,
 #     prepared_data.to_csv(prepared_folder, index=False)
 
 
-def get_raw_data(smiles, raw_properties, n_jobs):
-    prop_fn = [property_fn[p] for p in raw_properties]
+def get_raw_data(smiles, property_list, n_jobs):
+    prop_fn = [property_fn[p] for p in property_list]
     sca_fn = lambda mol: MurckoScaffoldSmiles(mol=mol)
     with Pool(n_jobs) as pool:
         mol = pool.map(get_mol, smiles)
@@ -207,7 +206,7 @@ def get_raw_data(smiles, raw_properties, n_jobs):
         with Pool(n_jobs) as pool:
             res = pool.map(fn, mol)
         prop.append(res)
-    prop = pd.DataFrame(np.array(prop).T, columns=raw_properties)
+    prop = pd.DataFrame(np.array(prop).T, columns=property_list)
     
     with Pool(n_jobs) as pool:
         sca = pool.map(sca_fn, mol)
@@ -217,13 +216,13 @@ def get_raw_data(smiles, raw_properties, n_jobs):
     return raw_data
 
 
-def get_prepared_data(raw_data, prepared_properties):
+def get_prepared_data(raw_data, property_list):
     src_dict = OrderedDict([('smiles', 'src')])
     trg_dict = OrderedDict([('smiles', 'trg')])
     src_dict.update([('scaffold', 'src_scaffold')])
     trg_dict.update([('scaffold', 'trg_scaffold')])
-    src_dict.update([(p, f'src_{p}') for p in prepared_properties])
-    trg_dict.update([(p, f'trg_{p}') for p in prepared_properties])
+    src_dict.update([(p, f'src_{p}') for p in property_list])
+    trg_dict.update([(p, f'trg_{p}') for p in property_list])
     src = raw_data.loc[:, src_dict.keys()].rename(columns=src_dict)
     trg = raw_data.loc[:, trg_dict.keys()].rename(columns=trg_dict)
     prepared_data = pd.concat([src, trg], axis=1)
@@ -241,8 +240,10 @@ if __name__ == "__main__":
     device_opts(parser)
     parser.add_argument('-similarity', type=float, default=0.50)
     parser.add_argument('-scaffold_similarity', action='store_true')
-    parser.add_argument('-raw_properties', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
-    parser.add_argument('-prepared_properties', nargs='+', default=['logP', 'tPSA', 'QED'])
+    parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+
+    # parser.add_argument('-raw_properties', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+    # parser.add_argument('-prepared_properties', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
     parser.add_argument('-debug', action='store_true')
 
     args = parser.parse_args()
@@ -267,6 +268,7 @@ if __name__ == "__main__":
     
     for data_type in data_types:
         LOG.info(f'save raw data: {data_type}')
+
         save_path = os.path.join(raw_folder, 
             f'{data_type}{"_debug" if args.debug else ""}.csv')
         
@@ -275,8 +277,9 @@ if __name__ == "__main__":
             # get smiles list from the benchmark
             if args.debug:
                 smiles = smiles[:10000]
-            # save raw data
-            raw_data = get_raw_data(smiles, args.raw_properties, args.n_jobs)
+            
+            LOG.info('compute raw data properties')
+            raw_data = get_raw_data(smiles, args.property_list, args.n_jobs)
             raw_data.to_csv(save_path)
 
         # build vocabulary
@@ -285,35 +288,72 @@ if __name__ == "__main__":
 
             df_smiles = pd.DataFrame({ 'smiles': smiles })
             df_smiles.to_csv(os.path.join(raw_folder, 'train-tmp.csv'), index=False)
-            SRC, TRG = get_vocab(raw_folder, 'train-tmp', args.prepared_properties)
+            SRC, TRG = get_vocab(raw_folder, 'train-tmp', add_sep=True)
             os.remove(os.path.join(raw_folder, 'train-tmp.csv'))
 
             LOG.info('SRC vocabulary: %s', SRC.vocab.stoi)
             LOG.info('TRG vocabulary: %s', TRG.vocab.stoi)
 
+    exit(0)
+
+    # for data_type in data_types:
+    #     LOG.info(f'save prepared data: {data_type}')
+
+    #     # get raw data
+    #     raw_data = pd.read_csv(os.path.join(raw_folder,
+    #         f'{data_type}{"_debug" if args.debug else ""}.csv'))
+
+    #     # get what the prepared dataset you want
+    #     raw_data = raw_data[['smiles', 'scaffold']+args.property_list]
+        
+    #     # build scaler and transform the properties
+    #     if data_type == 'train':
+    #         scaler = get_scaler(util_folder, raw_data[args.property_list],
+    #                             rebuild=True)
+    #     raw_data[args.property_list] = scaler.transform(raw_data[args.property_list])
+
+    #     prepared_data = get_prepared_data(raw_data, args.property_list)
+    #     prepared_data.to_csv(os.path.join(prepared_folder,
+    #                                       f"{data_type}_"
+    #                                       f"{'-'.join(args.property_list)}"
+    #                                       f"{'_debug' if args.debug else ''}.csv"), index=False)
+
+
+    def concatenate_str(x):
+        if isinstance(x.scaffold, str) and len(x.scaffold) > 0:
+            return x['smiles']+'<sep>'+x['scaffold']
+        return np.nan
+
     for data_type in data_types:
         LOG.info(f'save prepared data: {data_type}')
 
-        # get raw data
         raw_data = pd.read_csv(os.path.join(raw_folder,
             f'{data_type}{"_debug" if args.debug else ""}.csv'))
-        
-        # get what the prepared dataset you want
-        raw_data = raw_data[['smiles', 'scaffold']
-                            +args.prepared_properties]
+
+        raw_data['smiles'] = raw_data.apply(lambda x: concatenate_str(x), axis=1)
+        raw_data = raw_data.dropna(subset=['smiles'])
+        raw_data = raw_data[['smiles']+args.property_list]
         
         # build scaler and transform the properties
         if data_type == 'train':
-            scaler = get_scaler(util_folder, raw_data[args.prepared_properties],
+            scaler = get_scaler(util_folder, raw_data[args.property_list],
                                 rebuild=True)
-        raw_data[args.prepared_properties] = scaler.transform(raw_data[args.prepared_properties])
+        raw_data[args.property_list] = scaler.transform(raw_data[args.property_list])
 
-        prepared_data = get_prepared_data(raw_data, args.prepared_properties)
+        prepared_data = OrderedDict()
+        prepared_data['src'] = raw_data['smiles']
+        for p in args.property_list:
+            prepared_data[f'src_{p}'] = raw_data[p]
+        prepared_data['trg'] = raw_data['smiles']
+        for p in args.property_list:
+            prepared_data[f'trg_{p}'] = raw_data[p]
+        prepared_data = pd.DataFrame(prepared_data)
+
         prepared_data.to_csv(os.path.join(prepared_folder,
                                           f"{data_type}_"
-                                          f"{'-'.join(args.prepared_properties)}"
+                                          f"{'-'.join(args.property_list)}"
                                           f"{'_debug' if args.debug else ''}.csv"), index=False)
-        
+
     LOG.info('Finished preprocessing')
     
     

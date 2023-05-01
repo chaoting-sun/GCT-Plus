@@ -123,8 +123,12 @@ def murcko_scaffold_similarity(smi_or_mol1, smi_or_mol2):
     scaffold2 = murcko_scaffold(smi_or_mol2)
     if scaffold1 is None or scaffold2 is None:
         return None
-    fp1 = FingerprintMol(get_mol(scaffold1))
-    fp2 = FingerprintMol(get_mol(scaffold2))
+    mol1 = get_mol(scaffold1)
+    mol2 = get_mol(scaffold2)
+    if mol1 is None or mol2 is None:
+        return None
+    fp1 = FingerprintMol(mol1)
+    fp2 = FingerprintMol(mol2)
     return TanimotoSimilarity(fp1, fp2)
 
     

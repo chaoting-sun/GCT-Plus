@@ -18,15 +18,10 @@ from Inference.continuity_check import continuity_check
 from Inference.test_encoder import test_encoder
 from Inference.test_decoder import test_decoder
 from Inference.scaffold_sampling import scaffold_sampling
-# from Inference.uniform_generation import fast_uniform_generation
-# from Inference.generate_z import generate_z
-# from Inference.varying_z_generate import varying_z_generate
-# from Inference.continuity_check import continuity_check
-# from Inference.src_generation import fast_src_generation
-# from Inference.src_rotator_generation import fast_src_rotator_generation
-# from Inference.test_decoder import test_decoder
-# from Inference.src_generation_mmps import fast_src_generation_mmps
-# from Inference.atten_generate import atten_generate
+from Inference.unconditioned_sampling import unconditioned_sampling
+from Inference.prop_sampling import prop_sampling
+from Inference.model_selection import model_selection
+
 
 
 def calc_distance(args):
@@ -69,6 +64,7 @@ def add_args(parser):
     parent_parser.add_argument('-property_list', nargs='+', default=[])
     # parent_parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED'])
 
+    parent_parser.add_argument('-model_type', type=str, required=True)
     parent_parser.add_argument('-encode_type', type=str, default='encode')
     parent_parser.add_argument('-decode_type', type=str, default='decode')
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
@@ -140,14 +136,14 @@ def add_args(parser):
     """
     et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
     et_parser.add_argument('-encoder_test', action='store_true')
-    et_parser.add_argument('-model_type', type=str, required=True)
+    # et_parser.add_argument('-model_type', type=str, required=True)
     
     """
     decoder test
     """
     dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
     dt_parser.add_argument('-decoder_test', action='store_true')
-    dt_parser.add_argument('-model_type', type=str, required=True)
+    # dt_parser.add_argument('-model_type', type=str, required=True)
 
     """
     sample with scaffold
@@ -155,6 +151,21 @@ def add_args(parser):
     ss_parser = subparsers.add_parser('scaffold-sampling', parents=[parent_parser])
     ss_parser.add_argument('-scaffold_sampling', action='store_true')
     ss_parser.add_argument('-prop', type=float, nargs='+')
+
+    """unconditioned sampling"""
+    ss_parser = subparsers.add_parser('unconditioned-sampling', parents=[parent_parser])
+    ss_parser.add_argument('-unconditioned_sampling', action='store_true')
+    ss_parser.add_argument('-n_samples', type=int, default=30000)
+
+    """property-conditioned sampling"""
+    ss_parser = subparsers.add_parser('prop-sampling', parents=[parent_parser])
+    ss_parser.add_argument('-prop_sampling', action='store_true')
+    ss_parser.add_argument('-n_samples', type=int, default=30000)
+
+    """model selection"""
+    ms_parser = subparsers.add_parser('model-selection', parents=[parent_parser])
+    ms_parser.add_argument('-model_selection', action='store_true')
+    ms_parser.add_argument('-n_samples', type=int, default=10000)
 
 
 def find_best_source():
@@ -211,18 +222,17 @@ if __name__ == "__main__":
     bm = benchmark_settings[args.benchmark]
     args.max_strlen = bm['max_strlen']
 
-    # get fields
-
-    if args.model_type in ('ctf', 'vaetf', 'cvaetf', 'scacvaetfv1', 'scacvaetfv2'):
-        SRC, TRG = smiles_field(args.property_list, util_path, suffix='molgct')
-        scaler = joblib.load(os.path.join(util_path,
-            f'scaler_molgct.pkl'))
-
+    # get fields    
+    
+    if args.model_type in ('ctf', 'vaetf', 'cvaetf', 'scacvaetfv1'):
+        SRC, TRG = smiles_field(util_path)
     elif args.model_type == 'scacvaetfv3':
-        SRC, TRG = smiles_field(args.property_list, util_path)
-        scaler = joblib.load(os.path.join(util_path,
-            f'scaler_{"-".join(args.property_list)}.pkl'))
+        SRC, TRG = smiles_field(util_path, add_sep=True)
 
+    scaler = None
+    if len(args.property_list) > 0:
+        scaler = joblib.load(os.path.join(util_path, f'scaler_{"-".join(args.property_list)}.pkl'))
+    
     COND = condition_fields(args.property_list)
     
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
@@ -230,12 +240,14 @@ if __name__ == "__main__":
     # get train/test smiles
 
     df_train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
-    train_smiles = df_train['smiles'].tolist()
-    df_test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
-    test_smiles = df_test['smiles'].tolist()
+    train = df_train['smiles'].tolist()
+    df_test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'))
+    test = df_test['smiles'].tolist()
+    df_test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
+    test_scaffolds = df_test_scaffolds['smiles'].tolist()
 
     if hasattr(args, 'continuity_check'):
-        continuity_check(args, toklen_data, df_train, df_test,
+        continuity_check(args, toklen_data, df_train, df_test_scaffolds,
                          scaler, SRC, TRG, device, logger)
     
     # if hasattr(args, 'uniform_generation'):
@@ -259,10 +271,23 @@ if __name__ == "__main__":
         test_encoder(args, toklen_data, scaler, SRC, TRG, COND, device)
 
     if hasattr(args, 'decoder_test'):
-        test_decoder(args, toklen_data, df_train, scaler, SRC, TRG, COND, device)
+        test_decoder(args, toklen_data, df_train, df_test_scaffolds,
+                     scaler, SRC, TRG, COND, device)
 
     elif hasattr(args, 'scaffold_sampling'):
-        scaffold_sampling(args, toklen_data, train_smiles, test_smiles,
-                          scaler, SRC, TRG, device, logger)
+        scaffold_sampling(args, toklen_data, df_train, df_test,
+                          df_test_scaffolds, scaler, SRC, TRG,
+                          device, logger)
         
-    
+    elif hasattr(args, 'unconditioned_sampling'):
+        unconditioned_sampling(args, train, test, test_scaffolds,
+                               toklen_data, scaler, SRC, TRG, device)
+
+    elif hasattr(args, 'prop_sampling'):
+        prop_sampling(args, df_train, df_test, toklen_data, scaler,
+                      SRC, TRG, device, logger)
+
+    elif hasattr(args, 'model_selection'):
+        model_selection(args, df_train, df_test, test_scaffolds,
+                        toklen_data, scaler, SRC, TRG, device)
+        

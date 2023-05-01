@@ -12,6 +12,7 @@ from Utils.properties import property_fn
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from Model.collate_fn import get_collate_fn
+import random
 
 
 def measure_time(f):
@@ -233,7 +234,7 @@ def get_loader(data_iter, property_list, pad_id, max_strlen,
         for p in property_list:
             prop_vals.append(getattr(batch, f"{data_type}_{p}").view(-1, 1))
         return torch.cat(prop_vals, dim=1)
-
+    
     return (rebatch_data(getattr(batch, 'src', None), 
                          extract_conds(batch, 'src'),
                          getattr(batch, 'trg', None),
@@ -260,7 +261,7 @@ class SmilesDataset(Dataset):
         self.randomize = randomize
     
     def tokenize_smiles(self, smi, field):
-        if self.randomize:
+        if self.randomize and random.random() > 0.7:
             smi = randomize_smiles(smi)
         return field.tokenize(smi)
         

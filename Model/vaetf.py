@@ -52,6 +52,7 @@ class Decoder(nn.Module):
                  nconds, dropout, use_cond2dec, use_cond2lat):
         super(Decoder, self).__init__()
         self.N = N
+        self.nconds = nconds
         self.d_model = d_model
         self.use_cond2dec = use_cond2dec
         self.use_cond2lat = use_cond2lat
@@ -70,19 +71,19 @@ class Decoder(nn.Module):
         x = self.embed(trg)
         e_outputs = self.fc_z(e_outputs)
 
-        if self.use_cond2dec:
+        if self.use_cond2dec and self.nconds > 0:
             cond2dec = self.embed_cond2dec(dconds)
             cond2dec = cond2dec.view(dconds.size(0), dconds.size(1), -1)
             x = torch.cat([cond2dec, x], dim=1)
             
-        elif self.use_cond2lat:
+        elif self.use_cond2lat and self.nconds > 0:
             cond2lat = self.embed_cond2lat(dconds)
             cond2lat = cond2lat.view(dconds.size(0), dconds.size(1), -1)
             e_outputs = torch.cat([cond2lat, e_outputs], dim=1)
 
         x = self.pe(x)
 
-        if self.use_cond2lat:
+        if self.use_cond2lat and self.nconds > 0:
             cond_mask = torch.ones_like(torch.unsqueeze(dconds, -2),
                                         dtype=bool)
             src_mask = torch.cat([cond_mask, src_mask], dim=2)
@@ -136,10 +137,8 @@ class Vaetf(nn.Module):
         if self.use_cond2dec:
             output_prop = self.prop_fc(output[:, :self.nconds, :])
             output_mol = output[:, self.nconds:, :]
-
         else:
             # use_cond2lat is true or no properties
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
-
         return output_prop, output_mol, mu, log_var, z

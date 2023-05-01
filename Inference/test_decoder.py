@@ -356,13 +356,23 @@ class SmilesInterpolation:
         return kwargs
 
     def wrap_decoder_input(self, zs, transform,
-                           sca_smi=None, dconds=None):
+                           scaffold=None, dconds=None):
         kwargs = { 'zs': zs }
-        if self.use_scaffold:
-            kwargs['sca_smi'] = sca_smi
-        if len(self.property_list) > 0:
+        
+        if self.use_scaffold and len(self.property_list) > 0:
+            kwargs['scaffold'] = scaffold
             kwargs['dconds'] = [dconds]
             kwargs['transform'] = [transform]
+
+        elif self.use_scaffold and len(self.property_list) == 0:
+            kwargs['scaffold'] = scaffold
+
+        elif not self.use_scaffold and len(self.property_list) > 0:
+            kwargs['dconds'] = [dconds]
+            kwargs['transform'] = [transform]
+
+        elif not self.use_scaffold and len(self.property_list) == 0:
+            kwargs['n'] = zs.size(0)
         return kwargs
     
     
@@ -394,8 +404,9 @@ class SmilesInterpolation:
     
                 kwargs = self.wrap_decoder_input(zs=new_z,
                                                  transform=transform,
-                                                 sca_smi=decoder_scaffold,
+                                                 scaffold=decoder_scaffold,
                                                  dconds=dconds)
+                print(kwargs)
                 gsmi, *_ = self.generator.sample_smiles(**kwargs)
                 gsmi = gsmi[0]
                 
@@ -424,8 +435,8 @@ class SmilesInterpolation:
             figure_path = os.path.join(save_folder, f'prediction{p}{suffix}.png')
             print(smiles_path)
 
-            if os.path.exists(smiles_path):
-                continue
+            # if os.path.exists(smiles_path):
+            #     continue
             
             # input information
 
@@ -437,7 +448,7 @@ class SmilesInterpolation:
             cond1 = pairs.loc[p, [f'{prop}_1' for prop in self.property_list]].to_numpy()
 
             # encode smiles of both molecules
-
+            
             kwargs0 = self.wrap_encoder_input(smiles_list=[src0],
                                               transform=transform,
                                               scaffold_list=[scaffold0],
@@ -477,10 +488,12 @@ class SmilesInterpolation:
                 # interpolate mean and logvar from encoder
 
                 while not is_valid:
-                    if toklen0 > toklen1:
-                        toklen0, toklen1 = toklen1, toklen0
-                    toklen = np.random.choice(np.arange(toklen0, toklen1+1))
-                    # toklen =  int(toklen0*(1-alpha) + toklen1*alpha)
+                    ## randomly choose between the two
+                    # if toklen0 > toklen1:
+                    #     toklen0, toklen1 = toklen1, toklen0
+                    # toklen = np.random.choice(np.arange(toklen0, toklen1+1))
+                    ## linear interpolation
+                    toklen =  int(toklen0*(1-alpha) + toklen1*alpha)
 
                     ip_mu = interpolate_encoder_output(
                         mu0, mu1, toklen, alpha,
@@ -501,8 +514,9 @@ class SmilesInterpolation:
 
                     kwargs = self.wrap_decoder_input(zs=new_z,
                                                      transform=transform,
-                                                     sca_smi=scaffold0,
+                                                     scaffold=scaffold0,
                                                      dconds=trg_conds)
+
                     smiles, *_ = self.generator.sample_smiles(**kwargs)
 
                     mol = get_mol(smiles[0])
@@ -896,8 +910,18 @@ def generate_smiles_by_interpolation(args, generator, df_dataset, SRC, TRG,
 
 
 @torch.no_grad()
-def test_decoder(args, toklen_data, df_train, scaler,
-                 SRC, TRG, COND, device):
+def test_decoder(
+        args,
+        toklen_data,
+        df_train,
+        df_test_scaffolds,
+        scaler,
+        SRC,
+        TRG,
+        COND,
+        device
+    ):
+
     # save_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-formal',
     #                            args.model_name, slerp_or_lerp)
     # os.makedirs(save_folder, exist_ok=True)
@@ -913,27 +937,42 @@ def test_decoder(args, toklen_data, df_train, scaler,
 
     # file path
 
-    data_src = 'test_scaffolds' # the data source
-    main_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-debug')
-    data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
-    save_folder = os.path.join(main_folder, args.model_name)
+    # data_src = 'test_scaffolds' # the data source
+    # main_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-debug')
+    # data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
+    # save_folder = os.path.join(main_folder, args.model_name)
 
-    os.makedirs(main_folder, exist_ok=True)
-    os.makedirs(save_folder, exist_ok=True)
+    # os.makedirs(main_folder, exist_ok=True)
+    # os.makedirs(save_folder, exist_ok=True)
 
+    # n_pairs = 100 # number of the test pairs
+
+    # df_data = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/raw/{data_src}.csv')
+    # if not os.path.exists(data_path):
+
+    #     pairs = sample_molecule_pairs(df_data, n_pairs, args.property_list,
+    #                                     args.use_scaffold, property_constraint=None,
+    #                                     similarity_threshold=0.5)
+    #     pairs.to_csv(data_path)
+    
     n_pairs = 100 # number of the test pairs
+    data_src = 'test_scaffolds'
+    
+    main_folder = os.path.join(args.infer_path, args.benchmark, 'interpolate-smiles')
+    data_path = os.path.join(main_folder, f"{data_src}_samples{'-scaffold' if args.use_scaffold else ''}.csv")
+    os.makedirs(main_folder, exist_ok=True)
 
-    df_data = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/raw/{data_src}.csv')
     if not os.path.exists(data_path):
-        pairs = sample_molecule_pairs(df_data, n_pairs, args.property_list,
+        pairs = sample_molecule_pairs(df_test_scaffolds, n_pairs, args.property_list,
                                         args.use_scaffold, property_constraint=None,
                                         similarity_threshold=0.5)
         pairs.to_csv(data_path)
-    
-    if True:
-        SIP = SmilesInterpolation(args, generator)
 
-        # constraints = { 'logP': 3, 'tPSA': 20, 'QED': 0.4 } # the property constraints of pairs
+    if True:
+        save_folder = os.path.join(main_folder, args.model_name)
+        os.makedirs(save_folder, exist_ok=True)
+
+        SIP = SmilesInterpolation(args, generator)
 
         pairs = pd.read_csv(data_path, index_col=[0])
         SIP.generate_interpolated_smiles(pairs, save_folder, transform=True)

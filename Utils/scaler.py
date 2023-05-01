@@ -46,7 +46,7 @@ def scaler_transform(df_property, scaler):
 
 
 def build_scaler(prop_val, prop_name):
-    scaler = RobustScaler(quantile_range=(0.1, 0.9))
+    scaler = RobustScaler(quantile_range=(25, 75))
     scaler.fit(prop_val, len(prop_name))
     return scaler
     

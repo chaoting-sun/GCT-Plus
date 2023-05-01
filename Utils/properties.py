@@ -11,11 +11,15 @@ from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from rdkit.Chem.rdchem import AtomValenceException
 from rdkit.Chem import MolFromSmiles, MolToSmiles, \
     Descriptors, Mol, AllChem, SanitizeMol
+from rdkit.Chem import rdmolops
 
-from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
+from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect, \
+    CalcNumHBA, CalcNumHBD, CalcNumRotatableBonds, CalcNumAliphaticRings, \
+    CalcNumAromaticRings
 
 from moses.metrics.SA_Score import sascorer
 from moses.metrics.NP_Score import npscorer
+from Utils.mapper import mapper
 
 
 def disable_rdkit_logging():
@@ -49,20 +53,67 @@ def NP(mol) -> float:
     return npscorer.scoreMol(mol)
 
 
-# property_prediction = {
-#     "logP": logP,
-#     "tPSA": tPSA,
-#     "QED" : QED,
-#     "SA"  : SAS,
-#     "NP"  : NP
-# }
+def MW(mol):
+    return Descriptors.MolWt(mol)
+
+
+def HAC(mol):
+    return mol.GetNumHeavyAtoms()
+
+
+def HBA(mol):
+    """returns the number of H-bond acceptors for a molecule"""
+    return CalcNumHBA(mol)
+
+
+def HBD(mol):
+    """returns the number of H-bond donors for a molecule"""
+    return CalcNumHBD(mol)
+
+
+def RBN(mol):
+    """return the number of rotatable bonds for a molecule"""
+    return CalcNumRotatableBonds(mol)
+
+
+def AIRN(mol):
+    """return the number of aliphatic rings"""
+    return CalcNumAliphaticRings(mol)
+
+
+def ARRN(mol):
+    return CalcNumAromaticRings(mol)
+
 
 property_fn = {
     "logP": logP,
     "tPSA": tPSA,
     "QED" : QED,
     "SAS" : SAS,
-    "NP"  : NP
+    "NP"  : NP,
+    "MW"  : MW,
+    'HAC' : HAC,
+    'HBA' : HBA,
+    'HBD' : HBD,
+    'RBN' : RBN,
+    'AIRN': AIRN,
+    'ARRN': ARRN
+}
+
+
+property_type = {
+    "logP": 'density',
+    "tPSA": 'density',
+    "QED" : 'density',
+    "SAS" : 'density',
+    "NP"  : 'density',
+    "MW"  : 'number',
+    'HAC' : 'number',
+    'HBA' : 'number',
+    'HBD' : 'number',
+    'RBN' : 'number',
+    'AIRN': 'number',
+    'ARRN': 'number'
 }
 
 
@@ -72,26 +123,19 @@ def get_property_fn(props):
         "tPSA": tPSA,
         "QED" : QED,
         "SAS" : SAS,
-        "NP"  : NP
+        "NP"  : NP,
+        "MW"  : MW,
+        'HAC' : HAC,
+        'HBA' : HBA,
+        'HBD' : HBD,
+        'RBN' : RBN,
+        'AIRN': AIRN,
+        'ARRN': ARRN,
     }
     return { p: property_fn[p] for p in props }
 
 
-# def get_property_fn(prop_name):
-#     property_fn = {
-#         "logP": logP,
-#         "tPSA": tPSA,
-#         "QED": QED,
-#         "SAS": SAS,
-#         "NP": NP
-#     }
-#     def compute_prop(mol):
-#         return [property_fn[p](mol)
-#                 for p in prop_name]
-#     return compute_prop
-
-
-def mols_to_props(mols, property_fns, col_names=None, n_jobs=1):
+def mols_to_props(mols, property_fns, n_jobs=1, col_names=None):
     """compute properties of mols by a list of property functions
     
     Args:
@@ -109,6 +153,7 @@ def mols_to_props(mols, property_fns, col_names=None, n_jobs=1):
     for i, (p, fn) in enumerate(property_fns.items()):
         name = p if col_names is None else col_names[i]
         with Pool(n_jobs) as pool:
+            print('property fn:', fn.__name__)
             props[name] = list(pool.map(fn, mols))
     return pd.DataFrame(props)
     

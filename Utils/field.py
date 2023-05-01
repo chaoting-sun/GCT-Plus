@@ -1,5 +1,6 @@
 # from functools import total_ordering
 import os
+import re
 import dill as pickle
 
 import torch
@@ -8,9 +9,30 @@ from torchtext import data
 from SmilesPE.pretokenizer import atomwise_tokenizer
 
 
-class moltokenize(object):
-    def tokenizer(self, sentence):
-        return [tok for tok in atomwise_tokenizer(sentence) if tok != " "]
+class moltokenize:
+    def __init__(self, add_sep=False):
+        if add_sep:
+            self.tokenizer = self._tokenizer_with_sep
+        else:
+            self.tokenizer = self._tokenizer
+        generaral_pattern =  "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        self.regex = re.compile(generaral_pattern)
+
+    def _tokenize(self, sentence):
+        return [token for token in self.regex.findall(sentence)]
+
+    def _tokenizer(self, sentence):
+        return [tok for tok in self._tokenize(sentence) if tok != " "]
+
+    def _tokenizer_with_sep(self, sentence):
+        pattern = re.compile(r'(<sep>)')
+        res = pattern.split(sentence)
+        if len(res) == 1:
+            return self._tokenizer(sentence) # no <sep>
+        elif len(res) == 3:
+            return self._tokenize(res[0]) + ['<sep>'] + self._tokenize(res[2])
+        else:
+            return []
 
     @staticmethod
     def untokenizer(tokens, sos_idx, eos_idx, itos):
@@ -23,9 +45,9 @@ class moltokenize(object):
         return smi
 
 
-def smiles_fields(smiles_field_path=None):
-    t_src = moltokenize()
-    t_trg = moltokenize()
+def smiles_fields(smiles_field_path=None, add_sep=False):
+    t_src = moltokenize(add_sep)
+    t_trg = moltokenize(add_sep)
 
     SRC = data.Field(tokenize=t_src.tokenizer, batch_first=True)
     TRG = data.Field(tokenize=t_trg.tokenizer, batch_first=True,
@@ -113,15 +135,17 @@ def save_fields(src_fields, trg_fields, field_path):
     pickle.dump(trg_fields, open(trg_field_path, 'wb'))
 
 
-def smiles_field(properties, field_path=None, suffix=None):
-    t_src = moltokenize()
-    t_trg = moltokenize()
+# def smiles_field(properties, field_path=None, suffix=None):
+def smiles_field(field_path=None, add_sep=False):
+    t_src = moltokenize(add_sep)
+    t_trg = moltokenize(add_sep)
     
     SRC = data.Field(
         tokenize=t_src.tokenizer,
         batch_first=True,
         unk_token='<unk>'
     )
+    
     TRG = data.Field(
         tokenize=t_trg.tokenizer,
         batch_first=True,
@@ -131,13 +155,12 @@ def smiles_field(properties, field_path=None, suffix=None):
     )
     
     if field_path is not None:
-        if suffix is None:
-            suffix = '-'.join(properties)
+        suffix = '_sep' if add_sep else ''
         try:
-            SRC = pickle.load(open(os.path.join(field_path, f'SRC_{suffix}.pkl'), 'rb'))
-            TRG = pickle.load(open(os.path.join(field_path, f'TRG_{suffix}.pkl'), 'rb'))
+            SRC = pickle.load(open(os.path.join(field_path, f'SRC{suffix}.pkl'), 'rb'))
+            TRG = pickle.load(open(os.path.join(field_path, f'TRG{suffix}.pkl'), 'rb'))
         except:
-            print(">>> Files SRC.pkl/TRG.pkl not in:" + field_path)
+            print(">>> Files SRC.pkl/TRG.pkl not in: " + os.path.join(field_path, f'SRC{suffix}.pkl'))
             exit(1)
 
     return (SRC, TRG)   
@@ -148,6 +171,57 @@ def property_field(property_list):
     PROP = [data.Field(use_vocab=False, sequential=False, batch_first=True,
             dtype=torch.float32) for _ in property_list]
     return PROP
+
+
+def get_train_field1(property_list, use_scaffold=False,
+                     field_path=None, add_sep=False):
+    SRC, TRG = smiles_field(field_path, add_sep)
+    PROP = property_field(property_list)
+    prop_dict = { property_list[i]: PROP[i]
+                  for i in range(len(property_list)) }
+
+    src_fields = [('src', SRC)]
+    trg_fields = [('trg', TRG)]
+    if use_scaffold:
+        src_fields.append(('src_scaffold', SRC))
+        trg_fields.append(('trg_scaffold', TRG))
+    else:
+        src_fields.append(('src_scaffold', None))
+        trg_fields.append(('trg_scaffold', None))
+    for prop in ('logP', 'tPSA', 'QED', 'SAS'):
+        if prop in property_list:
+            src_fields.append((f'src_{prop}', prop_dict[prop]))
+            trg_fields.append((f'trg_{prop}', prop_dict[prop]))
+        else:
+            src_fields.append((f'src_{prop}', None))
+            trg_fields.append((f'trg_{prop}', None))
+    return src_fields + trg_fields, SRC, TRG
+
+
+def get_train_field2(property_list, use_scaffold=True,
+                     field_path=None, add_sep=True):
+    SRC, TRG = smiles_field(field_path, add_sep)
+    PROP = property_field(property_list)
+    prop_dict = { property_list[i]: PROP[i]
+                  for i in range(len(property_list)) }
+
+    src_fields = [('src', SRC)]
+    trg_fields = [('trg', TRG)]
+    for prop in ('logP', 'tPSA', 'QED', 'SAS'):
+        if prop in property_list:
+            src_fields.append((f'src_{prop}', prop_dict[prop]))
+            trg_fields.append((f'trg_{prop}', prop_dict[prop]))
+        else:
+            src_fields.append((f'src_{prop}', None))
+            trg_fields.append((f'trg_{prop}', None))
+    return src_fields + trg_fields, SRC, TRG
+
+
+train_field = {
+    'vaetf'     : get_train_field1,
+    'cvaetf'    : get_train_field1,
+    'scacvaetfv3': get_train_field2
+}
 
 
 def get_iter_field(property_list, field_path=None):

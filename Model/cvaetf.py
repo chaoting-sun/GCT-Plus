@@ -125,9 +125,13 @@ class Cvaetf(nn.Module):
         self.reset_parameters()
     
     def reset_parameters(self):
-        for p in self.parameters():
+        for name, p in self.named_parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
+            
+        # for p in self.parameters():
+        #     if p.dim() > 1:
+        #         nn.init.xavier_uniform_(p)
 
     def encode(self, src, src_mask, econds):
         z, mu, log_var = self.encoder(src, src_mask, econds)

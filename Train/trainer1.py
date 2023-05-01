@@ -6,7 +6,7 @@ from time import time
 import torch.nn.functional as F
 import torch.distributed as dist
 from functools import reduce
-from Model.forward_propagation import forward_propagation
+from Model.forward_propagation1 import forward_propagation
 # from GPUtil import showUtilization as gpu_usage
 # from torch.cuda.amp import GradScaler, autocast
 
@@ -66,71 +66,8 @@ def decode_check(preds_mol, TRG):
             valid_mols += 1
     print('valid ratio (%):', valid_mols / prob.size(0) * 100)
     return decoded_strings
-
-
-
-# class BatchData:
-#     def __init__(self, src, trg=None, device=None,
-#                  econds=None, dconds=None):
-#         # input of encoder
-#         self.src = src.to(device)
-#         if trg is not None:
-#             self.trg_y = trg[:, 1:].to(device)
-#             self.trg = trg[:, :-1].to(device)
-#         if econds is not None:
-#             self.econds = econds.to(device)
-#         if dconds is not None:
-#             self.dconds = dconds.to(device)
-
-
-class BatchData:
-    def __init__(self, src, trg=None,  econds=None, dconds=None):
-        # input of encoder
-        self.src = src
-        if trg is not None:
-            self.trg_y = trg[:, 1:]
-            self.trg = trg[:, :-1]
-        if econds is not None:
-            self.econds = econds
-        if dconds is not None:
-            self.dconds = dconds
-
-
-def rebatch_data(src, trg=None, econds=None, dconds=None, device=None):
-    src = src.transpose(0, 1)
-    trg = trg.transpose(0, 1)
-
-    return BatchData(src=src, trg=trg, econds=econds, dconds=dconds,
-                     device=device)
-
-
-def get_loader(data_iter, property_list, device=None):
-    print(data_iter)
-    a = (b for b in data_iter)
-    print(a[0])
-    def extract_conds(batch, data_type):
-        if len(property_list) == 0:
-            return None
-        prop_vals = []
-        for p in property_list:
-            prop_vals.append(getattr(batch, f"{data_type}_{p}").view(-1, 1))
-        return torch.cat(prop_vals, dim=1)
-
-    return (rebatch_data(batch.src, batch.trg,
-                         extract_conds(batch, 'src'),
-                         extract_conds(batch, 'trg'),
-                         device,
-                         )
-            for batch in data_iter)
-
-
-def rebatch_conds(batch, property_list, data_type):
-    prop = []
-    for p in property_list:
-        prop.append(getattr(batch, f"{data_type}_{p}").view(-1, 1))
-    return torch.cat(prop, dim=1)
-
-
+        
+        
 def run_epoch(args, model, optimizer, dataloader,
               current_step, beta, LOG, train):
     n_samples = 0
@@ -139,19 +76,11 @@ def run_epoch(args, model, optimizer, dataloader,
     model_cost_time = update_cost_time = 0
     
     cost_time = -time()
-
-    dataloader.create_batches()
-        
+   
     for i, batch in enumerate(dataloader):
-        if not args.SRC.batch_first:
-            batch.src = batch.src.transpose(0,1)
-            batch.trg = batch.trg.transpose(0,1)
-        batch.trg_y = batch.trg[:, 1:]
-        batch.trg_in = batch.trg[:, :-1]
-        if len(args.property_list) > 0:
-            batch.econds = rebatch_conds(batch, args.property_list, 'src')
-            batch.dconds = rebatch_conds(batch, args.property_list, 'trg')
-
+        current_step += 1
+        n_onebatch = batch['src'].size(0)
+        
         model_cost_time -= time()
         
         results = forward_propagation[args.model_type](
@@ -161,11 +90,11 @@ def run_epoch(args, model, optimizer, dataloader,
         model_cost_time += time()
 
         if len(args.property_list) > 0:
-            ys_cond = torch.unsqueeze(batch.dconds, 2).contiguous(
+            ys_cond = torch.unsqueeze(batch['dconds'], 2).contiguous(
             ).view(-1, len(args.property_list), 1)
         else:
             ys_cond = None
-        ys_mol = batch.trg_y.contiguous().view(-1)
+        ys_mol = batch['trg'][:, 1:].contiguous().view(-1)
 
         update_cost_time -= time()
         
@@ -199,9 +128,6 @@ def run_epoch(args, model, optimizer, dataloader,
 
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
-        
-        current_step += 1
-        n_onebatch = batch.src.size(0)
 
         n_samples += n_onebatch
 
@@ -224,7 +150,6 @@ def run_epoch(args, model, optimizer, dataloader,
         if (i + 1) % n_printevery == 0:
             LOG.info(details)
 
-    
     if train:  # training phase
         return history,  current_step
     else:  # validation phase

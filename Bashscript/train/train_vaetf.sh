@@ -3,17 +3,31 @@
 
 BENCHMARK=moses
 MODEL_TYPE=vaetf
-MODEL_NAME=vaetf-debug
-MODEL_FOLDER=/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME}
+# MODEL_NAME=vaetf2
+# MODEL_FOLDER=/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME}
 
+# --master_port 29502
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python  \
+#     Train.py                          \
+#         -use_cond2lat                 \
+#         -benchmark ${BENCHMARK}       \
+#         -start_epoch 17               \
+#         -num_epoch 60                 \
+#         -batch_size 128               \
+#         -model_type ${MODEL_TYPE}     \
+#         -model_folder ${MODEL_FOLDER} \
+#     >train-${MODEL_NAME}.out 2>&1 &
 
-CUDA_VISIBLE_DEVICES=2 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29502 \
-    Train.py                          \
+MODEL_TYPE=vaetf
+MODEL_NAME=vaetf3_
+
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python  \
+    Train1.py                          \
         -use_cond2lat                 \
         -benchmark ${BENCHMARK}       \
-        -start_epoch 1                \
-        -num_epoch 50                 \
+        -start_epoch 34               \
+        -num_epoch 60                 \
         -batch_size 128               \
         -model_type ${MODEL_TYPE}     \
-        -model_folder ${MODEL_FOLDER} \
-    # >train-${MODEL_NAME}.out 2>&1 &
+        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+    >train-${MODEL_NAME}.out 2>&1 &
