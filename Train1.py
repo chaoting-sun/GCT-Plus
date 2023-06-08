@@ -94,11 +94,8 @@ def get_data_name(benchmark, model_type, property_list):
         data_name = [name+'_v0' for name in data_name]
     elif model_type == 'scacvaetfv3':
         data_name = [name+'_scasmi' for name in data_name]
-        # data_name = [name+'_sca' for name in data_name]
-
-    # for i in range(len(data_name)):
-    #     # data_name[i] += f'-s{similarity:.2f}'
-    #     data_name[i] += '_debug' if debug else ''
+    elif model_type == 'scavaetf':
+        data_name = [name+'_scasmi' for name in data_name]
     return data_name
 
 
@@ -108,7 +105,7 @@ def get_fields(model_type, property_list, field_path):
         # SRC, TRG = smiles_field(properties=property_list,
         #                         field_path=field_path,
         #                         suffix='molgct')
-    elif model_type in ('scacvaetfv3'):
+    elif model_type in ('scacvaetfv3', 'scavaetf'):
         SRC, TRG = smiles_field(field_path, add_sep=True)
     return SRC, TRG
 
@@ -120,15 +117,11 @@ def main(rank, world_size):
             rank=rank,
             world_size=world_size
         )
-
-    # set_seed(0) # 0
-    # set_seed(100) # 100
-    # set_seed(200) # 200
-    set_seed(1000) # 1000
-
     parser = argparse.ArgumentParser()
     train_opts(parser)
     args = parser.parse_args()
+
+    set_seed(args.seed) # 1000
 
     prepared_folder = os.path.join(args.data_folder, args.benchmark, 'prepared')
     util_folder = os.path.join(args.data_folder, args.benchmark, 'utils')
@@ -142,6 +135,8 @@ def main(rank, world_size):
     LOG = logger(name='train', log_path=os.path.join(
         args.model_folder, "records.log"))
 
+    LOG.info('random seed: %s', args.seed)
+    
     if rank == 0:
         LOG.info(args)
         LOG.info(f'world size: {world_size}')
@@ -166,7 +161,7 @@ def main(rank, world_size):
     
     dp = DataloaderPreparation(rank, SRC, TRG, args.model_type,
                                args.property_list, world_size,
-                               args.randomize, args.use_scaffold)
+                               args.randomize_prob, args.use_scaffold)
     train_loader = dp.get_dataloader(train, batch_size=args.batch_size, is_train=True)
     valid_loader = dp.get_dataloader(valid, batch_size=args.batch_size, is_train=False)
 

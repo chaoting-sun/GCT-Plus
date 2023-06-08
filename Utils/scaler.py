@@ -72,7 +72,6 @@ def get_scaler(save_folder, df_property=None, rebuild=False):
         scaler = build_scaler(df_property, df_property.columns)
         joblib.dump(scaler, open(scaler_path, 'wb'))
         return scaler
-    
     try:
         scaler = joblib.load(scaler_path)
         return scaler

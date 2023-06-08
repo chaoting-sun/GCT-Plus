@@ -19,6 +19,7 @@ model mapper
 model_dict = {
     'vaetf'      : Vaetf,
     'cvaetf'     : Cvaetf,
+    'scavaetf'   : Cvaetf,
     'scacvaetfv1': Cvaetf,
     'scacvaetfv2': ScaCvaetfV2,
     'scacvaetfv3': Cvaetf,
@@ -93,7 +94,12 @@ def extract_params(args, src_vocab_len, trg_vocab_len):
 
 def load_state(model, model_path, rank):
     map_location = { 'cuda:%d' % 0: 'cuda:%d' % rank }
-    model_state = torch.load(model_path, map_location)['model_state_dict']
+    try:
+        model_state = torch.load(model_path, map_location)['model_state_dict']
+    except KeyError:
+        model_state = torch.load(model_path, map_location)
+    except:
+        exit(f'Cannot load model path: {model_path}')
     
     if list(model_state.keys())[0].split('.')[0] == 'module':
         model_state = OrderedDict([(k[7:], v) for k, v in model_state.items()])

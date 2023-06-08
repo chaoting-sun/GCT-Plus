@@ -14,6 +14,17 @@ def vaetf_forward_propagation(model, batch, pad_id, use_cond2dec):
                         )
 
 
+def scavaetf_forward_propagation(model, batch, pad_id, use_cond2dec):
+    src_mask = get_src_mask(batch['src'], pad_id)
+    trg_mask = get_trg_mask(batch['trg'][:, :-1], pad_id, use_cond2dec)
+
+    return model.forward(src=batch['src'],
+                         trg=batch['trg'][:, :-1],
+                         src_mask=src_mask,
+                         trg_mask=trg_mask,
+                        )
+
+
 def cvaetf_forward_propagation(model, batch, pad_id, use_cond2dec):
     src_mask = get_src_mask(batch['src'], pad_id, batch['econds'])
     trg_mask = get_trg_mask(batch['trg'][:, :-1], pad_id,
@@ -53,6 +64,7 @@ def scacvaetfv2_forward_propagation(model, batch, pad_id, use_cond2dec):
 
 forward_propagation = {
     'vaetf'      : vaetf_forward_propagation,
+    'scavaetf'   : scavaetf_forward_propagation,
     'cvaetf'     : cvaetf_forward_propagation,
     'scacvaetfv1': cvaetf_forward_propagation,
     'scacvaetfv2': scacvaetfv2_forward_propagation,

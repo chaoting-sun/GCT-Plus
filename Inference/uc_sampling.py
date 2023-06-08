@@ -173,7 +173,7 @@ def kl_divergence(data1, data2):
     
 
 @torch.no_grad()
-def unconditioned_sampling(
+def uc_sampling(
         args,
         train,
         test,
@@ -194,8 +194,8 @@ def unconditioned_sampling(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    # generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
-    generator = None
+    generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    # generator = None
 
     print('generate molecules')
 
@@ -301,7 +301,8 @@ def unconditioned_sampling(
     else:
         print('create a save folder')
 
-        save_folder = os.path.join(args.infer_path, args.benchmark, 'uc-sampling')
+        save_folder = os.path.join(args.infer_path, args.benchmark, 'uc-sampling',
+                                   f'{args.model_name}-{args.epoch}')
         os.makedirs(save_folder, exist_ok=True)
 
         n = args.n_samples

@@ -135,23 +135,69 @@
 #     >train-${MODEL_NAME}.out 2>&1 &
 
 
+# MODELTYPE=scavaetf
+# MODEL_NAME=${MODELTYPE}2-warmup15000
+# START_EPOCH=1
+# BENCHMARK=moses
+
+# # CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 python \
+# CUDA_VISIBLE_DEVICES=2,3 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29984 \
+#     Train1.py \
+#         -lr_WarmUpSteps 15000        \
+#         -use_cond2lat                \
+#         -benchmark ${BENCHMARK}      \
+#         -model_type ${MODELTYPE}     \
+#         -start_epoch ${START_EPOCH}  \
+#         -num_epoch 50                \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+#         -use_scaffold                \
+#         -batch_size 64               \
+#     >train-${MODEL_NAME}.out 2>&1 &
+
+
+# MODELTYPE=scacvaetfv3
+# MODEL_NAME=${MODELTYPE}3-beta0.01-warmup15000_molgpt
+# START_EPOCH=8
+# BENCHMARK=moses
+
+# CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29903 \
+#     Train1.py                        \
+#         -seed 1000                   \
+#         -KLA_inc_beta 0.01           \
+#         -lr_WarmUpSteps 15000        \
+#         -use_cond2lat                \
+#         -benchmark ${BENCHMARK}      \
+#         -model_type ${MODELTYPE}     \
+#         -start_epoch ${START_EPOCH}  \
+#         -num_epoch 50                \
+#         -property_list logP tPSA SAS \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+#         -use_scaffold                \
+#         -batch_size 64               \
+#         -randomize_prob 0.5          \
+#     >train-${MODEL_NAME}.out 2>&1 &
+
+
 MODELTYPE=scacvaetfv3
-MODEL_NAME=${MODELTYPE}-beta0.01
-START_EPOCH=3
+MODEL_NAME=${MODELTYPE}1-beta0.01-warmup15000_rand0.5
+START_EPOCH=19
 BENCHMARK=moses
 
-CUDA_VISIBLE_DEVICES=2,3 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29991 \
+CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29909 \
     Train1.py \
+        -seed 1000                    \
         -KLA_inc_beta 0.01           \
+        -lr_WarmUpSteps 15000        \
         -use_cond2lat                \
         -benchmark ${BENCHMARK}      \
         -model_type ${MODELTYPE}     \
         -start_epoch ${START_EPOCH}  \
-        -num_epoch 50                \
+        -num_epoch 20                \
         -property_list logP tPSA QED \
         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
         -use_scaffold                \
         -batch_size 64               \
+        -randomize_prob 0.5          \
     >train-${MODEL_NAME}.out 2>&1 &
 
 

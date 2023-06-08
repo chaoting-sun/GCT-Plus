@@ -8,6 +8,11 @@ from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from rdkit.Chem.Fingerprints.FingerprintMols import FingerprintMol
 from rdkit.DataStructs.cDataStructs import TanimotoSimilarity
 from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
+import cairosvg
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import rdDepictor
+from rdkit.Chem.Draw import MolDrawOptions
+
 # def to_mol(smi):
 #     if isinstance(smi, str) and smi and len(smi)>0 and smi != 'nan':
 #         return Chem.MolFromSmiles(smi)
@@ -132,6 +137,58 @@ def murcko_scaffold_similarity(smi_or_mol1, smi_or_mol2):
     return TanimotoSimilarity(fp1, fp2)
 
     
+def plot_highlighted_smiles_group(
+        smiles,
+        substructure_smiles,
+        save_path,
+        img_size,
+        n_per_mol=None,
+        n_jobs=1,
+        highlight_color=(0, 1, 0),
+        descriptions=None
+    ):
+    substructure = Chem.MolFromSmiles(substructure_smiles)
+    molecules = smi_to_mol(smiles, n_jobs=n_jobs)
+    
+    for mol in molecules:
+        rdDepictor.Compute2DCoords(mol)
+
+    highlights = []
+    for mol in molecules:
+        match = mol.GetSubstructMatch(substructure)
+        atom_highlights = set(match)
+        bond_highlights = set()
+        for atom_idx in match:
+            atom_bonds = mol.GetAtomWithIdx(atom_idx).GetBonds()
+            for bond in atom_bonds:
+                if bond.GetBeginAtomIdx() in match and bond.GetEndAtomIdx() in match:
+                    bond_highlights.add(bond.GetIdx())
+        highlights.append((atom_highlights, bond_highlights))
+
+    # Create a custom MolDrawOptions object
+    draw_options = MolDrawOptions()
+    draw_options.highlightColour = highlight_color
+    draw_options.legendFontSize = 20
+
+    img = Draw.MolsToGridImage(molecules, molsPerRow=n_per_mol, subImgSize=img_size,
+                                highlightAtomLists=[hl_atoms for hl_atoms, _ in highlights],
+                                highlightBondLists=[hl_bonds for _, hl_bonds in highlights],
+                                drawOptions=draw_options, useSVG=True,
+                                legends=descriptions
+                                )
+
+    root = ET.fromstring(img)
+    width = int(root.attrib['width'].strip('px'))
+    height = int(root.attrib['height'].strip('px'))
+
+    png_data = cairosvg.svg2png(bytestring=img,
+                                output_width=width*1.6,
+                                output_height=height*1.6)
+    
+    with open(save_path, 'wb') as f:
+        f.write(png_data)
+
+
 # def MurckoScaffoldSimilarity(smi1, smi2):
 #     """refer to the implementation in molgpt"""
 #     mol1, mol2 = MolFromSmiles(smi1), MolFromSmiles(smi2)
@@ -161,8 +218,8 @@ def plot_smiles(smiles, save_path):
         img.save(save_path)
 
 
-def plot_smiles_group(smiles, save_path, n_per_mol=None,
-                      img_size=None, n_jobs=1):
+def plot_smiles_group(smiles, save_path, n_per_mol=None, img_size=None,
+                      descriptions=None, n_jobs=1):
     """plot a list of smiles
     
     Args:
@@ -186,6 +243,8 @@ def plot_smiles_group(smiles, save_path, n_per_mol=None,
         kwargs['molsPerRow'] = n_per_mol
     if img_size is not None:
         kwargs['subImgSize'] = img_size
+    if descriptions is not None:
+        kwargs['legends'] = descriptions
 
     # Create a MolDrawOptions object to set the drawing options
     # draw_options = Draw.MolDrawOptions()

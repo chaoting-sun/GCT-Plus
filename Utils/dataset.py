@@ -251,43 +251,44 @@ def get_loader(data_iter, property_list, pad_id, max_strlen,
 class SmilesDataset(Dataset):
     def __init__(self, input_data, property_list, SRC=None, TRG=None,
                  include_mconds=False, use_scaffold=False,
-                 randomize=False):
+                 randomize_prob=0):
         self.SRC = SRC
         self.TRG = TRG
         self.data = input_data
         self.property_list = property_list
         self.include_mconds = include_mconds
         self.use_scaffold = use_scaffold
-        self.randomize = randomize
+        self.randomize_prob = randomize_prob
     
-    def tokenize_smiles(self, smi, field):
-        if self.randomize and random.random() > 0.7:
+    def tokenize_smiles(self, smi):
+        # if self.randomize_prob > 0 and random.random() <= self.randomize_prob:
+        if random.random() <= self.randomize_prob:
             smi = randomize_smiles(smi)
-        return field.tokenize(smi)
+        return smi
+
+        # return field.tokenize(smi)
         
     def __getitem__(self, rid):
         item = {}
         row = self.data.iloc[rid]
         
-        if 'src' in row:
-            item['src'] = self.tokenize_smiles(row['src'], self.SRC)            
-            if len(self.property_list) > 0:
-                item['econds'] = [row[f'src_{p}'] for p in self.property_list]
-            
-        if 'trg' in row:
-            item['trg'] = self.tokenize_smiles(row['trg'], self.TRG)
-            if len(self.property_list) > 0:
-                item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
-
+        smiles = self.tokenize_smiles(row['src'])
+        item['src'] = self.SRC.tokenize(smiles)
+        item['trg'] = self.TRG.tokenize(smiles)
+        
         if self.use_scaffold:
-            if 'src_scaffold' in row:
-                item['src_scaffold'] = self.tokenize_smiles(row['src_scaffold'], self.SRC)
-            if 'trg_scaffold' in row:
-                item['trg_scaffold'] = self.tokenize_smiles(row['trg_scaffold'], self.TRG)
+            scaffold = self.tokenize_smiles(row['src_scaffold'])
+            item['src_scaffold'] = self.SRC.tokenize(scaffold)
+            item['trg_scaffold'] = self.TRG.tokenize(scaffold)
 
-        if self.include_mconds:
-            item['mconds'] = [item['dconds'][i] - item['econds'][i]
-                            for i in range(len(self.property_list))]
+        if len(self.property_list) > 0:
+            item['econds'] = [row[f'src_{p}'] for p in self.property_list]
+            item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
+        
+        # if self.include_mconds:
+        #     item['mconds'] = [item['dconds'][i] - item['econds'][i]
+        #                     for i in range(len(self.property_list))]
+        
         return item
 
     def __len__(self):
@@ -338,25 +339,25 @@ class SmilesDataset(Dataset):
 
 class DataloaderPreparation:
     def __init__(self, rank, SRC, TRG, model_type, property_list,
-                 world_size=1, randomize=False, use_scaffold=False):
+                 world_size=1, randomize_prob=False, use_scaffold=False):
         self.SRC = SRC
         self.TRG = TRG
         self.rank = rank
         self.world_size = world_size
         self.property_list = property_list
         self.use_scaffold = use_scaffold
-        self.randomize = randomize
+        self.randomize_prob = randomize_prob
         self.collate_fn = get_collate_fn(model_type, SRC, TRG, rank)
     
     def _get_sampler(self, dataset, shuffle=False,
                      drop_last=False):
         return DistributedSampler(dataset, self.world_size, self.rank,
                                   shuffle, drop_last)
-
+    
     def _get_dataset(self, dataframe, include_mconds=True):
         return SmilesDataset(dataframe, self.property_list, self.SRC,
                              self.TRG, include_mconds, self.use_scaffold,
-                             self.randomize)
+                             self.randomize_prob)
 
     def get_dataloader(self, dataframe, batch_size, is_train,
                        include_mconds=False, shuffle=False,

@@ -82,7 +82,8 @@ def plot(epoch, loss, name_list,
 
 def plot_results(model_folder, begin_epoch, end_epoch):
     data_loss = get_train_results(model_folder, begin_epoch, end_epoch)
-    
+    data_loss.to_csv(os.path.join(model_folder, 'loss.csv'), index=False)
+
     plot(epoch=data_loss['# Epoch'],
          loss=data_loss,
          name_list=['train RCE', 'train KLD', 'train LOSS'],

@@ -11,8 +11,6 @@ from datetime import timedelta
 from collections import OrderedDict
 from pathos.multiprocessing import ProcessingPool as Pool
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
-# from rdkit.Chem import MurckoDecompose
-# from rdkit import Chem
     
 from FPSim2.io import create_db_file
 from FPSim2 import FPSim2Engine
@@ -22,16 +20,12 @@ from Utils.log import get_logger
 from Utils.scaler import get_scaler
 from Utils.dataset import get_dataset
 from Utils.field import smiles_field
-# from Utils.properties import predict_properties#, MurckoScaffoldSimilarity as similarity_fcn
 from Utils.properties import property_fn
-# from Utils.properties import tanimoto_similarity as similarity_fcn
 
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from Configuration.config import preprocessing_opts, device_opts
-# from Preprocess.data_augmentation import augment_data
-# import seaborn as sns
-# import matplotlib.pyplot as plt
 from Utils.smiles import get_mol
+from Utils.properties import mols_to_props
 
 
 def get_benchmark_datatype(benchmark):
@@ -229,21 +223,31 @@ def get_prepared_data(raw_data, property_list):
     return prepared_data
 
 
-from Utils.scaler import get_scaler
+if __name__ == "__main__":
+
+    save_folder = '/fileserver-gamma/chaoting/ML/dataset/moses/utils/'
+
+    train = pd.read_csv('/fileserver-gamma/chaoting/ML/dataset/moses/raw/train.csv', index_col=[0])
+    train = train[['logP', 'tPSA', 'SAS']]
+
+    get_scaler(save_folder, train, rebuild=True)
+
+    exit()
 
 
-if __name__ == "__main__":    
+
     set_seed(0)
 
     parser = argparse.ArgumentParser()
     preprocessing_opts(parser)
     device_opts(parser)
-    parser.add_argument('-similarity', type=float, default=0.50)
-    parser.add_argument('-scaffold_similarity', action='store_true')
+    # parser.add_argument('-similarity', type=float, default=0.50)
+    # parser.add_argument('-scaffold_similarity', action='store_true')
     parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
 
     # parser.add_argument('-raw_properties', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
     # parser.add_argument('-prepared_properties', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+    parser.add_argument('-build_vocab', action='store_true')
     parser.add_argument('-debug', action='store_true')
 
     args = parser.parse_args()
@@ -256,28 +260,41 @@ if __name__ == "__main__":
     util_folder = os.path.join(benchmark_folder, 'utils')
     prepared_folder = os.path.join(benchmark_folder, 'prepared')
     
-    os.makedirs(raw_folder, exist_ok=True)
-    os.makedirs(util_folder, exist_ok=True)
-    os.makedirs(prepared_folder, exist_ok=True)
+    train = pd.DataFrame(moses.get_dataset('train'))
+    
+    if args.build_vocab:
+        train.to_csv(os.path.join(raw_folder, 'tmp.csv'), index=False)
+        SRC, TRG = smiles_field(add_sep=False)
+        
+        train = get_dataset(data_folder=raw_folder,
+                            fields=[('smiles', SRC)],
+                            file_name_list=['tmp', None, None])[0]
+        SRC.build_vocab(train)
+            
+        train = get_dataset(data_folder=raw_folder,
+                            fields=[('smiles', TRG)],
+                            file_name_list=['tmp', None, None])[0]
+        TRG.build_vocab(train)
+        pkl.dump(SRC, open(os.path.join(util_folder, 'SRC.pkl'), 'wb'))
+        pkl.dump(TRG, open(os.path.join(util_folder, 'TRG.pkl'), 'wb'))
 
-    data_types = get_benchmark_datatype(args.benchmark)
-
+        os.remove(os.path.join(raw_folder, 'tmp.csv'))
+    
     LOG = logger(name='preprocess', log_path=os.path.join(benchmark_folder, 'preprocess.log'))
     LOG.info(args)
     LOG.info('save raw data...')
     
+    data_types = get_benchmark_datatype(args.benchmark)
+
+    smiles = moses.get_dataset('train')
+    
     for data_type in data_types:
         LOG.info(f'save raw data: {data_type}')
 
-        save_path = os.path.join(raw_folder, 
-            f'{data_type}{"_debug" if args.debug else ""}.csv')
+        save_path = os.path.join(raw_folder,  f'{data_type}.csv')
         
-        smiles = get_benchmark_smiles(args.benchmark, data_type)        
-        if not os.path.exists(save_path):
-            # get smiles list from the benchmark
-            if args.debug:
-                smiles = smiles[:10000]
-            
+        smiles = get_benchmark_smiles(args.benchmark, data_type)     
+        if not os.path.exists(save_path):            
             LOG.info('compute raw data properties')
             raw_data = get_raw_data(smiles, args.property_list, args.n_jobs)
             raw_data.to_csv(save_path)
@@ -293,31 +310,6 @@ if __name__ == "__main__":
 
             LOG.info('SRC vocabulary: %s', SRC.vocab.stoi)
             LOG.info('TRG vocabulary: %s', TRG.vocab.stoi)
-
-    exit(0)
-
-    # for data_type in data_types:
-    #     LOG.info(f'save prepared data: {data_type}')
-
-    #     # get raw data
-    #     raw_data = pd.read_csv(os.path.join(raw_folder,
-    #         f'{data_type}{"_debug" if args.debug else ""}.csv'))
-
-    #     # get what the prepared dataset you want
-    #     raw_data = raw_data[['smiles', 'scaffold']+args.property_list]
-        
-    #     # build scaler and transform the properties
-    #     if data_type == 'train':
-    #         scaler = get_scaler(util_folder, raw_data[args.property_list],
-    #                             rebuild=True)
-    #     raw_data[args.property_list] = scaler.transform(raw_data[args.property_list])
-
-    #     prepared_data = get_prepared_data(raw_data, args.property_list)
-    #     prepared_data.to_csv(os.path.join(prepared_folder,
-    #                                       f"{data_type}_"
-    #                                       f"{'-'.join(args.property_list)}"
-    #                                       f"{'_debug' if args.debug else ''}.csv"), index=False)
-
 
     def concatenate_str(x):
         if isinstance(x.scaffold, str) and len(x.scaffold) > 0:

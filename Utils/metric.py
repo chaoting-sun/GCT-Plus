@@ -40,7 +40,8 @@ def get_metric_fn(metric_type, train_smiles=None, n_jobs=1):
     all_fn = {
         'valid'    : partial(metrics.fraction_valid, n_jobs=n_jobs),
         'unique'   : partial(metrics.fraction_unique, n_jobs=n_jobs),
-        'novel'  : partial(metrics.novelty, train=train_smiles, n_jobs=n_jobs),
-        'diversity': partial(metrics.internal_diversity, n_jobs=n_jobs)
+        'novel'    : partial(metrics.novelty, train=train_smiles, n_jobs=n_jobs),
+        'intDiv'   : partial(metrics.internal_diversity, n_jobs=n_jobs)
+        # 'diversity': partial(metrics.internal_diversity, n_jobs=n_jobs)
     }
     return { met: all_fn[met] for met in metric_type }

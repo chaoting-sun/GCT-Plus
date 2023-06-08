@@ -6,7 +6,6 @@ import scipy.stats
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
 from numpy import unravel_index
-import matplotlib.pyplot as plt
 from pandas.plotting import scatter_matrix
 
 # from pylab import cm, colorbar

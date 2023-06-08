@@ -107,7 +107,8 @@ def model_selection(
     
     save_folder = os.path.join(args.infer_path,
                                args.benchmark,
-                               f'model_selection-{task}')
+                               f'model_selection-{task}',
+                               f'{args.model_name}')
     os.makedirs(save_folder, exist_ok=True)
 
     n_samples = 10000 # 10000
@@ -126,21 +127,26 @@ def model_selection(
     
     # VAE
     if args.model_type == 'vaetf':
-        # epoch_list = [5, 10, 15, 20, 25, 30, 35, 36, 37, 38, 39, 40,
-        #               41, 42, 43, 44, 45]
-        epoch_list = [35,36,37,38,39,40,41,42,43,44,45]
+        epoch_list = np.arange(1, 29)
+        # epoch_list = [1, 5, 10, 15, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+        # epoch_list = []
+        # epoch_list = np.arange(1,19)
+        # epoch_list = [35,36,37,38,39,40,41,42,43,44,45]
     # CVAE
     if args.model_type == 'cvaetf':
         # epoch_list = [6,7,8,9]
-        epoch_list = [1, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-                      14, 15, 16, 17, 18, 19, 20]
+        # epoch_list = [1, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        #               14, 15, 16, 17, 18, 19, 20]
+        epoch_list = np.arange(21, 41)
         # epoch_list = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40]
         
     if args.model_type == 'scacvaetfv3':
-        epoch_list = [5,6,7,8,9,10]
-        # epoch_list = [11,12,13,14,15,16,17,18,19,20]
-        # epoch_list = [1,2,3]
+        # epoch_list = [1,2,3,4,5,6,7,8,9]
+        # epoch_list = [1,2,3,4]
+        
         # epoch_list = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+        # epoch_list = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+        epoch_list = np.arange(1,25)
 
     interested_properties = ['logP', 'tPSA', 'QED', 'MW', 'SAS', 'NP',
                              'HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']
@@ -148,7 +154,7 @@ def model_selection(
 
     property_path = os.path.join(save_folder, 'property_samples.csv')
     test_path = os.path.join(save_folder, 'test_samples.csv')
-    kl_path = os.path.join(save_folder, f'{args.model_name}_kl_.csv')
+    kl_path = os.path.join(save_folder, f'{args.model_name}_kl.csv')
 
     # sample molecules from test dataset as the reference set
 
@@ -272,6 +278,25 @@ def model_selection(
     
     # fig.savefig(os.path.join(save_folder, f'{args.model_name}-{best_epoch}_prop.png'), bbox_inches="tight") 
 
+    for epoch in range(1,51):
+        gen_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_gen.csv')
+        prop_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_prop.csv')
+        
+        if not os.path.exists(gen_path):
+            continue
+
+        print('processing epoch:', epoch)
+        
+        gen = pd.read_csv(gen_path, index_col=[0])
+        try:
+            gen = gen.dropna(subset=['smiles'])
+            mols = mapper(get_mol, gen['smiles'], args.n_jobs)
+        except:
+            gen = gen.dropna(subset=['SMILES'])
+            mols = mapper(get_mol, gen['SMILES'], args.n_jobs)
+        mols = [m for m in mols if m is not None]
+        gen_prop = mols_to_props(mols, property_fn, args.n_jobs)
+        gen_prop.to_csv(prop_path)
 
     print('compute gen prop...')
 
@@ -286,109 +311,104 @@ def model_selection(
 
     print('compute test prop...')
 
-    # if not os.path.exists(os.path.join(save_folder, 'test_prop.csv')):
-    test_samples = pd.read_csv(test_path, index_col=[0])
-    mols = mapper(get_mol, test_samples['smiles'], args.n_jobs)
-    mols = [m for m in mols if m is not None]
-    test_prop = mols_to_props(mols, property_fn, args.n_jobs)
-    test_prop.to_csv(os.path.join(save_folder, 'test_prop.csv'))
+    if not os.path.exists(os.path.join(save_folder, 'test_prop.csv')):
+        test_samples = pd.read_csv(test_path, index_col=[0])
+        mols = mapper(get_mol, test_samples['smiles'], args.n_jobs)
+        mols = [m for m in mols if m is not None]
+        test_prop = mols_to_props(mols, property_fn, args.n_jobs)
+        test_prop.to_csv(os.path.join(save_folder, 'test_prop.csv'))
 
-    test_prop = pd.read_csv(os.path.join(save_folder, 'test_prop.csv'), index_col=[0])
+        test_prop = pd.read_csv(os.path.join(save_folder, 'test_prop.csv'), index_col=[0])
 
-    kld = os.path.join(save_folder, f'{args.model_name}_kl.csv')
-    kld = pd.read_csv(kl_path, index_col=[0])
-
-    best_epoch = kld['Score'].idxmax()
-
-    gen = pd.read_csv(os.path.join(save_folder, f'{args.model_name}-{best_epoch}_gen.csv'), index_col=[0])
-    try:
-        gen = gen.dropna(subset=['smiles'])
-        mols = mapper(get_mol, gen['smiles'], args.n_jobs)
-    except:
-        gen = gen.dropna(subset=['SMILES'])
-        mols = mapper(get_mol, gen['SMILES'], args.n_jobs)
-    mols = [m for m in mols if m is not None]
-    gen_prop = mols_to_props(mols, property_fn, args.n_jobs)
-    gen_prop.to_csv(os.path.join(save_folder, f'{args.model_name}_prop_best.csv'))
+    # kld = os.path.join(save_folder, f'{args.model_name}_kl.csv')
+    # kld = pd.read_csv(kl_path, index_col=[0])
+    # best_epoch = kld['Score'].idxmax()
 
     print('plot prop...')
 
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
+    for epoch in range(1,51):
+        prop_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_prop.csv')
+        fig_dist_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_dist.png')
+        fig_num_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_num.png')
 
-    for i, prop in enumerate(['logP', 'tPSA', 'QED', 'MW', 'SAS', 'NP']):
-        rowi = i // 3
-        coli = i % 3
-        ax = axes[rowi, coli]
+        if not os.path.exists(prop_path):
+            continue
 
-        df = pd.DataFrame({ 'gen': gen_prop[prop],
-                            'test': test_prop[prop]
-                            })
-        sns.kdeplot(data=df, ax=ax, shade=True, linewidth=2.5, legend=False)
+        gen_prop = pd.read_csv(prop_path, index_col=[0])
+
+        print('save figure:', fig_dist_path)
+
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
+
+        for i, prop in enumerate(['logP', 'tPSA', 'QED', 'MW', 'SAS', 'NP']):
+            rowi = i // 3
+            coli = i % 3
+            ax = axes[rowi, coli]
+
+            df = pd.DataFrame({ 'gen': gen_prop[prop],
+                                'test': test_prop[prop]
+                                })
+            sns.kdeplot(data=df, ax=ax, shade=True, linewidth=2.5, legend=False)
+            
+            # sns.kdeplot(gen_prop[prop], ax=ax, shade=True, linewidth=0, fill=True, color='orange')
+            # sns.kdeplot(test_prop[prop], ax=ax, shade=True, linewidth=0, fill=True, color='blue')
+
+            ax.set_xlim(left=xlimit[prop][0], right=xlimit[prop][1])
+
+            ax.set_xlabel(xlabel=prop, fontsize=17)
+            if coli == 0:
+                ax.set_ylabel(ylabel='Density', fontsize=17)
+            else:
+                ax.set_ylabel(None)
+            ax.tick_params(axis="both", which="major", labelsize=13)
         
-        # print(df)
+        fig.legend(labels=['gen', 'test'], fontsize=16, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
+        fig.savefig(fig_dist_path, bbox_inches="tight") 
 
-        # sns.kdeplot(gen_prop[prop], ax=ax, shade=True, linewidth=0, fill=True, color='orange')
-        # sns.kdeplot(test_prop[prop], ax=ax, shade=True, linewidth=0, fill=True, color='blue')
+        print('save figure:', fig_num_path)
 
-        ax.set_xlim(left=xlimit[prop][0], right=xlimit[prop][1])
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
 
-        ax.set_xlabel(xlabel=prop, fontsize=17)
-        if coli == 0:
-            ax.set_ylabel(ylabel='Density', fontsize=17)
-        else:
-            ax.set_ylabel(None)
-        ax.tick_params(axis="both", which="major", labelsize=13)
-    
-    fig.legend(labels=['gen', 'test'], fontsize=16, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
-    fig.savefig(os.path.join(save_folder, f'{args.model_name}_best-{best_epoch}_dist.png'), bbox_inches="tight") 
+        for i, prop in enumerate(['HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']):
+            rowi = i // 3
+            coli = i % 3
+            
+            print(rowi, coli)
 
-    print('plot')
+            ax = axes[rowi, coli]
 
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
+            gen_cnt = gen_prop[prop].value_counts(sort=False).sort_index()
+            test_cnt = test_prop[prop].value_counts(sort=False).sort_index()
 
-    for i, prop in enumerate(['HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']):
-        rowi = i // 3
-        coli = i % 3
+            gen_cnt = gen_cnt / gen_cnt.sum()
+            test_cnt = test_cnt / test_cnt.sum()
+
+            gen_cnt.plot(kind='bar', ax=ax, color='blue', alpha=0.7, rot=0)
+            test_cnt.plot(kind='bar', ax=ax, color='orange', alpha=0.7, rot=0)
+
+            # sns.histplot(x=gen_cnt.index, y=gen_cnt, ax=ax, alpha=0.8, edgecolor='blue', color='blue', )
+            # sns.histplot(x=test_cnt.index, y=test_cnt, ax=ax, alpha=0.8, edgecolor='orange', color='orange')
+
+            # sns.histplot(df, ax=ax, kde=True, alpha=0.8)
+
+            # ax.hist(df, histtype='stepfilled', alpha=0.5, density=1, bins=10)
+
+            # ax.hist(gen_prop[prop].astype('int'), label='gen', **kwargs)
+            # ax.hist(test_prop[prop].astype('int'), label='test', **kwargs)
+
+            # sns.histplot(gen_prop[prop], ax=ax, label='gen', kde=True, color='blue', edgecolor='white', binwidth=1, alpha=0.7)
+            # sns.histplot(test_prop[prop], ax=ax, label='test', kde=True, color='orange', edgecolor='white', binwidth=1, alpha=0.7)
+
+            ax.set_xlabel(xlabel=prop, fontsize=17)
+            if coli == 0:
+                ax.set_ylabel(ylabel='Density', fontsize=17)
+            else:
+                ax.set_ylabel(None)
+            ax.tick_params(axis="both", which="major", labelsize=13)
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         
-        print(rowi, coli)
-
-        ax = axes[rowi, coli]
-
-        gen_cnt = gen_prop[prop].value_counts(sort=False).sort_index()
-        test_cnt = test_prop[prop].value_counts(sort=False).sort_index()
-
-        gen_cnt = gen_cnt / gen_cnt.sum()
-        test_cnt = test_cnt / test_cnt.sum()
-
-        print(gen_cnt)
-        print(test_cnt)
-
-        gen_cnt.plot(kind='bar', ax=ax, color='blue', alpha=0.7, rot=0)
-        test_cnt.plot(kind='bar', ax=ax, color='orange', alpha=0.7, rot=0)
-
-        # sns.histplot(x=gen_cnt.index, y=gen_cnt, ax=ax, alpha=0.8, edgecolor='blue', color='blue', )
-        # sns.histplot(x=test_cnt.index, y=test_cnt, ax=ax, alpha=0.8, edgecolor='orange', color='orange')
-
-        # sns.histplot(df, ax=ax, kde=True, alpha=0.8)
-
-        # ax.hist(df, histtype='stepfilled', alpha=0.5, density=1, bins=10)
-
-        # ax.hist(gen_prop[prop].astype('int'), label='gen', **kwargs)
-        # ax.hist(test_prop[prop].astype('int'), label='test', **kwargs)
-
-        # sns.histplot(gen_prop[prop], ax=ax, label='gen', kde=True, color='blue', edgecolor='white', binwidth=1, alpha=0.7)
-        # sns.histplot(test_prop[prop], ax=ax, label='test', kde=True, color='orange', edgecolor='white', binwidth=1, alpha=0.7)
-
-        ax.set_xlabel(xlabel=prop, fontsize=17)
-        if coli == 0:
-            ax.set_ylabel(ylabel='Density', fontsize=17)
-        else:
-            ax.set_ylabel(None)
-        ax.tick_params(axis="both", which="major", labelsize=13)
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    
-    fig.legend(labels=['gen', 'test'], fontsize=16, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
-    fig.savefig(os.path.join(save_folder, f'{args.model_name}-best-{best_epoch}_num.png'), bbox_inches="tight")
+        fig.legend(labels=['gen', 'test'], fontsize=16, loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.05))
+        fig.savefig(fig_num_path, bbox_inches="tight")
 
 
 

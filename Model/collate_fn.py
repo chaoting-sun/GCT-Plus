@@ -130,7 +130,8 @@ collate_fn = {
     'cvaetf'     : cvaetf_collate_fn,
     'scacvaetfv1': scacvaetfv1_collate_fn,
     'scacvaetfv2': scacvaetfv2_collate_fn,
-    'scacvaetfv3': scacvaetfv3_collate_fn
+    'scacvaetfv3': scacvaetfv3_collate_fn,
+    'scavaetf'   : scacvaetfv3_collate_fn 
 }
 
 

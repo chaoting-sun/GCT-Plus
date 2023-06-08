@@ -170,12 +170,6 @@ class Sampling:
             exit('no code!')
         return p
         
-    def predict(self, **kwargs):
-        output_mol = self.model.decode(**kwargs)
-        if self.use_cond2dec:
-            output_mol = output_mol[:, 3:, :]
-        return F.softmax(output_mol, dim=-1)
-    
     def sample_z(self, toklen, n):
         return torch.normal(
             mean=0, std=1,
@@ -491,7 +485,7 @@ class ScaCvaetfV3Sampling(Sampling):
     def sample_multiple_smiles(self, dconds, scaffolds, transform=True):
         n = len(dconds)
 
-        sca_ids = np.array([self.smi_to_id(sca) for sca in scaffolds])
+        sca_ids = np.array([self.smi_to_id(sca) for sca in scaffolds], dtype=object)
         sca_lens = np.array(mapper(len, sca_ids, self.n_jobs))
 
         sort_indices = np.argsort(sca_lens)
@@ -697,11 +691,60 @@ class ScaCvaetfV3Sampling(Sampling):
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
 
         return smiles, toklen, toklen_gen
+    
+
+class ScaVaeSampling(Sampling):
+    def __init__(self, model, kwargs):
+        super().__init__(model, kwargs)
+
+    def sample_smiles(self, n, scaffold, zs=None, toklen=None):
+        sca_ids = [self.TRG.vocab.stoi[e] for e
+                   in self.TRG.tokenize(scaffold)]
+
+        ys = self.init_y(n, add_sos=True, sca_ids=sca_ids, add_sep=True)
+
+        if zs is not None:
+            if toklen is None:
+                toklen = [zs.size(1)-len(sca_ids)-1] * zs.size(0)
+        else:
+            if toklen is None:
+                toklen = self.sample_toklen(n)
+
+        max_toklen = max(toklen)
+        lat_toklen = len(sca_ids) + 1 + max_toklen
+
+        if zs is None:
+            zs = self.sample_z(lat_toklen, n)
+
+        # mask
+
+        toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
+        toklen_stop_ids = torch.add(toklen_stop_ids, len(sca_ids)+1)
+        src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
+
+        # move to gpu
+
+        ys = ys.to(self.device)
+        zs = zs.to(self.device)
+        src_mask = src_mask.to(self.device)
+
+        # sample smiles
+
+        outs = self.decode(zs=zs, ys=ys, src_mask=src_mask)
+        outs = outs.cpu().numpy()
+
+        smiles = [self.id_to_smi(ids[1+len(sca_ids)+1:])
+                  for ids in outs]
+        toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
+
+        return smiles, toklen, toklen_gen
+
 
 
 sampling_tools = {
     'vaetf'      : VaetfSampling,
     'cvaetf'     : CvaetfSampling,
+    'scavaetf'   : ScaVaeSampling,
     'ctf'        : CvaetfSampling,
     'scacvaetfv1': ScaCvaetfV1Sampling,
     'scacvaetfv3': ScaCvaetfV3Sampling

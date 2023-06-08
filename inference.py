@@ -15,12 +15,14 @@ from Configuration.config import hard_constraints_opts
 from Utils import allocate_gpu
 from Utils.field import smiles_field, condition_fields
 from Inference.continuity_check import continuity_check
-from Inference.test_encoder import test_encoder
-from Inference.test_decoder import test_decoder
-from Inference.scaffold_sampling import scaffold_sampling
-from Inference.unconditioned_sampling import unconditioned_sampling
-from Inference.prop_sampling import prop_sampling
-from Inference.model_selection import model_selection
+# from Inference.test_encoder import test_encoder
+# from Inference.test_decoder import test_decoder
+from Inference.p_sampling import p_sampling
+# from Inference.model_selection import model_selection
+
+from Inference.sca_sampling import sca_sampling
+from Inference.psca_sampling import psca_sampling
+from Inference.uc_sampling import uc_sampling
 
 
 
@@ -71,7 +73,7 @@ def add_args(parser):
     parent_parser.add_argument('-top_k', type=int) # top k selection in multinomial
 
     parent_parser.add_argument('-inference_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
-    parent_parser.add_argument('-n_jobs', type=int, default=4)
+    parent_parser.add_argument('-n_jobs', type=int, default=16)
     parent_parser.add_argument('-data_folder', type=str)
     parent_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
 
@@ -146,22 +148,36 @@ def add_args(parser):
     # dt_parser.add_argument('-model_type', type=str, required=True)
 
     """
-    sample with scaffold
+    sample with a scaffold
     """
-    ss_parser = subparsers.add_parser('scaffold-sampling', parents=[parent_parser])
-    ss_parser.add_argument('-scaffold_sampling', action='store_true')
-    ss_parser.add_argument('-prop', type=float, nargs='+')
+    sca_parser = subparsers.add_parser('sca-sampling', parents=[parent_parser])
+    sca_parser.add_argument('-sca_sampling', action='store_true')
+    sca_parser.add_argument('-n_scaffolds', type=int, default=100)
+    sca_parser.add_argument('-n_samples', type=int, default=10000)
+    sca_parser.add_argument('-batch_size', type=int, default=512)
+    sca_parser.add_argument('-sample_from', type=str, default='train')
+    sca_parser.add_argument('-molgpt', type=str, action='store_true')
+    """
+    sample with a scaffold and properties
+    """
+    psca_parser = subparsers.add_parser('psca-sampling', parents=[parent_parser])
+    psca_parser.add_argument('-psca_sampling', action='store_true')
+    psca_parser.add_argument('-n_scaffolds', type=int, default=100)
+    psca_parser.add_argument('-batch_size', type=int, default=512)
+    psca_parser.add_argument('-sample_from', type=str, default='train')
+    psca_parser.add_argument('-n_samples', type=int, default=1000)
 
     """unconditioned sampling"""
-    ss_parser = subparsers.add_parser('unconditioned-sampling', parents=[parent_parser])
-    ss_parser.add_argument('-unconditioned_sampling', action='store_true')
+    ss_parser = subparsers.add_parser('uc-sampling', parents=[parent_parser])
+    ss_parser.add_argument('-uc_sampling', action='store_true')
     ss_parser.add_argument('-n_samples', type=int, default=30000)
 
     """property-conditioned sampling"""
-    ss_parser = subparsers.add_parser('prop-sampling', parents=[parent_parser])
-    ss_parser.add_argument('-prop_sampling', action='store_true')
+    ss_parser = subparsers.add_parser('p-sampling', parents=[parent_parser])
+    ss_parser.add_argument('-p_sampling', action='store_true')
     ss_parser.add_argument('-n_samples', type=int, default=30000)
-
+    ss_parser.add_argument('-use_molgct', action='store_true')
+    
     """model selection"""
     ms_parser = subparsers.add_parser('model-selection', parents=[parent_parser])
     ms_parser.add_argument('-model_selection', action='store_true')
@@ -181,25 +197,25 @@ def find_best_source():
     exit()
     
 
-def tmp():
-    df_old = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/train.csv')
-    df_new = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_sca-s1.00.csv')
+# def tmp():
+#     df_old = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/aug/data_sim1.00/train.csv')
+#     df_new = pd.read_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_sca-s1.00.csv')
     
-    update = pd.DataFrame({
-        'src'         : df_old['src'],
-        'src_scaffold': df_new['src_scaffold'],
-        'src_logP'    : df_old['src_logP'],
-        'src_tPSA'    : df_old['src_tPSA'],
-        'src_QED'     : df_old['src_QED'],
-        'trg'         : df_old['trg'],
-        'trg_scaffold': df_new['trg_scaffold'],
-        'trg_logP'    : df_old['trg_logP'],
-        'trg_tPSA'    : df_old['trg_tPSA'],
-        'trg_QED'     : df_old['trg_QED'],        
-    })
-    update.to_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_v0_logP-tPSA-QED.csv')
-    print(update.head())
-    exit()
+#     update = pd.DataFrame({
+#         'src'         : df_old['src'],
+#         'src_scaffold': df_new['src_scaffold'],
+#         'src_logP'    : df_old['src_logP'],
+#         'src_tPSA'    : df_old['src_tPSA'],
+#         'src_QED'     : df_old['src_QED'],
+#         'trg'         : df_old['trg'],
+#         'trg_scaffold': df_new['trg_scaffold'],
+#         'trg_logP'    : df_old['trg_logP'],
+#         'trg_tPSA'    : df_old['trg_tPSA'],
+#         'trg_QED'     : df_old['trg_QED'],        
+#     })
+#     update.to_csv(f'/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_v0_logP-tPSA-QED.csv')
+#     print(update.head())
+    # exit()
 
 
 if __name__ == "__main__":
@@ -221,12 +237,12 @@ if __name__ == "__main__":
     
     bm = benchmark_settings[args.benchmark]
     args.max_strlen = bm['max_strlen']
-
+    
     # get fields    
     
     if args.model_type in ('ctf', 'vaetf', 'cvaetf', 'scacvaetfv1'):
         SRC, TRG = smiles_field(util_path)
-    elif args.model_type == 'scacvaetfv3':
+    elif args.model_type in ('scavaetf', 'scacvaetfv3'):
         SRC, TRG = smiles_field(util_path, add_sep=True)
 
     scaler = None
@@ -253,7 +269,7 @@ if __name__ == "__main__":
     # if hasattr(args, 'uniform_generation'):
     #     fast_uniform_generation(args, train_smiles, SRC, TRG, 
     #                             toklen_data, scaler, device, logger)
-        
+    
     # if hasattr(args, 'src_generation'):
     #     fast_src_generation(args, toklen_data, train_smiles, 
     #                         scaler, SRC, TRG, COND, device, logger)
@@ -274,18 +290,23 @@ if __name__ == "__main__":
         test_decoder(args, toklen_data, df_train, df_test_scaffolds,
                      scaler, SRC, TRG, COND, device)
 
-    elif hasattr(args, 'scaffold_sampling'):
-        scaffold_sampling(args, toklen_data, df_train, df_test,
-                          df_test_scaffolds, scaler, SRC, TRG,
-                          device, logger)
-        
-    elif hasattr(args, 'unconditioned_sampling'):
-        unconditioned_sampling(args, train, test, test_scaffolds,
-                               toklen_data, scaler, SRC, TRG, device)
+    elif hasattr(args, 'sca_sampling'):
+        sca_sampling(args, toklen_data, df_train,
+                     df_test_scaffolds, scaler,
+                     SRC, TRG, device, logger)
 
-    elif hasattr(args, 'prop_sampling'):
-        prop_sampling(args, df_train, df_test, toklen_data, scaler,
-                      SRC, TRG, device, logger)
+    elif hasattr(args, 'psca_sampling'):
+        psca_sampling(args, toklen_data, df_train, df_test,
+                      df_test_scaffolds, scaler, SRC, TRG,
+                      device, logger)
+        
+    elif hasattr(args, 'uc_sampling'):
+        uc_sampling(args, train, test, test_scaffolds,
+                    toklen_data, scaler, SRC, TRG, device)
+
+    elif hasattr(args, 'p_sampling'):
+        p_sampling(args, df_train, df_test, toklen_data, scaler,
+                   SRC, TRG, device, logger)
 
     elif hasattr(args, 'model_selection'):
         model_selection(args, df_train, df_test, test_scaffolds,
