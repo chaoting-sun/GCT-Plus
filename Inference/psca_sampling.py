@@ -421,27 +421,18 @@ def psca_sampling(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
-    # sampler = None
+    # sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    sampler = None
     
     LOG.info('start generation')
 
     for sid in range(len(scaffold_sample)):
         LOG.info(f'sid: {sid}')
-        
+
+        trg_scaffold = scaffold_sample.loc[sid, 'scaffold']
+
         metric = OrderedDict()
-        n_good = OrderedDict() # number of SMILES that meet specified conditions
-
-        metric_path = os.path.join(save_folder, f's{sid}_metric.csv')
-        good_path = os.path.join(save_folder, f's{sid}_good.csv')
-
-        if os.path.exists(metric_path):
-            continue
-        
-        # if os.path.exists(metric_path):
-        #     _metric = pd.read_csv(metric_path, index_col=[0])
-        #     metric = _metric.to_dict(orient='list')
-        # else:
+        metric_path = os.path.join(save_folder, f's{sid}_metric.csv')        
         
         for p in args.property_list:
             metric[p] = []
@@ -451,19 +442,10 @@ def psca_sampling(
             metric[f'{p}-MSE'] = []
             metric[f'{p}-MAE'] = []
             metric[f'{p}-SD'] = []
+        metric['valid_in_tolerance'] = []
+        metric['unique_in_tolerance'] = []
 
-        n_good['n_good_scaffold'] = [] # same scaffold
-        n_good['n_good_property'] = [] # falling in 4% range
-        n_good['n_good_both'] = [] # meeting both conditions
-        
-        trg_scaffold = scaffold_sample.loc[sid, 'scaffold']
-
-        LOG.info(f'sample smiles from scaffold: {trg_scaffold}')
-        
         for pid, trg_prop in enumerate(trg_prop_list):
-            # if pid < len(metric['valid']):
-            #     continue
-
             LOG.info('sample smiles from property set: %s', trg_prop)
             
             suffix = '-'.join(map(str, trg_prop))
@@ -479,11 +461,13 @@ def psca_sampling(
                                           args.batch_size, args.n_samples)
                 samples.to_csv(gen_path)
             
+            continue
+
             samples = pd.read_csv(gen_path, index_col=[0])
-            samples = samples.dropna(subset=['smiles'])
+            # samples = samples.dropna(subset=['smiles'])
             mols = mapper(get_mol, samples['smiles'], args.n_jobs)
             mols = [m for m in mols if m is not None and isinstance(m, float) is False]
-            scaffolds = mapper(murcko_scaffold, mols, args.n_jobs)            
+            scaffolds = mapper(murcko_scaffold, mols, args.n_jobs)
             valid_smi = mol_to_smi(mols, args.n_jobs)
 
             # the definition of validity is different in molgpt from us
@@ -507,7 +491,7 @@ def psca_sampling(
 
             unique_smi = set(valid_smi)
 
-            LOG.info('evaluate: compute properties')
+            # compute properties
 
             if not os.path.exists(property_path):
                 props = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
@@ -517,24 +501,16 @@ def psca_sampling(
 
             props = pd.read_csv(property_path, index_col=[0])
 
-            # good scaffold
-            props1 = props[props.scaffold == trg_scaffold]
-            n_good['n_good_scaffold'].append(len(props1))
+            # compute those in tolerance
 
-            # good property
-            prop2 = props.copy()
+            good_gen = props.copy()
+            good_gen = good_gen[good_gen.scaffold == trg_scaffold]
             for k, p in enumerate(args.property_list):
-                prop2 = prop2[(prop2[p] - trg_prop[k]).abs() <= prop_tolerance[p]]
-            n_good['n_good_property'].append(len(prop2))
+                good_gen = good_gen[(good_gen[p] - trg_prop[k]).abs() <= prop_tolerance[p]]
+            metric['valid_in_tolerance'].append(len(good_gen))
+            metric['unique_in_tolerance'].append(len(good_gen.drop_duplicates('smiles')))
 
-            # good scaffold and property
-            prop2 = prop2[prop2.scaffold == trg_scaffold]
-            n_good['n_good_both'].append(len(prop2))
-            
-            _n_good = pd.DataFrame(n_good)
-            _n_good.to_csv(good_path)
-
-            LOG.info('evaluate: compute metrics')
+            # get metrics
 
             similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=trg_scaffold)
             scaffold_similarity = mapper(similarity_fn, valid_smi, args.n_jobs)
@@ -557,9 +533,6 @@ def psca_sampling(
                     sim = ssf = sim80 = np.nan
             else:
                 unique = novel = intDiv = sim = ssf = sim80 = np.nan
-                
-                
-            
 
             metric['unique'].append(unique)
             metric['novel'].append(novel)
@@ -588,16 +561,9 @@ def psca_sampling(
             _metrics = pd.DataFrame(metric)
             _metrics.to_csv(metric_path)
 
-    for sid in range(args.n_scaffolds):
-        df = pd.read_csv(os.path.join(save_folder, f's{sid}_good.csv'), index_col=[0])        
-        if sid == 0:
-            df_add = df.copy()    
-        else:
-            df_add = df_add.add(df, fill_value=0)
-    df_add = df_add.apply(lambda x: x / args.n_scaffolds)
-    df_add.to_csv(os.path.join(save_folder, 'avg_good.csv'))
 
-    # # save metrics
+
+
 
     avg_prop_metric_path = os.path.join(save_folder, 'avg_prop_metric.csv')
 
@@ -612,34 +578,61 @@ def psca_sampling(
     avg_met = all_met.groupby(args.property_list).mean()
     avg_met = avg_met.reset_index()
     avg_met.to_csv(avg_prop_metric_path, index=False)
+
+    exit()
     
     # plot property distribution
 
     print('plot property distribution')
+    
+    # consider the results of 3 models
 
-    for pid, trg_prop in enumerate(trg_prop_list):
-        for sid in range(args.n_scaffolds):
-            suffix = '-'.join(map(str, trg_prop))
-            _current_prop = pd.read_csv(os.path.join(save_folder, 
-                                        f's{sid}_p{suffix}_prop.csv'))
-            if sid == 0:
-                current_prop = _current_prop.copy()
+    folder_list = [
+        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv31-beta0.01-warmup15000-17/',
+        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv32-beta0.01-warmup15000-19/',
+        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv3-beta0.01-warmup15000-17/'
+    ]
+    
+    all_cumm_prop = None
+    
+    for i in range(3):
+        save_folder = os.path.join(folder_list[i], args.sample_from)
+        print('processing:', save_folder)
+
+        for pid, trg_prop in enumerate(trg_prop_list):
+            print('pid:', pid)
+            
+            for sid in range(args.n_scaffolds):
+                suffix = '-'.join(map(str, trg_prop))
+                _current_prop = pd.read_csv(os.path.join(save_folder, 
+                                            f's{sid}_p{suffix}_prop.csv'))
+                if sid == 0:
+                    current_prop = _current_prop.copy()
+                else:
+                    current_prop = pd.concat([current_prop, _current_prop], axis=0)
+            
+            current_prop = current_prop.reset_index(drop=True)
+            _trg_prop = pd.DataFrame(np.tile(np.array(trg_prop),
+                                            (len(current_prop),1)),
+                                    columns=[f'trg_{p}' for p in args.property_list])
+            current_prop = pd.concat([_trg_prop, current_prop], axis=1)
+            current_prop['kind'] = [pid]*len(current_prop)
+
+            if pid == 0:
+                cumm_prop = current_prop.copy()
             else:
-                current_prop = pd.concat([current_prop, _current_prop], axis=0)
+                cumm_prop = pd.concat([cumm_prop, current_prop], axis=0)
         
-        current_prop = current_prop.reset_index(drop=True)
-        _trg_prop = pd.DataFrame(np.tile(np.array(trg_prop),
-                                         (len(current_prop),1)),
-                                 columns=[f'trg_{p}' for p in args.property_list])
-        current_prop = pd.concat([_trg_prop, current_prop], axis=1)
-        current_prop['kind'] = [pid]*len(current_prop)
-
-        if pid == 0:
-            cumm_prop = current_prop.copy()
+        if i == 0:
+            all_cumm_prop = cumm_prop.copy()
         else:
-            cumm_prop = pd.concat([cumm_prop, current_prop], axis=0)
+            all_cumm_prop = pd.concat([all_cumm_prop, cumm_prop], axis=0)
 
-    cumm_prop = cumm_prop.reset_index(drop=True)
+    print('gathered all properties')
+
+    cumm_prop = all_cumm_prop.reset_index(drop=True)
+
+    # cumm_prop = cumm_prop.reset_index(drop=True)
 
     print(cumm_prop)
 
@@ -652,26 +645,24 @@ def psca_sampling(
         train_prop.to_csv(train_prop_path)
     train_prop = pd.read_csv(train_prop_path, index_col=[0])
 
-    plot2d(cumm_prop, args.property_list, os.path.join(save_folder, '2d.png'))
+    # plot2d(cumm_prop, args.property_list, os.path.join(save_folder, '2d.png'))
 
-    exit()
 
-    for pid, trg_prop in enumerate(trg_prop_list):
-        save_path = os.path.join(save_folder, '-'.join(map(str, trg_prop))+'.png')
+    # for pid, trg_prop in enumerate(trg_prop_list):
+    #     save_path = os.path.join(save_folder, '-'.join(map(str, trg_prop))+'.png')
         
-        val = cumm_prop[(cumm_prop[f'trg_{args.property_list[0]}'] == trg_prop[0])
-                      & (cumm_prop[f'trg_{args.property_list[1]}'] == trg_prop[1])
-                      & (cumm_prop[f'trg_{args.property_list[2]}'] == trg_prop[2])]
+    #     val = cumm_prop[(cumm_prop[f'trg_{args.property_list[0]}'] == trg_prop[0])
+    #                   & (cumm_prop[f'trg_{args.property_list[1]}'] == trg_prop[1])
+    #                   & (cumm_prop[f'trg_{args.property_list[2]}'] == trg_prop[2])]
 
-        val = val[args.property_list].astype(float)
-        plot3d(args.property_list, val, save_path,
-               trg_prop[0], trg_prop[1], trg_prop[2])
-    exit()
-
-
-
+    #     val = val[args.property_list].astype(float)
+    #     plot3d(args.property_list, val, save_path,
+    #            trg_prop[0], trg_prop[1], trg_prop[2])
+    
 
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(16.5, 4.5))
+
+    xlimit = [(-2, 6), (0, 120), (0.2, 1.0)]
 
     for i, p in enumerate(args.property_list):
         # rowi = i // 3
@@ -679,6 +670,7 @@ def psca_sampling(
         # ax = axes[rowi, coli]
 
         ax = axes[i]
+        ax.set_xlim(xlimit[i][0], xlimit[i][1])
 
         prop_values = trg_prop_settings[p]
 
@@ -703,7 +695,8 @@ def psca_sampling(
             ax.axvline(x=v, linestyle='--', color='gray')
         # ax.set_xlim(left=xlimit[p][0], right=xlimit[p][1])
 
-    fig.savefig(os.path.join(save_folder, f'prop_dist.png'), bbox_inches="tight")
+    # fig.savefig(os.path.join(save_folder, f'prop_dist.png'), bbox_inches="tight")
+    fig.savefig(f'/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetf3_prop_{args.sample_from}.png', bbox_inches="tight")
 
 
 

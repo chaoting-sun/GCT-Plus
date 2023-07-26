@@ -47,12 +47,14 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
 
 class MultiHeadAttention(nn.Module):
     """ Multi-Head Attention """
-    def __init__(self, heads, d_model, dropout=0.1):
+    def __init__(self, heads, d_model, dropout=0.1,
+                 get_attn=False):
         super().__init__()
 
         self.d_model = d_model
         self.d_k = d_model // heads
         self.h = heads
+        self.get_attn = get_attn
 
         self.q_linear = nn.Linear(d_model, d_model)
         self.v_linear = nn.Linear(d_model, d_model)
@@ -78,8 +80,11 @@ class MultiHeadAttention(nn.Module):
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
         output = self.out(concat) # 不一樣
-        # concat_attn = scores_attn.transpose(1, 2).contiguous().view(bs, -1, scores_attn.size(-1) * self.h)
-        # return output, concat_attn
+        
+        if self.get_attn:
+            # concat_attn = scores_attn.transpose(1, 2).contiguous().view(bs, -1, scores_attn.size(-1) * self.h)
+            # return output, concat_attn
+            return output, scores_attn
         return output
 
 

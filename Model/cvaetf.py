@@ -13,11 +13,13 @@ from Model import (
 
 class Encoder(nn.Module):
     "Pass N encoder layers, followed by a layernorm"
-    def __init__(self, vocab_size, d_model, N, h, dff, latent_dim, nconds, dropout, variational=True):
+    def __init__(self, vocab_size, d_model, N, h, dff, latent_dim,
+                 nconds, dropout, variational=True, get_attn=False):
         super(Encoder, self).__init__()
         self.N = N
         self.nconds = nconds
         self.variational = variational
+        self.get_attn = get_attn
         # input embedding layers
         self.embed_sentence = Embeddings(d_model, vocab_size)
         if nconds > 0:
@@ -25,26 +27,38 @@ class Encoder(nn.Module):
         # other layers
         self.norm = Norm(d_model)
         self.pe = PositionalEncoding(d_model, dropout=dropout)
-        self.layers = get_clones(EncoderLayer(h, d_model, dff, dropout), N)
+        self.layers = get_clones(EncoderLayer(h, d_model, dff, dropout, get_attn), N)
         # sampling mean and var
         self.fc_mu = nn.Linear(d_model, latent_dim)
         self.fc_log_var = nn.Linear(d_model, latent_dim)
 
-    def forward(self, src, mask, econds=None):
+    def forward(self, src, src_mask, econds=None):
         x = self.embed_sentence(src)
+        
         if self.nconds > 0:
             cond2enc = self.embed_cond2enc(econds)
             cond2enc = cond2enc.view(econds.size(0), econds.size(1), -1)
             x = torch.cat([cond2enc, x], dim=1)
+        
         x = self.pe(x)
-        for i in range(self.N):
-            x = self.layers[i](x, mask)
+        
+        concat_attn_list = []
 
+        for i in range(self.N):
+            if self.get_attn:
+                x, concat_attn = self.layers[i](x, src_mask)
+                concat_attn_list.append(concat_attn)
+            else:
+                x = self.layers[i](x, src_mask)
         x = self.norm(x)
 
         mu = self.fc_mu(x)
         log_var = self.fc_log_var(x)
-        return self.sampling(mu, log_var), mu, log_var
+
+        if self.get_attn:
+            return self.sampling(mu, log_var), mu, log_var, concat_attn_list
+        else:
+            return self.sampling(mu, log_var), mu, log_var
 
     def sampling(self, mu, log_var):
         if self.variational:
@@ -58,11 +72,13 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     "Pass N decoder layers, followed by a layernorm"
     def __init__(self, vocab_size, d_model, N, h, dff, latent_dim,
-                 nconds, dropout, use_cond2dec, use_cond2lat):
+                 nconds, dropout, use_cond2dec, use_cond2lat,
+                 get_attn=False):
         super(Decoder, self).__init__()
         self.N = N
         self.nconds = nconds
         self.d_model = d_model
+        self.get_attn = get_attn
         self.use_cond2dec = use_cond2dec
         self.use_cond2lat = use_cond2lat
         self.embed = Embeddings(d_model, vocab_size)
@@ -72,16 +88,16 @@ class Decoder(nn.Module):
             self.embed_cond2lat = nn.Linear(nconds, d_model*nconds) #concat to trg_input
         self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.fc_z = nn.Linear(latent_dim, d_model)
-        self.layers = get_clones(DecoderLayer(h, d_model, dff, dropout), N)
+        self.layers = get_clones(DecoderLayer(h, d_model, dff, dropout, get_attn), N)
         self.norm = Norm(d_model)
 
-    def forward(self, trg, e_outputs, src_mask, trg_mask, dconds=None):
+    def forward(self, trg, z, src_mask, trg_mask, dconds=None):
         # e_outputs: (bs, nc+src_len, lat_dim)
         # src_mask: (bs, 1, nc+src_len)
         # trg_mask: (bs, trg_len-1, trg_len-1)
         x = self.embed(trg)
         # x: (bs, trg_len-1, d_model)        
-        e_outputs = self.fc_z(e_outputs)
+        z = self.fc_z(z)
         # e_outputs: (bs, nc+src_len, d_model)
 
         if self.use_cond2dec and self.nconds > 0:
@@ -91,7 +107,7 @@ class Decoder(nn.Module):
         elif self.use_cond2lat and self.nconds > 0:
             cond2lat = self.embed_cond2lat(dconds).view(dconds.size(0), dconds.size(1), -1)
             # cond2lat: (bs, nc, d_model)
-            e_outputs = torch.cat([cond2lat, e_outputs], dim=1)
+            z = torch.cat([cond2lat, z], dim=1)
             # e_outputs: (bs, nc+(nc+src_len), d_model)
         x = self.pe(x)
 
@@ -100,26 +116,41 @@ class Decoder(nn.Module):
             src_mask = torch.cat([cond_mask, src_mask], dim=2)
             # src_mask: (bs, 1, nc+(nc+src_len))
 
+        concat_attn_1_list = []
+        concat_attn_2_list = []
+
         for i in range(self.N):
-            x = self.layers[i](x, e_outputs, src_mask, trg_mask)
-        return self.norm(x)
+            if self.get_attn:
+                x, concat_attn_1, concat_attn_2 = self.layers[i](x, z, src_mask, trg_mask)
+                concat_attn_1_list.append(concat_attn_1)
+                concat_attn_2_list.append(concat_attn_2)
+            else:
+                x = self.layers[i](x, z, src_mask, trg_mask)
+        
+        if self.get_attn:
+            return self.norm(x), concat_attn_1_list, concat_attn_2_list
+        else:
+            return self.norm(x)
 
 
 class Cvaetf(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048,
                  h=8, latent_dim=64,  dropout=0.1, nconds=3,
-                 use_cond2dec=False, use_cond2lat=False, variational=True):
+                 use_cond2dec=False, use_cond2lat=False,
+                 variational=True, get_attn=False):
         super(Cvaetf, self).__init__()
         # settings
         self.nconds = nconds
+        self.get_attn = get_attn
         self.use_cond2dec = use_cond2dec
         self.use_cond2lat = use_cond2lat
         
         # encoder/decoder
         self.encoder = Encoder(src_vocab, d_model, N, h, dff, latent_dim,
-                               nconds, dropout, variational)
+                               nconds, dropout, variational, get_attn)
         self.decoder = Decoder(trg_vocab, d_model, N, h, dff, latent_dim,
-                               nconds, dropout, use_cond2dec, use_cond2lat)
+                               nconds, dropout, use_cond2dec, use_cond2lat,
+                               get_attn)
         # other layers
         if self.use_cond2dec and nconds > 0:
             self.prop_fc = nn.Linear(trg_vocab, 1)

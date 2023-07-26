@@ -11,6 +11,7 @@ def model_opts(parser):
     parser.add_argument('-variational', type=bool, default=True) # should be removed later
     parser.add_argument('-use_cond2dec', action='store_true')
     parser.add_argument('-use_cond2lat', action='store_true')
+    parser.add_argument('-get_attn', action='store_true')
     # parser.add_argument('-use_cond2dec', type=bool, default=False)
     # parser.add_argument('-use_cond2lat', type=bool, default=True)
     

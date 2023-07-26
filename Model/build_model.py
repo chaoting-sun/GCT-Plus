@@ -88,7 +88,7 @@ def extract_params(args, src_vocab_len, trg_vocab_len):
         'dropout'     : args.dropout,
         'use_cond2dec': args.use_cond2dec,
         'use_cond2lat': args.use_cond2lat,
-        'nconds'      : len(args.property_list)
+        'nconds'      : len(args.property_list),
     }
 
 

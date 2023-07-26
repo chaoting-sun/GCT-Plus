@@ -242,7 +242,7 @@ def p_sampling(
     if args.use_molgct:
         prefix = 'molgct'
     else:
-        prefix = f'{args.model_name}_{args.epoch}'
+        prefix = f'{args.model_name}-{args.epoch}'
     save_folder = os.path.join(task_path, prefix)
     os.makedirs(save_folder, exist_ok=True)
 
@@ -266,7 +266,8 @@ def p_sampling(
         errors[f'{p}-MSE'] = []
         errors[f'{p}-MAE'] = []
         errors[f'{p}-SD'] = []
-    errors['n_within_tolerance'] = []
+    errors['valid_in_tolerance'] = []
+    errors['unique_in_tolerance'] = []
 
     for i, trg_prop in enumerate(trg_prop_list):
         LOG.info('properties:%s', trg_prop)
@@ -276,6 +277,8 @@ def p_sampling(
         
         LOG.info('generate: sample smiles')
         
+        print(gen_path)
+
         if not os.path.exists(gen_path):
             gen = sample_smiles(generator, trg_prop, n_samples)
             gen = pd.DataFrame(gen, columns=['SMILES'])
@@ -308,17 +311,15 @@ def p_sampling(
             errors[f'{p}-MAE'].append(mae)
             errors[f'{p}-SD'].append(sd)
         
-        prop_within_tolerance = props.copy()
+        good_gen = props.copy()
         for k, p in enumerate(args.property_list):
-            prop_within_tolerance = prop_within_tolerance[(prop_within_tolerance[p] - trg_prop[k]).abs() <= prop_tolerance[p]]
-        errors['n_within_tolerance'].append(len(prop_within_tolerance))
-        
-        print(errors)
+            good_gen = good_gen[(good_gen[p] - trg_prop[k]).abs() <= prop_tolerance[p]]
+        errors['valid_in_tolerance'].append(len(good_gen))
+        errors['unique_in_tolerance'].append(len(good_gen.drop_duplicates('SMILES')))
+
         df_errors = pd.DataFrame(errors)
         df_errors.to_csv(error_path)
-
-    exit()
-
+        print(df_errors)
 
     LOG.info('gather all properties')
 
@@ -329,20 +330,23 @@ def p_sampling(
     #                'cvaetf3': 8,
     #              }
 
-    model_dict = { 'cvaetf1': 15,
-                   'cvaetf2': 15,
-                   'cvaetf3': 15,
-                 }
-    
-    # plot the metrics
-
     metric = {
         'valid'  : [],
         'unique' : [],
         'novel'  : [],
-        'intDiv' : []
+        'intDiv' : [],
+        'valid_in_tolerance': [],
+        'unique_in_tolerance': []
     }
-    metric_path = os.path.join(task_path, f'metric-{"_".join(map(str, model_dict.values()))}.csv')
+
+    if args.use_molgct:
+        metric_path = os.path.join(task_path, 'metric-molgct.csv')
+    else:
+        model_dict = { 'cvaetf1': 15,
+                       'cvaetf2': 15,
+                       'cvaetf3': 15,
+                    }
+        metric_path = os.path.join(task_path, f'metric-{"_".join(map(str, model_dict.values()))}.csv')
 
     train_set = set(df_train['smiles'])
 
@@ -350,13 +354,22 @@ def p_sampling(
         for i, trg_prop in enumerate(trg_prop_list):
             print(f'({i}) metric:', trg_prop)
             smiles = []
-            for j, (model_name, epoch) in enumerate(model_dict.items()):
-                _current_smi = pd.read_csv(os.path.join(task_path,
-                                        f'{model_name}_{epoch}',
-                                        f'{model_name}-{epoch}_gen_{i}.csv'),
-                                        index_col=[0]
-                                        ).dropna(subset=['SMILES'])
-                smiles.extend(_current_smi['SMILES'].tolist())
+            
+            if args.use_molgct:
+                _current_smi = pd.read_csv(os.path.join(task_path, 'molgct',
+                                                        f'molgct_gen_{i}.csv'),
+                                                        index_col=[0]
+                                        ).dropna(subset=['SMILES'])                
+            else:
+                for j, (model_name, epoch) in enumerate(model_dict.items()):
+                    _current_smi = pd.read_csv(os.path.join(task_path,
+                                            f'{model_name}_{epoch}',
+                                            f'{model_name}-{epoch}_gen_{i}.csv'),
+                                            index_col=[0]
+                                            ).dropna(subset=['SMILES'])
+
+            smiles.extend(_current_smi['SMILES'].tolist())
+            
             mols = mapper(get_mol, smiles, args.n_jobs)
             mols = [m for m in mols if m is not None]
             valid_smi = mol_to_smi(mols, args.n_jobs) # canonicalized smiles
@@ -373,7 +386,7 @@ def p_sampling(
 
             _metric = pd.DataFrame(metric)
             _metric.to_csv(metric_path)
-
+    
     # plot property distributions
 
     for i, trg_prop in enumerate(trg_prop_list):
@@ -411,9 +424,7 @@ def p_sampling(
         'SAS' : [1, 10],
         'NP'  : [-5, 5],
     }
-
     
-
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(16.5, 4.5))
 
     # for i, p in enumerate(args.property_list):

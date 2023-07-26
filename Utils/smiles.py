@@ -150,6 +150,8 @@ def plot_highlighted_smiles_group(
     substructure = Chem.MolFromSmiles(substructure_smiles)
     molecules = smi_to_mol(smiles, n_jobs=n_jobs)
     
+    print(molecules)
+    
     for mol in molecules:
         rdDepictor.Compute2DCoords(mol)
 
@@ -170,13 +172,19 @@ def plot_highlighted_smiles_group(
     draw_options.highlightColour = highlight_color
     draw_options.legendFontSize = 20
 
+    # img = Draw.MolsToGridImage(molecules, molsPerRow=n_per_mol, subImgSize=img_size,
+    #                             highlightAtomLists=[hl_atoms for hl_atoms, _ in highlights],
+    #                             highlightBondLists=[hl_bonds for _, hl_bonds in highlights],
+    #                             drawOptions=draw_options, legends=descriptions
+    #                             )
+    # img.save(save_path)
+
     img = Draw.MolsToGridImage(molecules, molsPerRow=n_per_mol, subImgSize=img_size,
                                 highlightAtomLists=[hl_atoms for hl_atoms, _ in highlights],
                                 highlightBondLists=[hl_bonds for _, hl_bonds in highlights],
                                 drawOptions=draw_options, useSVG=True,
                                 legends=descriptions
-                                )
-
+                                )    
     root = ET.fromstring(img)
     width = int(root.attrib['width'].strip('px'))
     height = int(root.attrib['height'].strip('px'))
@@ -209,12 +217,12 @@ def plot_highlighted_smiles_group(
 #     return TanimotoSimilarity(fp1, fp2)
     
 
-def plot_smiles(smiles, save_path):
+def plot_smiles(smiles, save_path, size=(500,500)):
     mol = Chem.MolFromSmiles(smiles)
     if not mol:
         exit('Not valid!')
     else:
-        img = Draw.MolToImage(mol)
+        img = Draw.MolToImage(mol, size=size)
         img.save(save_path)
 
 
@@ -256,6 +264,7 @@ def plot_smiles_group(smiles, save_path, n_per_mol=None, img_size=None,
     kwargs['drawOptions'] = draw_options
 
     svg_data = Draw.MolsToGridImage(**kwargs)
+    
 
     # Parse the SVG XML data using ElementTree
     root = ET.fromstring(svg_data)
@@ -409,7 +418,7 @@ def get_substructure_smiles(smiles, min_ratio=0.1, max_ratio=0.5):
 #     return list(set(substructures))
 
 
-def is_substructure(subst, smiles):
+def is_substructure(smiles, subst):
     mol = Chem.MolFromSmiles(smiles)
     subst_mol = Chem.MolFromSmiles(subst)
     return mol.HasSubstructMatch(subst_mol)

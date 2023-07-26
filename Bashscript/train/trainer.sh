@@ -178,42 +178,44 @@
 #     >train-${MODEL_NAME}.out 2>&1 &
 
 
-MODELTYPE=scacvaetfv3
-MODEL_NAME=${MODELTYPE}1-beta0.01-warmup15000_rand0.5
-START_EPOCH=19
-BENCHMARK=moses
-
-CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29909 \
-    Train1.py \
-        -seed 1000                    \
-        -KLA_inc_beta 0.01           \
-        -lr_WarmUpSteps 15000        \
-        -use_cond2lat                \
-        -benchmark ${BENCHMARK}      \
-        -model_type ${MODELTYPE}     \
-        -start_epoch ${START_EPOCH}  \
-        -num_epoch 20                \
-        -property_list logP tPSA QED \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
-        -use_scaffold                \
-        -batch_size 64               \
-        -randomize_prob 0.5          \
-    >train-${MODEL_NAME}.out 2>&1 &
-
-
-# cvaetf
-# MODELTYPE=cvaetf
-# MODEL_NAME=${MODELTYPE}4
+# MODELTYPE=scacvaetfv3
+# MODEL_NAME=${MODELTYPE}3-beta0.01-warmup15000_rand0.5
+# START_EPOCH=11
 # BENCHMARK=moses
 
-# CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python \
-#     Train.py \
+# CUDA_VISIBLE_DEVICES=2,3 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29907 \
+#     Train1.py \
+#         -seed 1000                    \
+#         -KLA_inc_beta 0.01           \
+#         -lr_WarmUpSteps 15000        \
 #         -use_cond2lat                \
 #         -benchmark ${BENCHMARK}      \
 #         -model_type ${MODELTYPE}     \
-#         -start_epoch 1               \
-#         -batch_size 128              \
-#         -num_epoch 50                \
+#         -start_epoch ${START_EPOCH}  \
+#         -num_epoch 20                \
 #         -property_list logP tPSA QED \
 #         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+#         -use_scaffold                \
+#         -batch_size 64               \
+#         -randomize_prob 0.5          \
 #     >train-${MODEL_NAME}.out 2>&1 &
+
+
+# cvaetf
+MODELTYPE=cvaetf
+MODEL_NAME=${MODELTYPE}6
+BENCHMARK=moses
+GPU_IDX=2
+
+CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python \
+    Train1.py \
+        -seed 1000                    \
+        -use_cond2lat                \
+        -benchmark ${BENCHMARK}      \
+        -model_type ${MODELTYPE}     \
+        -start_epoch 1               \
+        -batch_size 128              \
+        -num_epoch 30                \
+        -property_list logP tPSA QED \
+        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+    >train-${MODEL_NAME}-${GPU_IDX}.out 2>&1 &

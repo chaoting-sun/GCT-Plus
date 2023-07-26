@@ -15,7 +15,9 @@ from Utils.smiles import (
     murcko_scaffold_similarity,
     plot_smiles_group,
     plot_smiles,
-    mol_to_smi
+    mol_to_smi,
+    is_substructure,
+    tanimoto_similarity
 )
 from Utils.properties import mols_to_props, get_property_fn
 from Utils.metric import get_error_fn
@@ -33,11 +35,14 @@ def get_sample(df_dataset, df_train, data_folder, data_name, n):
     save_path = os.path.join(data_folder, f'{data_name}_sample.csv')
 
     if not os.path.exists(save_path):
-        data_sample = df_dataset.sample(frac=1).reset_index(drop=True)    
+        data_sample = df_dataset.sample(frac=1).reset_index(drop=True)
         data_sample = data_sample.drop_duplicates(subset='scaffold', ignore_index=True)
         data_sample[:n].to_csv(save_path)
-        data_sample['n_train'] = data_sample['scaffold'].apply(
-            lambda sca: len(df_train[df_train.scaffold == sca]))
+    else:
+        data_sample = pd.read_csv(save_path, index_col=[0])
+    
+    data_sample['n_train'] = data_sample['scaffold'].apply(
+        lambda sca: len(df_train[df_train.scaffold == sca]))
         
     return pd.read_csv(save_path, index_col=[0])
 
@@ -76,6 +81,65 @@ def plot_highlighted_smiles(scaffold_sample, save_folder, n_jobs=1, gen_id=85, n
     exit()
 
 
+def substructure_sampling(args, sampler):
+    save_folder = '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/sca_sampling/non-scaffold'
+
+    # substructure = 'CC1C2CCC(C2)C1CN(CCO)C(=O)c1ccc(Cl)cc1'
+    # substr_list = [
+    #     'Oc1c(Br)cc(Br)c2cccnc12',
+    #     'CC(=O)Nc1ccc(OC(=O)c2ccccc2OC(C)=O)cc1',
+    #     'OCCN(CCO)c1nc(-c2ccccc2)c(-c2ccccc2)o1'
+    # ]
+    
+    substr_list = ['CCCCCC', 'CCCCCCCCC', 'CCCC=CCCC=C', 'CC(CC(=C)C)C=C(C)C', 'CCCC(CCC)CC=C']
+    plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_folder, 'carbonchain.png'), n_per_mol=5)
+    
+    # substr_list = ['COc1ccc(-c2cc(C(=O)Nc3cccc(O)c3)no2)cc1',
+    #                'CSc1ccc(-c2csc3nnc(C#N)n23)cc1',
+    #                'Cc1occc1C(=O)NCC(=O)N1CCCC(c2ccccc2)CC1',
+    #                'O=C(NC1CCOC1=O)c1ccccc1Br',
+    #                'CC(O)c1nc2ccccc2n1CC(=O)N(C)Cc1cccs1']
+    # plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_folder, 'molecule.png'), n_per_mol=5)
+    
+    for i, substr in enumerate(substr_list):
+        save_path = os.path.join(save_folder, substr)
+        os.makedirs(save_path, exist_ok=True)
+        
+        smiles, *_ = sampler.sample_smiles(n=1000, scaffold=substr)
+
+        mols = mapper(get_mol, smiles, args.n_jobs)
+        mols = [m for m in mols if m is not None and isinstance(m, float) is False]
+        valid_smi = mol_to_smi(mols, args.n_jobs)
+        
+        is_subst = partial(is_substructure, subst=substr)
+        res = mapper(is_subst, valid_smi, n_jobs=args.n_jobs)
+        valid_smi = [smi for i, smi in enumerate(valid_smi) if res[i] is True]
+        valid_smi = list(set(valid_smi))
+
+        print(f'# unique SMILES: {len(valid_smi)}')
+        print('# matched with substructures:', sum(res))
+        
+        if len(valid_smi):
+            plot_highlighted_smiles_group(valid_smi[:6],
+                                        substructure_smiles=substr,
+                                        save_path=os.path.join(save_path, 'gen_group.png'),
+                                        img_size=(270, 200),
+                                        n_per_mol=6
+                                        )
+
+        # plot_smiles_group(smiles[:15], save_path=f'./{i}-gen.png', n_per_mol=4)
+        plot_smiles(substr, save_path=os.path.join(save_path, 'substr.png'))
+
+        
+        sim = [tanimoto_similarity(substr, str(smi)) for smi in valid_smi]
+        sim = [s for s in sim if s != None]
+        print(sim)
+        
+        # print('average similarity:', sum(sim) / len(sim))
+    
+    exit()
+    
+
 def sca_sampling(
         args,
         toklen_data,
@@ -97,9 +161,15 @@ def sca_sampling(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
-
+    # sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    sampler = None
+    
     # get scaffold
+    
+    if args.substructure:
+        substructure_sampling(args, sampler)
+    
+    
 
     LOG.info('get scaffold...')
 
@@ -120,23 +190,22 @@ def sca_sampling(
                                    args.sample_from)
     os.makedirs(save_folder, exist_ok=True)
     
+    LOG.info(f'save folder: {save_folder}')
+
     # plot_highlighted_smiles(scaffold_sample, save_folder, args.n_jobs)
     
     metric = OrderedDict()
     
     metric_path = os.path.join(save_folder, 'metric.csv')
 
-    if os.path.exists(metric_path):
-       _metric = pd.read_csv(metric_path, index_col=[0])
-       metric = _metric.to_dict(orient='list') 
-    else:
-        for met in ('scaffold', 'valid', 'unique', 'novel', 'intDiv', 'sim', 'SSF', 'sim80',
-                    'n_valid', 'n_unique', 'n_novel', 'n_SSF', 'n_sim80'):
-            metric[met] = []
+    for met in ('scaffold', 'valid', 'unique', 'novel', 'intDiv', 'sim', 'SSF', 'sim80',
+                'n_valid', 'n_unique', 'n_novel', 'n_SSF', 'n_sim80', 'n_unique_ssf',
+                'valid_in_tolerance', 'unique_in_tolerance'):
+        metric[met] = []
 
     for sid in range(len(scaffold_sample)):
-        if sid < len(metric['valid']):
-            continue
+        # if sid < len(metric['valid']):
+        #     continue
 
         gen_path = os.path.join(save_folder, f's{sid}_gen.csv')
         sim_fig_path = os.path.join(save_folder, f's{sid}_sim.png')
@@ -161,15 +230,19 @@ def sca_sampling(
             samples = pd.DataFrame(samples, columns=['smiles'])
             samples.to_csv(gen_path)
 
-        samples = pd.read_csv(gen_path, index_col=[0])['smiles']
+        samples = pd.read_csv(gen_path, index_col=[0])
 
-        LOG.info('compute metrics...')
-
-        mols = mapper(get_mol, samples, args.n_jobs)
+        mols = mapper(get_mol, samples['smiles'], args.n_jobs)
         mols = [m for m in mols if m is not None and isinstance(m, float) is False]
         valid_smi = mol_to_smi(mols, args.n_jobs)
+        valid = pd.DataFrame({ 'smiles': valid_smi })
+        valid['scaffold'] = mapper(murcko_scaffold, mols, args.n_jobs)
+        valid_scaffold = valid[valid.scaffold == trg_scaffold]
+
         unique_smi = set(valid_smi)
 
+        LOG.info('compute metrics...')
+        
         similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=trg_scaffold)
         scaffold_similarity = mapper(similarity_fn, valid_smi, args.n_jobs)
         scaffold_similarity = [s for s in scaffold_similarity if s is not None]
@@ -189,12 +262,20 @@ def sca_sampling(
         metric['n_novel'].append(len(unique_smi - train_set))
         metric['n_SSF'].append(len([1 for s in scaffold_similarity if s == 1]))
         metric['n_sim80'].append(len([1 for s in scaffold_similarity if s >= 0.80]))
+        
+        scaffold_similarity = mapper(similarity_fn, unique_smi, args.n_jobs)
+        metric['n_unique_ssf'].append(len([1 for s in scaffold_similarity if s == 1]))
+
+        metric['valid_in_tolerance'].append(len(valid_scaffold))
+        metric['unique_in_tolerance'].append(len(valid_scaffold.drop_duplicates('smiles')))
 
         LOG.info('save metrics...')
 
         _metric = pd.DataFrame(metric)
         _metric.to_csv(metric_path)
 
+        continue
+    
         LOG.info('plot Murcko scaffold similarity...')
 
         fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5.5, 5.5))
@@ -205,6 +286,8 @@ def sca_sampling(
         ax.set_ylabel(ylabel='Density', fontsize=17)
         ax.tick_params(axis="both", which="major", labelsize=14)
         fig.savefig(sim_fig_path, bbox_inches="tight")
+
+    exit()
 
     # plot murcko scaffold similarity
 

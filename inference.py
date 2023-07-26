@@ -22,7 +22,8 @@ from Inference.p_sampling import p_sampling
 
 from Inference.sca_sampling import sca_sampling
 from Inference.psca_sampling import psca_sampling
-from Inference.uc_sampling import uc_sampling
+# from Inference.uc_sampling import uc_sampling
+from Inference.visualize_attention import visualize_attention
 
 
 
@@ -156,7 +157,9 @@ def add_args(parser):
     sca_parser.add_argument('-n_samples', type=int, default=10000)
     sca_parser.add_argument('-batch_size', type=int, default=512)
     sca_parser.add_argument('-sample_from', type=str, default='train')
-    sca_parser.add_argument('-molgpt', type=str, action='store_true')
+    sca_parser.add_argument('-molgpt', action='store_true')
+    sca_parser.add_argument('-substructure', action='store_true')
+    
     """
     sample with a scaffold and properties
     """
@@ -182,6 +185,11 @@ def add_args(parser):
     ms_parser = subparsers.add_parser('model-selection', parents=[parent_parser])
     ms_parser.add_argument('-model_selection', action='store_true')
     ms_parser.add_argument('-n_samples', type=int, default=10000)
+
+    """visualize attention map"""
+    ms_parser = subparsers.add_parser('visualize-attention', parents=[parent_parser])
+    ms_parser.add_argument('-visualize_attention', action='store_true')
+    # ms_parser.add_argument('-n_samples', type=int, default=10000)
 
 
 def find_best_source():
@@ -312,3 +320,7 @@ if __name__ == "__main__":
         model_selection(args, df_train, df_test, test_scaffolds,
                         toklen_data, scaler, SRC, TRG, device)
         
+    elif hasattr(args, 'visualize_attention'):
+        visualize_attention(args, toklen_data, df_train,
+                            df_test, test_scaffolds, scaler,
+                            SRC, TRG, device, logger)

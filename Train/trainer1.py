@@ -66,8 +66,8 @@ def decode_check(preds_mol, TRG):
             valid_mols += 1
     print('valid ratio (%):', valid_mols / prob.size(0) * 100)
     return decoded_strings
-        
-        
+
+
 def run_epoch(args, model, optimizer, dataloader,
               current_step, beta, LOG, train):
     n_samples = 0

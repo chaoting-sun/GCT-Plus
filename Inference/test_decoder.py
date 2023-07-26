@@ -4,25 +4,21 @@ import pandas as pd
 from Inference.utils import prepare_generator
 import torch
 import random
-from time import time
+# from time import time
 from Model.build_model import get_generator
 from Utils import DataloaderPreparation
 from Utils.properties import get_property_fn, mols_to_props
-from Utils.field import smi_to_id
 from Utils.smiles import (
     get_mol,
     murcko_scaffold,
     tanimoto_similarity,
     plot_smiles_group,
-    plot_smiles,
-    murcko_scaffold_similarity
 )
 
-from sklearn.manifold import TSNE
+# from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 from Utils.analysis import interpolation, dimension_reduction
-
 
 property_peaks = [3.075,93.411,0.609]
 
@@ -175,16 +171,19 @@ def interpolate_latent_spaces(lat1, lat2, cond1, cond2, n, method='slerp'):
     return interpolated_z, interpolated_conds
 
 
-def line_plot(df, save_path, y_ticks):
+def line_plot(df, save_path, y_label):
     df.index = np.arange(1, len(df)+1)
-    ax = df.plot(figsize=(6.5, 5.5), use_index=True,
-                 kind='line', color='black',
-                 legend=False, alpha=0.5)
-    ax.set_xlabel('Interpolation step', fontsize=18)
-    ax.set_ylabel(y_ticks, fontsize=18)
+    
+    fig = plt.figure(dpi=150)
+    ax = df.plot(figsize=(5, 4.6), use_index=True,
+                 kind='line', color='black', legend=False,
+                 alpha=0.5, ax=plt.gca())
+    ax.set_xlabel('Interpolation step', fontsize=16)
+    ax.set_ylabel(y_label, fontsize=16)
     ax.set_yticks(np.arange(0, 1+0.2, 0.2))
-    ax.tick_params(axis='x', labelsize=15)
-    ax.tick_params(axis='y', labelsize=15)
+    ax.tick_params(axis='x', labelsize=14)
+    ax.tick_params(axis='y', labelsize=14)
+    plt.tight_layout()
     plt.savefig(save_path)
 
 
@@ -302,31 +301,29 @@ class SmilesInterpolation:
         self.data_src = data_src
         self.n_interpolates = 8
 
-    def wrap_encoder_input(self, smiles_list, transform,
+    def wrap_encoder_input(self, smiles_list,
                            scaffold_list, econds):
         kwargs = { 'smiles_list': smiles_list }
         if self.use_scaffold:
             kwargs['scaffold_list'] = scaffold_list
         if len(self.property_list) > 0:
             kwargs['econds'] = econds
-            kwargs['transform'] = transform
         return kwargs
 
-    def wrap_decoder_input(self, zs, transform,
-                           scaffold=None, dconds=None):
+    def wrap_decoder_input(self, zs, scaffold=None,
+                           dconds=None):
         kwargs = { 'zs': zs }
         
         if self.use_scaffold and len(self.property_list) > 0:
             kwargs['scaffold'] = scaffold
             kwargs['dconds'] = [dconds]
-            kwargs['transform'] = [transform]
 
         elif self.use_scaffold and len(self.property_list) == 0:
             kwargs['scaffold'] = scaffold
+            kwargs['n'] = zs.size(0)
 
         elif not self.use_scaffold and len(self.property_list) > 0:
             kwargs['dconds'] = [dconds]
-            kwargs['transform'] = [transform]
 
         elif not self.use_scaffold and len(self.property_list) == 0:
             kwargs['n'] = zs.size(0)
@@ -363,6 +360,7 @@ class SmilesInterpolation:
                                                  transform=transform,
                                                  scaffold=decoder_scaffold,
                                                  dconds=dconds)
+                
                 print(kwargs)
                 gsmi, *_ = self.generator.sample_smiles(**kwargs)
                 gsmi = gsmi[0]
@@ -383,17 +381,16 @@ class SmilesInterpolation:
     
     def generate_interpolated_smiles(self, pairs, save_folder,
                                      trg_conds=None, transform=True):
-        suffix = '' if trg_conds is None else '_'+'-'.join(map(str, list(trg_conds)))
 
         for p in range(len(pairs)):
             print(f'#pair = {p}')
 
-            smiles_path = os.path.join(save_folder, f'prediction{p}{suffix}.csv')
-            figure_path = os.path.join(save_folder, f'prediction{p}{suffix}.png')
+            smiles_path = os.path.join(save_folder, f'prediction{p}.csv')
+            figure_path = os.path.join(save_folder, f'prediction{p}.png')
             print(smiles_path)
 
-            # if os.path.exists(smiles_path):
-            #     continue
+            if os.path.exists(smiles_path):
+                continue
             
             # input information
 
@@ -405,13 +402,11 @@ class SmilesInterpolation:
             cond1 = pairs.loc[p, [f'{prop}_1' for prop in self.property_list]].to_numpy()
 
             # encode smiles of both molecules
-            
+                        
             kwargs0 = self.wrap_encoder_input(smiles_list=[src0],
-                                              transform=transform,
                                               scaffold_list=[scaffold0],
                                               econds=[cond0])
             kwargs1 = self.wrap_encoder_input(smiles_list=[src1],
-                                              transform=transform,
                                               scaffold_list=[scaffold1],
                                               econds=[cond1])
             
@@ -470,7 +465,6 @@ class SmilesInterpolation:
                     # sample smiles
 
                     kwargs = self.wrap_decoder_input(zs=new_z,
-                                                     transform=transform,
                                                      scaffold=scaffold0,
                                                      dconds=trg_conds)
 
@@ -522,8 +516,7 @@ class SmilesInterpolation:
             tasim_start_from_begin = []
             tasim_start_from_end = []
 
-            df = pd.read_csv(os.path.join(save_folder, f'prediction{p}{suffix}.csv'))
-            # df = pd.read_csv(os.path.join(save_folder, f'{data_src}_prediction{p}_c{ci}.csv'))
+            df = pd.read_csv(os.path.join(save_folder, f'prediction{p}.csv'))
 
             for i in range(len(df)):
                 first_smi = df.loc[0, 'smiles']
@@ -559,42 +552,49 @@ class SmilesInterpolation:
         print('mean of smoothness:', k / len(pairs))
         
         smoothness_rec = pd.DataFrame(smoothness_rec)
-        smoothness_rec.to_csv(os.path.join(save_folder, f'smoothness{suffix}.csv'))
+        smoothness_rec.to_csv(os.path.join(save_folder, f'smoothness.csv'))
 
-        print('plot the k best smiles list of interpolation...')    
+        print('plot the k best smiles list of interpolation...')
 
-        best_ids = topk(smoothness_rec['start'], k=8)
+        best_ids = topk(smoothness_rec['start'], k=6)
+        print(best_ids)
         best_smiles_list = []
         for p in best_ids:
-            df = pd.read_csv(os.path.join(save_folder, f'prediction{p}{suffix}.csv'))
+            df = pd.read_csv(os.path.join(save_folder, f'prediction{p}.csv'))
             best_smiles_list.append(df['smiles'].tolist())
+        
+        # smiles = pd.read_csv(os.path.join(save_folder, f'prediction28.csv'))['smiles'].tolist()
+        # plot_smiles_group(smiles, os.path.join(save_folder, f'prediction_best.png'),
+        #                   n_per_mol=5, img_size=(1000, 500))
+        # exit()
+
         best_smiles_list = list(zip(*best_smiles_list))
         best_smiles_list = [item for sub_rec in best_smiles_list for item in sub_rec]
-        plot_smiles_group(best_smiles_list, os.path.join(save_folder, f'prediction{suffix}.png'),
-                        n_per_mol=8)
+        plot_smiles_group(best_smiles_list, os.path.join(save_folder, f'prediction.png'),
+                        n_per_mol=6, img_size=(530, 300))  #(300, 250))
 
         print('plot the best smiles list of interpolation...')
 
         best_tasim_start = pd.DataFrame({ 'TaSim(start, current)': best_tasim_start })
         best_tasim_prev = pd.DataFrame({ 'TaSim(start, previous)': best_tasim_prev })
 
-        line_plot(best_tasim_start, y_ticks='TanSim(start, current)',
+        line_plot(best_tasim_start, y_label=r'$SIM_{start}$',
                   save_path=os.path.join(save_folder, f'best-tasim-start_{best_p}.png'),
                   )    
-        line_plot(best_tasim_prev, y_ticks='TanSim(start, previous)',
+        line_plot(best_tasim_prev, y_label=r'$SIM_{prev}$',
                   save_path=os.path.join(save_folder, f'best-tasim-previous_{best_p}.png'),
-                  )    
+                  )
 
         print('plot the line plot TaSim(start, current) and TaSim(previous, current)...')
 
         tasim_start_rec = pd.DataFrame(tasim_start_rec)
         tasim_prev_rec = pd.DataFrame(tasim_prev_rec)
 
-        line_plot(tasim_start_rec, y_ticks='TanSim(start, current)',
-                  save_path=os.path.join(save_folder, f'tasim-start{suffix}.png')
+        line_plot(tasim_start_rec, y_label=r'$SIM_{start}$',
+                  save_path=os.path.join(save_folder, f'tasim-start.png')
                   )
-        line_plot(tasim_prev_rec, y_ticks='TanSim(start, previous)',
-                  save_path=os.path.join(save_folder, f'tasim-prev{suffix}.png')
+        line_plot(tasim_prev_rec, y_label=r'$SIM_{prev}$',
+                  save_path=os.path.join(save_folder, f'tasim-prev.png')
                   )
 
 
@@ -886,6 +886,7 @@ def test_decoder(
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
     generator = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    # generator = None
 
     dp = DataloaderPreparation(device, SRC, TRG,
                                model_type=args.model_type,
@@ -894,10 +895,10 @@ def test_decoder(
 
     # file path
 
-    # data_src = 'test_scaffolds' # the data source
-    # main_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-debug')
-    # data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
-    # save_folder = os.path.join(main_folder, args.model_name)
+    data_src = 'test_scaffolds' # the data source
+    main_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-debug')
+    data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
+    save_folder = os.path.join(main_folder, args.model_name)
 
     # os.makedirs(main_folder, exist_ok=True)
     # os.makedirs(save_folder, exist_ok=True)
@@ -912,10 +913,12 @@ def test_decoder(
     #                                     similarity_threshold=0.5)
     #     pairs.to_csv(data_path)
     
+    #####　COMMENT
+    
     n_pairs = 100 # number of the test pairs
     data_src = 'test_scaffolds'
     
-    main_folder = os.path.join(args.infer_path, args.benchmark, 'interpolate-smiles')
+    main_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder')
     data_path = os.path.join(main_folder, f"{data_src}_samples{'-scaffold' if args.use_scaffold else ''}.csv")
     os.makedirs(main_folder, exist_ok=True)
 
@@ -926,6 +929,7 @@ def test_decoder(
         pairs.to_csv(data_path)
 
     if True:
+        # save_folder = os.path.join(main_folder, f'{args.model_name}')
         save_folder = os.path.join(main_folder, f'{args.model_name}-{args.epoch}')
         os.makedirs(save_folder, exist_ok=True)
 
@@ -952,6 +956,8 @@ def test_decoder(
         
         SIP = SmilesInterpolation(args, generator)
         SIP.generate_with_different_scaffold(pairs, save_folder=save_folder)
+    
+    #####　COMMENT
     
     # property_fn = get_property_fn(args.property_list)
     

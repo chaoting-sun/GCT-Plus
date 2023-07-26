@@ -268,6 +268,50 @@ class VaetfSampling(Sampling):
     def __init__(self, model, kwargs):
         super().__init__(model, kwargs)
 
+    def get_attention_map(self, smiles):
+        n = 1
+        smiles_list = [smiles]
+        
+        # encoder
+        kws = self.encoder_input(smiles_list)
+        kws['src_mask'] = get_src_mask(kws['src'], self.pad_id)
+        kws['econds'] = None
+        x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
+        # x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
+        # x, encoder_attn = self.model.encoder(**kws)
+        print('x:', x.size())
+        
+        _, mu, _ = self.model.sampler(x)
+        
+        print('mu:', mu.size())
+        print('encoder_attn:', encoder_attn[0].size())
+        
+        # decoder
+        decoder_tokens = ['<sos>'] + self.TRG.tokenize(smiles) + ['<eos>']
+        decoder_ids = [self.TRG.vocab.stoi[t] for t in decoder_tokens]
+        ys = torch.from_numpy(np.stack([decoder_ids]*n))
+
+        toklen = [mu.size(1)] * mu.size(0)
+        max_toklen = max(toklen)
+        toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
+        src_mask = torch.arange(max_toklen).expand(n, 1, max_toklen) < toklen_stop_ids
+        
+        ys = ys.to(self.device)
+        src_mask = src_mask.to(self.device)
+
+        kws = self.decoder_input(ys, mu)
+        kws['src_mask'] = src_mask
+        kws['trg_mask'] = get_trg_mask(ys, self.pad_id, self.use_cond2dec)
+        kws['dconds'] = None
+
+        x, decoder_attn_1, decoder_attn_2 = self.model.decoder(**kws)
+
+        print('x:', x.size())
+        print('decoder_attn_1:', decoder_attn_1[0].size())
+        print('decoder_attn_2:', decoder_attn_2[0].size())
+        
+        return encoder_attn, decoder_attn_1, decoder_attn_2
+
     def encode_smiles(self, smiles_list):
         kwargs = self.encoder_input(smiles_list)
         kwargs['src_mask'] = get_src_mask(kwargs['src'], self.pad_id)
@@ -313,9 +357,6 @@ class VaetfSampling(Sampling):
 
         toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
         src_mask = torch.arange(max_toklen).expand(n,1,max_toklen) < toklen_stop_ids
-
-        # print('toklen:', toklen)
-        # print('src_mask:', src_mask)
 
         # move to gpu
 
@@ -697,6 +738,62 @@ class ScaVaeSampling(Sampling):
     def __init__(self, model, kwargs):
         super().__init__(model, kwargs)
 
+    def get_attention_map(self, smiles, scaffold):
+        n = 1
+        smiles_list = [smiles]
+        scaffold_list = [scaffold]
+        concat_smiles = [s1+'<sep>'+s2 for s1, s2 in zip(smiles_list, scaffold_list)]
+
+        # encoder
+
+        print('encoder start')
+
+        kws = self.encoder_input(concat_smiles)
+        kws['src_mask'] = get_src_mask(kws['src'], self.pad_id)
+        kws['econds'] = None
+
+        _, mu, _, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
+
+        print('encoder end')
+
+        # decoder
+
+        print('decoder start')
+
+        decoder_tokens = ['<sos>'] \
+                       + self.TRG.tokenize(scaffold+'<sep>'+smiles) \
+                       + ['<eos>']
+        decoder_ids = [self.TRG.vocab.stoi[t] for t in decoder_tokens]
+        ys = torch.from_numpy(np.stack([decoder_ids]*n))
+
+        toklen = [mu.size(1)] * mu.size(0)
+        max_toklen = max(toklen)
+        toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
+        src_mask = torch.arange(max_toklen).expand(n, 1, max_toklen) < toklen_stop_ids
+        
+        ys = ys.to(self.device)
+        src_mask = src_mask.to(self.device)
+
+        kws = self.decoder_input(ys, mu)
+        kws['src_mask'] = src_mask
+        kws['trg_mask'] = get_trg_mask(ys, self.pad_id, self.use_cond2dec)
+        kws['dconds'] = None
+
+        x, decoder_attn_1, decoder_attn_2 = self.model.decoder(**kws)
+        
+        print('decoder end')
+
+        return encoder_attn, decoder_attn_1, decoder_attn_2
+    
+    def encode_smiles(self, smiles_list, scaffold_list,
+                      transform=True):
+        concat_smiles = [s1+'<sep>'+s2 for s1, s2 in
+                         zip(smiles_list, scaffold_list)]
+        kwargs = self.encoder_input(concat_smiles, transform)
+        kwargs['src_mask'] = get_src_mask(kwargs['src'], self.pad_id)
+        z, mu, log_var = self.model.encode(**kwargs)
+        return z, mu, log_var
+    
     def sample_smiles(self, n, scaffold, zs=None, toklen=None):
         sca_ids = [self.TRG.vocab.stoi[e] for e
                    in self.TRG.tokenize(scaffold)]
@@ -738,6 +835,48 @@ class ScaVaeSampling(Sampling):
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
 
         return smiles, toklen, toklen_gen
+    
+    # def sample_smiles(self, n, scaffold, zs=None, toklen=None):
+    #     sca_ids = [self.TRG.vocab.stoi[e] for e
+    #                in self.TRG.tokenize(scaffold)]
+
+    #     ys = self.init_y(n, add_sos=True, sca_ids=sca_ids, add_sep=True)
+
+    #     if zs is not None:
+    #         if toklen is None:
+    #             toklen = [zs.size(1)-len(sca_ids)-1] * zs.size(0)
+    #     else:
+    #         if toklen is None:
+    #             toklen = self.sample_toklen(n)
+
+    #     max_toklen = max(toklen)
+    #     lat_toklen = len(sca_ids) + 1 + max_toklen
+
+    #     if zs is None:
+    #         zs = self.sample_z(lat_toklen, n)
+
+    #     # mask
+
+    #     toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
+    #     toklen_stop_ids = torch.add(toklen_stop_ids, len(sca_ids)+1)
+    #     src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
+
+    #     # move to gpu
+
+    #     ys = ys.to(self.device)
+    #     zs = zs.to(self.device)
+    #     src_mask = src_mask.to(self.device)
+
+    #     # sample smiles
+
+    #     outs = self.decode(zs=zs, ys=ys, src_mask=src_mask)
+    #     outs = outs.cpu().numpy()
+
+    #     smiles = [self.id_to_smi(ids[1+len(sca_ids)+1:])
+    #               for ids in outs]
+    #     toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
+
+    #     return smiles, toklen, toklen_gen
 
 
 
