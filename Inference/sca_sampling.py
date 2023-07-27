@@ -287,8 +287,7 @@ def sca_sampling(
 
         gathered_sim[sid] = scaffold_similarity
 
-    gathered_sim = pd.DataFrame.from_dict(gathered_sim,
-                                          orient="index").transpose()
+    gathered_sim = pd.DataFrame.from_dict(gathered_sim, orient="index").transpose()
     
     LOG.info('plot...')
 
@@ -302,28 +301,3 @@ def sca_sampling(
         ax.tick_params(axis="both", which="major", labelsize=14)
     ax.set_xlim(0, 1.00)
     fig.savefig(os.path.join(save_folder, 'sim.png'), bbox_inches="tight")
-
-    LOG.info('plot...')
-
-    metric = pd.read_csv(metric_path, index_col=[0])
-    n_metric = scaffold_sample[['n_train']].copy()
-    n_metric[['n_unique', 'n_novel']] = metric[['n_unique', 'n_novel']].copy()
-    
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5.5, 5.5))
-    fig.set_dpi(300)
-
-    # for i in range(len(n_metric)):
-    plt.scatter(n_metric['n_train'] / 1000, n_metric['n_unique'] / 1000,
-                c='blue', s=15, marker='o', label='# unique')
-    plt.scatter(n_metric['n_train'] / 1000, n_metric['n_novel'] / 1000,
-                c='orange', s=15, marker='^', label='# novel')
-    plt.plot(np.arange(0, 11), np.arange(0, 11), c='black', linewidth=1)
-    plt.xlabel('# seen in train (x$10^3$)', fontsize=17)
-    plt.ylabel('# samples (x$10^3$)', fontsize=17)
-    plt.tick_params(axis="both", which="major", labelsize=14)
-    plt.legend(fontsize='14')
-    plt.xlim(0, 10)
-    plt.ylim(0, 10)
-
-    plt.savefig(os.path.join(save_folder, 'diversity.png'))
-

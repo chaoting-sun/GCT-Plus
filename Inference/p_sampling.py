@@ -1,20 +1,18 @@
 import os
+import itertools
 import numpy as np
 import pandas as pd
-import random
-import itertools
-from Model.build_model import get_sampler
-from Utils.properties import mols_to_props, get_property_fn
-from Utils.smiles import get_mol, mol_to_smi, plot_smiles_group
-from Utils.mapper import mapper
-import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import OrderedDict
-from Utils.metric import get_metric_fn
+import matplotlib.pyplot as plt
 from moses.metrics import metrics
+from collections import OrderedDict
+from scipy.stats import kde
 
+from Model.build_model import get_sampler
+from Utils import get_mol, get_canonical, mapper, \
+    mol_to_smi, plot_smiles_group, get_property_fn, \
+    mols_to_props
 
-from torch import load
 
 trg_prop_settings = {
     'logP': [ 1.0,   2.0,  3.0],
@@ -69,10 +67,6 @@ def get_num(train, trg_prop_list, property_list):
         print(len(_train))
 
 
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-
-
 def plot_property_conditions(arr, property_list, save_path):
     colors = ['r', 'b', 'g'] * 9
 
@@ -91,7 +85,7 @@ def plot_property_conditions(arr, property_list, save_path):
     plt.savefig(save_path)
 
 
-from scipy.stats import kde
+
 
 def plot_3d_figure(x, y, z, save_path):
     # Create a 3D scatter plot
@@ -131,7 +125,7 @@ def plot_3d_figure(x, y, z, save_path):
 
 
 def plot_good_smiles(model_name, epoch, save_folder, trg_prop_list,
-                     property_list, df_train, n=25):
+                     property_list, train, n=25):
     trg_prop = [3.0, 60.0, 0.725]
     
     prop_no = -1
@@ -144,7 +138,7 @@ def plot_good_smiles(model_name, epoch, save_folder, trg_prop_list,
     gen = pd.read_csv(os.path.join(save_folder, f'{model_name}-{epoch}_prop_{prop_no}.csv'),
                       index_col=[0])
     for i, p in enumerate(property_list):
-        gen[f'{p}-normalized_AE'] = gen[p].apply(lambda x: abs(x - float(trg_prop[i]))) / (df_train[p].max() - df_train[p].min())
+        gen[f'{p}-normalized_AE'] = gen[p].apply(lambda x: abs(x - float(trg_prop[i]))) / (train[p].max() - train[p].min())
     gen = gen.sort_values(by=[f'{p}-normalized_AE' for p in property_list],
                           ignore_index=True)
     smiles_list = gen['SMILES'].iloc[:n].tolist()
@@ -165,8 +159,8 @@ def plot_good_smiles(model_name, epoch, save_folder, trg_prop_list,
 
 def p_sampling(
         args,
-        df_train,
-        df_test,
+        train,
+        test,
         toklen_data,
         scaler,
         SRC,
@@ -204,7 +198,7 @@ def p_sampling(
     #     'SAS' : [ 2.0,   3.0,  4.0],
     # }
 
-    # get_num(df_train, trg_prop_list, args.property_list)
+    # get_num(train, trg_prop_list, args.property_list)
 
     interested_properties = ['logP', 'tPSA', 'QED',
                               'SAS',   'NP',  'MW',
@@ -220,7 +214,7 @@ def p_sampling(
     os.makedirs(save_folder, exist_ok=True)
 
     # plot_good_smiles(args.model_name, args.epoch, save_folder, trg_prop_list,
-    #                  args.property_list, df_train)
+    #                  args.property_list, train)
 
     LOG = logger(name='scaffold sampling', log_path=os.path.join(save_folder, 'record.log'))
 
@@ -248,10 +242,10 @@ def p_sampling(
 
     train_prop_path = os.path.join(task_path, 'train_prop.csv')
     if not os.path.exists(train_prop_path):
-        sampled_train = df_train['smiles'].sample(n=10000, ignore_index=True)
+        sampled_train = train['smiles'].sample(n=10000, ignore_index=True)
         mols = mapper(get_mol, sampled_train, n_jobs=args.n_jobs)
         train_prop = mols_to_props(mols, property_fn)
-        train_prop = pd.concat([df_train['smiles'], train_prop], axis=1)
+        train_prop = pd.concat([train['smiles'], train_prop], axis=1)
         train_prop.to_csv(train_prop_path)
 
     property_path = os.path.join(save_folder, 'property.csv')
@@ -348,7 +342,7 @@ def p_sampling(
                     }
         metric_path = os.path.join(task_path, f'metric-{"_".join(map(str, model_dict.values()))}.csv')
 
-    train_set = set(df_train['smiles'])
+    train_set = set(train['smiles'])
 
     if not os.path.exists(metric_path):
         for i, trg_prop in enumerate(trg_prop_list):
