@@ -8,11 +8,10 @@ from Model import (
     PositionalEncoding,
     Norm,
     get_clones
-) 
+)
 
 
 class Encoder(nn.Module):
-    "Pass N encoder layers, followed by a layernorm"
     def __init__(self, vocab_size, d_model, N, h, dff, latent_dim,
                  nconds, dropout, variational=True, get_attn=False):
         super(Encoder, self).__init__()
@@ -20,16 +19,15 @@ class Encoder(nn.Module):
         self.nconds = nconds
         self.variational = variational
         self.get_attn = get_attn
-        self.embed_sentence = Embeddings(d_model, vocab_size) # SMILES embedding
-        
+        self.embed_sentence = Embeddings(d_model, vocab_size)
         self.norm = Norm(d_model)
         self.pe = PositionalEncoding(d_model, dropout=dropout)
         self.layers = get_clones(EncoderLayer(h, d_model, dff, dropout, get_attn), N)
-        self.fc_mu = nn.Linear(d_model, latent_dim) # mean
-        self.fc_log_var = nn.Linear(d_model, latent_dim) # log variance
+        self.fc_mu = nn.Linear(d_model, latent_dim)
+        self.fc_log_var = nn.Linear(d_model, latent_dim)
         
         if nconds > 0:
-            self.embed_cond2enc = nn.Linear(nconds, d_model*nconds) # nn.Linear() supports TensorFloat32        
+            self.embed_cond2enc = nn.Linear(nconds, d_model*nconds)
 
     def forward(self, src, src_mask, econds):
         x = self.embed_sentence(src)
@@ -42,8 +40,7 @@ class Encoder(nn.Module):
         
         x = self.pe(x)
         
-        concat_attn_list = []        
-        
+        concat_attn_list = []
         for i in range(self.N):
             if self.get_attn:
                 x, concat_attn = self.layers[i](x, src_mask)
@@ -58,7 +55,6 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    "Pass N decoder layers, followed by a layernorm"
     def __init__(self, vocab_size, d_model, N, h, dff, latent_dim,
                  nconds, dropout, use_cond2dec, use_cond2lat,
                  get_attn=False):
@@ -121,9 +117,8 @@ class Decoder(nn.Module):
 class Vaetf(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8,
                  latent_dim=64,  dropout=0.1, nconds=3, use_cond2dec=False,
-                 use_cond2lat=False, variational=True, get_attn=True): # 這裡要手動調整 get_attn
+                 use_cond2lat=False, variational=True, get_attn=False): # change attention mechanism
         super(Vaetf, self).__init__()
-        # settings
         self.nconds = nconds
         self.get_attn = get_attn
         self.use_cond2dec = use_cond2dec
@@ -177,29 +172,11 @@ class Vaetf(nn.Module):
             output_prop = self.prop_fc(output[:, :self.nconds, :])
             output_mol = output[:, self.nconds:, :]
         else:
-            # use_cond2lat is true or no properties
             output_prop = torch.zeros(output.size(0), self.nconds, 1)
             output_mol = output
-            
+        
         if self.get_attn:
-            return output_prop, output_mol, mu, log_var, z
-        else:
             return output_prop, output_mol, mu, log_var, z,\
                 encoder_attn, decoder_attn_1, decoder_attn_2
-            
-
-
-
-    # def forward(self, src, trg, src_mask, trg_mask,
-    #             econds=None, dconds=None):
-    #     z, mu, log_var = self.encode(src, src_mask, econds)
-    #     output = self.decode(trg, z, src_mask, trg_mask, dconds)
-
-    #     if self.use_cond2dec:
-    #         output_prop = self.prop_fc(output[:, :self.nconds, :])
-    #         output_mol = output[:, self.nconds:, :]
-    #     else:
-    #         # use_cond2lat is true or no properties
-    #         output_prop = torch.zeros(output.size(0), self.nconds, 1)
-    #         output_mol = output
-    #     return output_prop, output_mol, mu, log_var, z
+        else:
+            return output_prop, output_mol, mu, log_var, z            

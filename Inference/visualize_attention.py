@@ -1,6 +1,6 @@
 import os
 import torch
-from Model.build_model import get_generator
+from Model.build_model import get_sampler
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle as pkl
@@ -146,7 +146,7 @@ def visualize_attention(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
 
 
     if args.model_type == 'vaetf':

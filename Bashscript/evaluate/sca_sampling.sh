@@ -4,11 +4,12 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
 GPU_IDX=1
-
 MODEL_TYPE=scavaetf
 MODEL_NAME=${MODEL_TYPE}3-warmup15000
-# MODEL_NAME=${MODEL_TYPE}3-beta0.015-warmup15000
 EPOCH=16
+
+SAVE_FOLDER=/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/${BENCHMARK}/sca-sampling/${MODEL_NAME}-${EPOCH}/
+
 
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u         \

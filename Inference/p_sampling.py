@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import random
 import itertools
-from Model.build_model import get_generator
+from Model.build_model import get_sampler
 from Utils.properties import mols_to_props, get_property_fn
 from Utils.smiles import get_mol, mol_to_smi, plot_smiles_group
 from Utils.mapper import mapper
@@ -233,7 +233,7 @@ def p_sampling(
                                        args.benchmark,
                                        args.model_name,
                                        f'model_{args.epoch}.pt')
-    generator = get_generator(args, SRC, TRG, toklen_data,
+    generator = get_sampler(args, SRC, TRG, toklen_data,
                               scaler, device)
     # generator = None
 

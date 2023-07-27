@@ -1,36 +1,26 @@
 import os
 import torch
+import random
 import numpy as np
 import pandas as pd
+import seaborn as sns
+from rdkit import Chem
 from functools import partial
+import matplotlib.pyplot as plt
 from moses.metrics import metrics
 from collections import OrderedDict
-from pathos.multiprocessing import ProcessingPool as Pool
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 
-from Model.build_model import get_generator
-from Utils.smiles import (
-    get_mol,
-    murcko_scaffold,
-    murcko_scaffold_similarity,
-    plot_smiles_group,
-    plot_smiles,
-    mol_to_smi,
-    is_substructure,
-    tanimoto_similarity
-)
-from Utils.properties import mols_to_props, get_property_fn
-from Utils.metric import get_error_fn
-from Utils.mapper import mapper
-from Utils.seed import set_seed
-import matplotlib.pyplot as plt
-import seaborn as sns
-from Utils.smiles import plot_highlighted_smiles_group
-from rdkit import Chem
-import random
+# from pathos.multiprocessing import ProcessingPool as Pool
+
+from Model.build_model import get_sampler
+from Utils import mapper, get_mol, set_seed, mol_to_smi,        \
+    is_substructure, tanimoto_similarity, murcko_scaffold,      \
+    mols_to_props, get_property_fn, murcko_scaffold_similarity, \
+    plot_smiles, plot_smiles_group, plot_highlighted_smiles_group
 
 
-def get_sample(df_dataset, df_train, data_folder, data_name, n):
+def get_sample(df_dataset, train, data_folder, data_name, n):
     np.random.seed(0)
     save_path = os.path.join(data_folder, f'{data_name}_sample.csv')
 
@@ -42,7 +32,7 @@ def get_sample(df_dataset, df_train, data_folder, data_name, n):
         data_sample = pd.read_csv(save_path, index_col=[0])
     
     data_sample['n_train'] = data_sample['scaffold'].apply(
-        lambda sca: len(df_train[df_train.scaffold == sca]))
+        lambda sca: len(train[train.scaffold == sca]))
         
     return pd.read_csv(save_path, index_col=[0])
 
@@ -140,18 +130,20 @@ def substructure_sampling(args, sampler):
     exit()
     
 
+@torch.no_grad()
 def sca_sampling(
         args,
         toklen_data,
-        df_train,
+        train,
         df_test_scaffolds,
         scaler,
         SRC,
         TRG,
         device,
         logger
-    ):    
-    train_set = set(df_train['smiles'])
+    ):
+    
+    train_set = set(train['smiles'])
 
     task_path = os.path.join(args.infer_path, args.benchmark, 'sca_sampling')
     os.makedirs(task_path, exist_ok=True)
@@ -161,8 +153,7 @@ def sca_sampling(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    # sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
-    sampler = None
+    sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
     
     # get scaffold
     
@@ -174,10 +165,10 @@ def sca_sampling(
     LOG.info('get scaffold...')
 
     if args.sample_from == 'train':
-        scaffold_sample = get_sample(df_train, df_train, task_path,
+        scaffold_sample = get_sample(train, train, task_path,
                                      'train', n=args.n_scaffolds)
     elif args.sample_from == 'test_scaffolds':
-        scaffold_sample = get_sample(df_test_scaffolds, df_train, task_path,
+        scaffold_sample = get_sample(df_test_scaffolds, train, task_path,
                                      'test_scaffolds', n=args.n_scaffolds)
     
     # sample conditioned by a scaffold
@@ -199,7 +190,7 @@ def sca_sampling(
     metric_path = os.path.join(save_folder, 'metric.csv')
 
     for met in ('scaffold', 'valid', 'unique', 'novel', 'intDiv', 'sim', 'SSF', 'sim80',
-                'n_valid', 'n_unique', 'n_novel', 'n_SSF', 'n_sim80', 'n_unique_ssf',
+                'n_valid', 'n_unique', 'n_novel', 'n_SSF', 'n_sim80',
                 'valid_in_tolerance', 'unique_in_tolerance'):
         metric[met] = []
 
@@ -256,7 +247,6 @@ def sca_sampling(
                              if s == 1]) / len(scaffold_similarity))
         metric['sim80'].append(len([1 for s in scaffold_similarity
                                if s >= 0.80]) / len(scaffold_similarity))
-
         metric['n_valid'].append(len(valid_smi))
         metric['n_unique'].append(len(unique_smi))
         metric['n_novel'].append(len(unique_smi - train_set))
@@ -264,7 +254,6 @@ def sca_sampling(
         metric['n_sim80'].append(len([1 for s in scaffold_similarity if s >= 0.80]))
         
         scaffold_similarity = mapper(similarity_fn, unique_smi, args.n_jobs)
-        metric['n_unique_ssf'].append(len([1 for s in scaffold_similarity if s == 1]))
 
         metric['valid_in_tolerance'].append(len(valid_scaffold))
         metric['unique_in_tolerance'].append(len(valid_scaffold.drop_duplicates('smiles')))
@@ -274,21 +263,6 @@ def sca_sampling(
         _metric = pd.DataFrame(metric)
         _metric.to_csv(metric_path)
 
-        continue
-    
-        LOG.info('plot Murcko scaffold similarity...')
-
-        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5.5, 5.5))
-
-        sns.kdeplot(data=scaffold_similarity, ax=ax,
-                    shade=True, linewidth=2, legend=False)
-        ax.set_xlabel(xlabel='Murcko scaffold similarity', fontsize=17)
-        ax.set_ylabel(ylabel='Density', fontsize=17)
-        ax.tick_params(axis="both", which="major", labelsize=14)
-        fig.savefig(sim_fig_path, bbox_inches="tight")
-
-    exit()
-
     # plot murcko scaffold similarity
 
     LOG.info('plot all Murcko scaffold similarity...')
@@ -296,9 +270,6 @@ def sca_sampling(
     gathered_sim = OrderedDict()
 
     for sid in range(len(scaffold_sample)):
-        # if sid == 20:
-        #     break
- 
         LOG.info(f'gather data from sid: {sid}')
     
         gen_path = os.path.join(save_folder, f's{sid}_gen.csv')

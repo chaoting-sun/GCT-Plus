@@ -138,8 +138,6 @@ class Transformer(nn.Module):
             output_mol = output
         return output_prop, output_mol, z, q_k_enc
 
-    
-
     def encode(self, src, conds, src_mask):
         return self.encoder(src, conds, src_mask)
 

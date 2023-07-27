@@ -6,11 +6,10 @@ import pandas as pd
 from moses.metrics import metrics
 from functools import partial
 from collections import OrderedDict
-from typing import Callable, List, Dict
 from pathos.multiprocessing import ProcessingPool as Pool
 import matplotlib.pyplot as plt
 import seaborn as sns
-from Model.build_model import get_generator
+from Model.build_model import get_sampler
 from Utils.smiles import (
     get_mol,
     murcko_scaffold,
@@ -421,7 +420,7 @@ def psca_sampling(
 
     args.model_path = os.path.join(args.train_path, args.benchmark,
                                    args.model_name, f'model_{args.epoch}.pt')
-    # sampler = get_generator(args, SRC, TRG, toklen_data, scaler, device)
+    # sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
     sampler = None
     
     LOG.info('start generation')

@@ -6,7 +6,7 @@ from collections import OrderedDict
 import scipy.stats as stats
 from Utils.mapper import mapper
 from Utils.smiles import get_mol, mol_to_smi
-from Model.build_model import get_generator
+from Model.build_model import get_sampler
 from Utils.properties import mols_to_props, get_property_fn
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -88,7 +88,6 @@ def model_selection(
         args,
         df_train,
         df_test,
-        test_scaffolds,
         toklen_data,
         scaler,
         SRC,
@@ -111,42 +110,7 @@ def model_selection(
                                f'{args.model_name}')
     os.makedirs(save_folder, exist_ok=True)
 
-    n_samples = 10000 # 10000
-
-    if args.model_type == 'scacvaetfv3':
-        batch_size = 10000
-    else:
-        batch_size = 512
-    
-    n_batch = int(np.ceil(n_samples / batch_size))
-
-    # should be modified
-
-    # epoch_list = [5, 10, 15, 20, 25, 30, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]
-    # epoch_list = [1, 5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-    
-    # VAE
-    if args.model_type == 'vaetf':
-        epoch_list = np.arange(1, 29)
-        # epoch_list = [1, 5, 10, 15, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-        # epoch_list = []
-        # epoch_list = np.arange(1,19)
-        # epoch_list = [35,36,37,38,39,40,41,42,43,44,45]
-    # CVAE
-    if args.model_type == 'cvaetf':
-        # epoch_list = [6,7,8,9]
-        # epoch_list = [1, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-        #               14, 15, 16, 17, 18, 19, 20]
-        epoch_list = np.arange(21, 41)
-        # epoch_list = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40]
-        
-    if args.model_type == 'scacvaetfv3':
-        # epoch_list = [1,2,3,4,5,6,7,8,9]
-        # epoch_list = [1,2,3,4]
-        
-        # epoch_list = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-        # epoch_list = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-        epoch_list = np.arange(1,25)
+    n_batch = int(np.ceil(args.n_samples / args.batch_size))
 
     interested_properties = ['logP', 'tPSA', 'QED', 'MW', 'SAS', 'NP',
                              'HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']
@@ -159,7 +123,7 @@ def model_selection(
     # sample molecules from test dataset as the reference set
 
     # if not os.path.exists(test_path):
-    test_samples = df_test.sample(n=n_samples, ignore_index=True)
+    test_samples = df_test.sample(n=args.n_samples, ignore_index=True)
     test_samples.to_csv(test_path)
         
     test_samples = pd.read_csv(test_path, index_col=[0])
@@ -169,43 +133,32 @@ def model_selection(
     if not os.path.exists(property_path):
         property_samples = []
         for p in args.property_list:
-            property_samples.append(df_train[p].sample(n=n_samples, ignore_index=True))
+            property_samples.append(df_train[p].sample(n=args.n_samples, ignore_index=True))
         df_train = df_train.dropna(subset=['scaffold'])
-        property_samples.append(df_train['scaffold'].sample(n=n_samples, ignore_index=True))
+        property_samples.append(df_train['scaffold'].sample(n=args.n_samples, ignore_index=True))
 
         property_samples = pd.concat(property_samples, axis=1)
         property_samples.to_csv(property_path)
     
     property_samples = pd.read_csv(property_path, index_col=[0])
     
-    # start to sample smiles
-    
     kldivs_dict = OrderedDict()
 
-    for i, epoch in enumerate(epoch_list):
+    for i, epoch in enumerate(args.epoch_list):
         gen_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_gen.csv')
-        # property_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_prop.csv')
-
-        print('model epoch:', epoch)
-        
-        args.model_path = os.path.join(args.train_path,
-                                       args.benchmark,
-                                       args.model_name,
-                                       f'model_{epoch}.pt')
-        generator = get_generator(args, SRC, TRG, toklen_data,
+        args.model_path = os.path.join(args.train_path, args.benchmark,
+                                       args.model_name, f'model_{epoch}.pt')
+        generator = get_sampler(args, SRC, TRG, toklen_data,
                                   scaler, device)
-        # generator = None
-
-        print('sample molecules...')
 
         if not os.path.exists(gen_path):
             gen = []
             
             for b in range(n_batch):
-                sid = batch_size * b
-                eid = batch_size * (b+1)
-                if eid > n_samples:
-                    eid = n_samples
+                sid = args.batch_size * b
+                eid = args.batch_size * (b+1)
+                if eid > args.n_samples:
+                    eid = args.n_samples
                 print(f'sample: {sid} - {eid}')
 
                 kwargs = {}
@@ -251,7 +204,7 @@ def model_selection(
         
         print(kldivs_dict)
 
-        df_kldivs = pd.DataFrame(kldivs_dict, index=epoch_list[:i+1])
+        df_kldivs = pd.DataFrame(kldivs_dict, index=args.epoch_list[:i+1])
         df_kldivs.to_csv(kl_path)
     
     # kl_val = pd.read_csv(kl_path, index_col=[0])
@@ -414,4 +367,121 @@ def model_selection(
 
 
 
+
+
+
+
+
+
+
+
+
+def model_selection(
+        args,
+        SRC,
+        TRG,
+        toklen_data,
+        scaler,
+        test,
+        device
+    ):
+    interested_properties = ['logP', 'tPSA', 'QED', 'MW', 'SAS']
+    property_fn = get_property_fn(interested_properties)
+
+    save_folder = os.path.join(args.infer_path, args.benchmark,
+                               'uc-sampling_search-best-model')
+    os.makedirs(save_folder, exist_ok=True)
+
+    kl_path = os.path.join(save_folder, f'{args.model_name}_kl.csv')
+    test_sample_path = os.path.join(save_folder, 'test_samples.csv')        
+
+    if not os.path.exists(test_sample_path):
+        test_prop = random.sample(test, n)
+        mols = mapper(get_mol, test_prop, args.n_jobs)
+        smiles = pd.DataFrame({ 'SMILES': test_prop })
+        props = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
+        smiles_props = pd.concat([smiles, props], axis=1)
+        smiles_props.to_csv(test_sample_path)
+
+    test_prop = pd.read_csv(test_sample_path)
+
+    kl_val = OrderedDict()
+
+    for i, epoch in enumerate(args.epoch_list):
+        print('model epoch:', epoch)
+
+        args.model_path = os.path.join(args.train_path,
+                                       args.benchmark,
+                                       args.model_name,
+                                       f'model_{epoch}.pt')
+        generator = get_sampler(args, SRC, TRG, toklen_data,
+                                  scaler, device)
+
+        gen_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_gen.csv')
+        prop_path = os.path.join(save_folder, f'{args.model_name}-{epoch}_prop.csv')
+
+        print('sample molecules')
+
+        if not os.path.exists(gen_path):
+            gen = []
+            n = args.n_samples
+            
+            while n > 0:
+                print('n samples left:', n)
+                
+                current_gen, *_ = generator.sample_smiles(n=min(n, args.batch_size))
+                gen.extend(current_gen)
+                n -= len(current_gen)
+
+            gen = pd.DataFrame(gen, columns=['SMILES'])
+            gen.to_csv(gen_path)
+
+        gen = pd.read_csv(gen_path, index_col=[0])
+        gen = gen.dropna(subset=['SMILES'])
+
+        print('evaluate: compute properties')
+
+        if not os.path.exists(prop_path):
+            mols = mapper(get_mol, gen['SMILES'], args.n_jobs)
+            mols = [m for m in mols if m is not None]
+            smiles = pd.DataFrame(mol_to_smi(mols, args.n_jobs), columns=['SMILES'])
+            
+            props = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
+            smiles_props = pd.concat([smiles, props], axis=1)
+            smiles_props.to_csv(prop_path)
+
+        gen_prop = pd.read_csv(prop_path)
+
+        for prop in interested_properties:
+            if prop not in kl_val:
+                kl_val[prop] = []
+            kl_val[prop].append(kl_divergence(test_prop[prop], gen_prop[prop]))
+
+        if i == len(args.epoch_list)-1:
+            kl_val = pd.DataFrame(kl_val, index=args.epoch_list)
+            kl_val.to_csv(kl_path)
+    
+    kl_val = pd.read_csv(kl_path, index_col=[0])
+    kl_average = kl_val.mean(axis=1)
+    best_epoch = kl_average.idxmin()
+
+    gen_prop = pd.read_csv(os.path.join(save_folder, f'{args.model_name}-{best_epoch}_prop.csv'),
+                           index_col=[0])
+    
+    fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(24, 4.2))
+
+    for i, prop in enumerate(interested_properties):
+        ax = axes[i]
+        sns.kdeplot(gen_prop[prop], ax=ax, shade=True, label='gen', linewidth=3)
+        sns.kdeplot(test_prop[prop], ax=ax, shade=True, label='test', linewidth=3)
+
+        ax.legend(fontsize=14, loc='best')
+        ax.set_xlabel(xlabel=prop, fontsize=17)
+        if i == 0:
+            ax.set_ylabel(ylabel='Density', fontsize=17)
+        else:
+            ax.set_ylabel(None)
+        ax.tick_params(axis="both", which="major", labelsize=13)
+    
+    fig.savefig(os.path.join(save_folder, f'{args.model_name}-{best_epoch}_prop.png'), bbox_inches="tight") 
 

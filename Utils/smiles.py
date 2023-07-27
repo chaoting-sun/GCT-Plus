@@ -44,6 +44,27 @@ def get_mol(smi_or_mol):
     return smi_or_mol
 
 
+def get_canonical(smi_or_mol):
+    if isinstance(smi_or_mol, str):
+        if len(smi_or_mol) == 0:
+            return None
+        mol = Chem.MolFromSmiles(smi_or_mol)
+    elif isinstance(smi_or_mol, Chem.Mol):
+        mol = smi_or_mol
+    else:
+        return None
+
+    if mol is None:
+        return None
+
+    try:
+        Chem.SanitizeMol(mol)
+    except ValueError:
+        return None
+
+    return Chem.MolToSmiles(mol, canonical=True)
+
+
 def to_fp_ECFP(smi):
     if smi:
         mol = MolFromSmiles(smi)

@@ -1,5 +1,4 @@
 import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,12 +28,9 @@ class Sampler(nn.Module):
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
-
     if mask is not None:
         mask = mask.unsqueeze(1)
-        # scores = scores.masked_fill(mask == 0, float("-inf"))
         scores = scores.masked_fill(mask == 0, -1e9)
-        
 
     scores = F.softmax(scores, dim=-1)
     scores_attn = scores
@@ -46,7 +42,6 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
 
 
 class MultiHeadAttention(nn.Module):
-    """ Multi-Head Attention """
     def __init__(self, heads, d_model, dropout=0.1,
                  get_attn=False):
         super().__init__()
@@ -65,31 +60,21 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q, k, v, mask=None):        
         bs = q.size(0)
-
-        # 1. perform linear operation and split into N heads
-        # 2. transpose to get dimensions bs * N * sl * d_model
-        k = self.k_linear(k).view(bs, -1, self.h, self.d_k).transpose(1, 2)
+        # split d_model into h heads
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k).transpose(1, 2) # (bz, h, str_len, dk)
         q = self.q_linear(q).view(bs, -1, self.h, self.d_k).transpose(1, 2)
         v = self.v_linear(v).view(bs, -1, self.h, self.d_k).transpose(1, 2)
 
-        # print(q.size(), k.size(), v.size())
-
-        # calculate attention using function we will define next
         scores, scores_attn = attention(q, k, v, self.d_k, mask, self.dropout)
-
-        # concatenate heads and put through final linear layer
         concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
-        output = self.out(concat) # 不一樣
+        output = self.out(concat)
         
         if self.get_attn:
-            # concat_attn = scores_attn.transpose(1, 2).contiguous().view(bs, -1, scores_attn.size(-1) * self.h)
-            # return output, concat_attn
             return output, scores_attn
         return output
 
 
 class FeedForward(nn.Module):
-    """ Positional-Wise Feed-Forward Layer """
     def __init__(self, d_model, d_ff=2048, dropout=0.1):
         super().__init__()
 
@@ -98,7 +83,6 @@ class FeedForward(nn.Module):
         self.linear_2 = nn.Linear(d_ff, d_model)
 
     def forward(self, x):
-        # change to gelu. it is said to be good in Transformer
         x = F.gelu(self.linear_1(x))
         x = self.dropout(x)
         x = self.linear_2(x)
