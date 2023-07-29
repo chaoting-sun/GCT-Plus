@@ -865,28 +865,25 @@ def generate_smiles_by_interpolation(args, generator, df_dataset, SRC, TRG,
 def mol_interpolation(
         args,
         toklen_data,
-        df_train,
-        df_test_scaffolds,
+        train,
+        test_scaffolds,
         scaler,
         SRC,
         TRG,
-        COND,
-        device
+        device,
+        logger
     ):
+    # define save path
 
-    # save_folder = os.path.join(args.infer_path, args.benchmark, 'test_decoder-formal',
-    #                            args.model_name, slerp_or_lerp)
-    # os.makedirs(save_folder, exist_ok=True)
-    
-    args.model_path = os.path.join(args.train_path, args.benchmark,
-                                   args.model_name, f'model_{args.epoch}.pt')
+    os.makedirs(save_folder, exist_ok=True)
+
+    LOG = logger(name='mol_interpolation', log_path=os.path.join(args.save_folder, 'record.log'))
+
+    # get sampler
+
+    args.model_path = os.path.join(args.model_folder, args.model_name)
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
     # sampler = None
-
-    dp = DataloaderPreparation(device, SRC, TRG,
-                               model_type=args.model_type,
-                               property_list=args.property_list,
-                               use_scaffold=args.use_scaffold)
 
     # file path
 
@@ -918,7 +915,7 @@ def mol_interpolation(
     os.makedirs(main_folder, exist_ok=True)
 
     if not os.path.exists(data_path):
-        pairs = sample_molecule_pairs(df_test_scaffolds, n_pairs, args.property_list,
+        pairs = sample_molecule_pairs(test_scaffolds, n_pairs, args.property_list,
                                         args.use_scaffold, property_constraint=None,
                                         similarity_threshold=0.5)
         pairs.to_csv(data_path)
@@ -969,7 +966,7 @@ def mol_interpolation(
     #     print('sample molecules from dataset...')
         
         
-    #     src_smiles, src_scaffolds, src_conds = sample_molecule_pair(df_train, args.property_list,
+    #     src_smiles, src_scaffolds, src_conds = sample_molecule_pair(train, args.property_list,
     #                                                                 same_scaffold=args.use_scaffold,
     #                                                                 constraints=constraints)
         
@@ -1086,44 +1083,6 @@ def mol_interpolation(
     
     # line_plot(tasim_start_records, os.path.join(save_folder, 'tasim_start.png'))
     # line_plot(tasim_prev_records, os.path.join(save_folder, 'tasim_prev.png'))
-
-    exit()
-    
-    dataset = create_dataset(interpolated_smiles, args.property_list)
-    
-    test_outputs = []
-    for i in range(len(dataset)):
-        dataloader = dp.get_dataloader(dataset.iloc[[i]], batch_size=1, is_train=False)
-        test_outputs.append(sample_encoder_outputs(sampler, dataloader))
-    test_outputs = np.concatenate(test_outputs, axis=0)
-
-    train = pd.read_csv("/fileserver-gamma/chaoting/ML/dataset/moses/prepared/train_v0_logP-tPSA-QED.csv")
-    dataloader = dp.get_dataloader(train, batch_size=1, is_train=False)
-    train_outputs = sample_encoder_outputs(sampler, dataloader,
-                                           transform=False,
-                                           n_samples=1000)
-
-    outputs = np.concatenate((train_outputs, test_outputs), axis=0)
-    transformed_outputs = dimension_reduction['t-sne'](outputs)
-    
-    # plot projections on the latent space
-
-    n_classes = []
-    n_classes.extend([0]*train_outputs.shape[0])
-    for i in range(len(test_outputs)):
-        n_classes.append(i+1)
-
-    plt.figure()
-    plt.scatter(transformed_outputs[-len(test_outputs):, 0],
-                transformed_outputs[-len(test_outputs):, 1],
-                c=n_classes[-len(test_outputs):],
-                s=3)
-    plt.colorbar()
-    plt.savefig('3-lat.png', dpi=300)
-    
-    
-    
-    
     
     
 def test_decoder1(args, toklen_data, scaler, SRC, TRG, device):

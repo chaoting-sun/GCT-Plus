@@ -3,436 +3,178 @@ import torch
 import itertools
 import numpy as np
 import pandas as pd
-from moses.metrics import metrics
-from functools import partial
-from collections import OrderedDict
-from pathos.multiprocessing import ProcessingPool as Pool
-import matplotlib.pyplot as plt
 import seaborn as sns
+from functools import partial
+import matplotlib.pyplot as plt
+from moses.metrics import metrics
+from collections import OrderedDict
+
 from Model.build_model import get_sampler
-from Utils.smiles import (
-    get_mol,
-    murcko_scaffold,
-    murcko_scaffold_similarity,
-    plot_smiles_group,
-    plot_smiles,
-    mol_to_smi,
-    plot_highlighted_smiles_group
-)
-from Utils.properties import mols_to_props, get_property_fn
-from Utils.metric import get_error_fn
-from Utils.mapper import mapper
-from Utils.seed import set_seed
-from rdkit import Chem
-from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+from Configuration.config_default import prop_tolerance, \
+    selected_target_prop, molgpt_selected_target_prop 
+from Utils import get_mol, mapper, get_canonical, \
+    mols_to_props, get_property_fn, plot_smiles, \
+    murcko_scaffold, murcko_scaffold_similarity
 
 
-def generate_scaffold(smiles):
-    if smiles is not None and isinstance(smiles, str) and len(smiles) > 0:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        return MurckoScaffoldSmiles(mol=mol)
+def get_trg_prop_combination(property_list, scaffold_source=False):
+    if scaffold_source == 'molgpt':
+        prop_set = (molgpt_selected_target_prop[p] for p in property_list)
     else:
-        return None
-    
-
-def plot_highlighted_smiles(scaffold_sample, save_folder, property_list,
-                            df_train, n_jobs, n=25):
-    # test_scaffolds
-    sid = 76
-    trg_prop = ['3.0', '60.0', '0.85']
-
-    substructure = scaffold_sample.loc[sid, 'scaffold']
-    gen = pd.read_csv(os.path.join(save_folder, f's{sid}_p{"-".join(trg_prop)}_prop.csv'),
-                      index_col=[0])
-    # get smiles with correct substructure
-    gen['substructure'] = gen['smiles'].apply(generate_scaffold)
-    mols = mapper(get_mol, gen['smiles'], n_jobs)
-    gen['canonical'] = mol_to_smi(mols, n_jobs)
-    gen = gen.drop_duplicates(subset=['canonical'])
-    gen = gen[gen.substructure == substructure]
-    # get smiles with low error
-    for i, p in enumerate(property_list):
-        gen[f'{p}-normalized_AE'] = gen[p].apply(lambda x: abs(x - float(trg_prop[i]))) / (df_train[p].max() - df_train[p].min())
-    
-    gen = gen.sort_values(by=[f'{p}-normalized_AE' for p in property_list],
-                          ignore_index=True)
-    # gen = gen.round({ 'logP': 2, 'tPSA': 1, 'QED': 2 })
-    smiles_list = gen['smiles'].iloc[:n].tolist()
-    gen[property_list].iloc[:n].to_numpy()
-
-    descriptions = []
-    for i in range(n):
-        p = gen.loc[i, property_list].tolist()
-        p = f'logP: {p[0]:.2f}, tPSA: {p[1]:.1f}, QED: {p[2]:.2f}'
-        descriptions.append(p)
-    print(smiles_list)
-
-    plot_smiles(substructure, os.path.join(save_folder, f's{sid}.png'))
-    plot_highlighted_smiles_group(smiles_list, substructure,
-                                  img_size=(400, 260),
-                                  save_path=os.path.join(save_folder, 
-                                            f's{sid}_p{"-".join(trg_prop)}_gen.png'),
-                                  n_per_mol=5,
-                                  descriptions=descriptions)
-    exit()
-
-
-def get_trg_prop(benchmark, property_list):
-    if benchmark == 'guacamol':
-        trg_prop = {
-            'logP': [2.0, 4.0, 6.0],
-            'tPSA': [40.0, 80.0, 120.0],
-            'QED' : [0.3, 0.5, 0.7],
-            'SAS' : [2.0, 3.0, 4.0],
-        }
-    elif benchmark == 'moses':
-        trg_prop = {
-            'logP': [ 1.0,   2.0,  3.0],
-            'tPSA': [30.0,  60.0, 90.0],
-            'QED' : [ 0.6, 0.725, 0.85],
-            'SAS' : [ 2.0,  2.75,  3.5],
-        }
-    else:
-        exit(f'No benchmark named: {benchmark}')
-
-    prop_set = (trg_prop[p] for p in property_list)
+        prop_set = (selected_target_prop[p] for p in property_list)
     prop_comb = list(itertools.product(*prop_set))
-    return [list(c) for c in prop_comb]
+    trg_prop_list = [list(c) for c in prop_comb]
+    return np.array(trg_prop_list)
 
 
-def get_molgpt_valid_smi(src, smiles_list, include_mol,
-                         sim_bound=0.8, n_jobs=1):
-    similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=src)
-    with Pool(n_jobs) as pool:
-        similarity = pool.map(similarity_fn, smiles_list)
-    valid_smi = [smiles_list[i] for i, sim in enumerate(similarity)
-                 if sim != None and sim >= sim_bound]
-    if include_mol:
-        with Pool(n_jobs) as pool:
-            valid_mol = pool.map(get_mol, valid_smi)
-        return valid_smi, valid_mol
-    return valid_smi
-
-
-def get_sample(df_dataset, df_train, data_folder, data_name, n):
+def get_sample(n, save_path, train, dataset):
     np.random.seed(0)
-    save_path = os.path.join(data_folder, f'{data_name}_sample.csv')
 
     if not os.path.exists(save_path):
-        data_sample = df_dataset.sample(frac=1).reset_index(drop=True)    
-        data_sample = data_sample.drop_duplicates(subset='scaffold', ignore_index=True)
-        data_sample[:n].to_csv(save_path)
-        data_sample['n_train'] = data_sample['scaffold'].apply(
-            lambda sca: len(df_train[df_train.scaffold == sca]))
+        unique_scaffold = dataset.drop_duplicates(subset='scaffold', ignore_index=True)
+        samples = unique_scaffold.sample(n=n, replace=False, ignore_index=True)
+        samples['n_train'] = samples['scaffold'].apply(
+            lambda sca: len(train[train.scaffold == sca]))
+        samples.to_csv(save_path)
 
-    return pd.read_csv(save_path, index_col=[0])
-
-
-import scipy as sp
-from numpy import unravel_index
-
-
-def plot2d(data, properyty_list, save_path):
-    fig = plt.figure(figsize=(5,5))
-    sns.kdeplot(data=data, x=properyty_list[0], y=properyty_list[1], hue="kind")
-    fig.savefig(save_path)
-
-
-def plot3d(prop_name, data, figpath, xval, yval, zval,
-           figsize=10, s=1, alpha=0.75, cmap='GnBu', # cmap='RdBu_r'
-           levels=20, ax_limits=None, ngrids=20j):
-
-    """
-    plot a scattering 3D figure with distributions on
-    three planes
-    ----------
-    prop_name: list
-        a list of the three variables
-    data: pandas.DataFrame
-        a DataFrame recording the points
-    figpath: string
-        the figure path
-    figsize: float, 10
-        figure size
-    s: float, 1
-        the size of each point
-    alpha: float, 0.75
-        the transparency
-    cmap: string, 'RdBu_r'
-        the color
-    levels: int, 20
-        the number of the contour lines
-    ax_limits: dict, None
-        the limits of the axes in three directions
-    ngrids: int, 20
-        number of the grids each sides
-    """
-
-    assert len(prop_name) == 3
-
-    if ax_limits == None:
-        ax_limits = {
-            prop_name[0]: [np.floor(data[prop_name[0]].min()),
-                           np.ceil(data[prop_name[0]].max())],
-            prop_name[1]: [np.floor(data[prop_name[1]].min()),
-                           np.ceil(data[prop_name[1]].max())],
-            prop_name[2]: [np.floor(data[prop_name[2]].min()),
-                           np.ceil(data[prop_name[2]].max())]
-        }
-
-    xmin = ax_limits[prop_name[0]][0]
-    xmax = ax_limits[prop_name[0]][1]
-    ymin = ax_limits[prop_name[1]][0]
-    ymax = ax_limits[prop_name[1]][1]
-    zmin = ax_limits[prop_name[2]][0]
-    zmax = ax_limits[prop_name[2]][1]
-
-    x, y, z = np.mgrid[xmin:xmax:ngrids,
-                       ymin:ymax:ngrids,
-                       zmin:zmax:ngrids]
-
-
-    # Convert DataFrame to Numpy array
-    data = data.to_numpy().T
-
-    # Compute kernel density
-    kernel = sp.stats.gaussian_kde(data)
-    positions = np.vstack((x.ravel(), y.ravel(), z.ravel()))
-    density = np.reshape(kernel(positions).T, x.shape)
-
-    d1, d2, d3 = unravel_index(density.argmax(), density.shape)
-    # highest_freq_values = [x[d1,d2,d3], y[d1,d2,d3], z[d1,d2,d3]]
-
-    # plot data
-    ax = plt.subplot(projection='3d')
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    fig.set_size_inches(15, 15)
-
-    n = 10
-    # yz plane
-    ax.plot(xs=[xmin]*n, ys=[yval]*n, zs=np.linspace(zmin, zmax, n), c='black')
-    ax.plot(xs=[xmin]*n, ys=np.linspace(ymin, ymax, n), zs=[zval]*n, c='black')
-    # xy plane
-    ax.plot(xs=[xval]*n, ys=np.linspace(ymin, ymax, n), zs=[zmin]*n, c='black')
-    ax.plot(xs=np.linspace(xmin, xmax, n), ys=[yval]*n, zs=[zmin]*n, c='black')
-    # zx plane
-    ax.plot(xs=[xval]*n, ys=[ymax]*n, zs=np.linspace(zmin, zmax, n), c='black')
-    ax.plot(xs=np.linspace(xmin, xmax, n), ys=[ymax]*n, zs=[zval]*n, c='black')
-
-    # Set figure size
-    # fig = plt.gcf()
-    # fig.set_size_inches(figsize, figsize, figsize)
-
-    ax.scatter(data[0, :], data[1, :], data[2, :], s=s, marker='o', c='k')
-
-    ax.set_xlabel(prop_name[0], fontsize=32)
-    ax.set_ylabel(prop_name[1], fontsize=32)
-    ax.set_zlabel(prop_name[2], fontsize=32)
-
-    ax.xaxis.labelpad = 26
-    ax.yaxis.labelpad = 26
-    ax.zaxis.labelpad = 26
-
-    ax.tick_params(axis='x', labelsize=24)
-    ax.tick_params(axis='y', labelsize=24)
-    ax.tick_params(axis='z', labelsize=24)
-
-    ax.set_xlim((xmin, xmax))
-    ax.set_ylim((ymin, ymax))
-    ax.set_zlim((zmin, zmax))
-    
-    print('plot projection of density onto x-axis')
-    plotdat = np.sum(density, axis=0)  # summing up density along z-axis
-    plotdat = plotdat / np.max(plotdat)
-    ploty, plotz = np.mgrid[ymin:ymax:ngrids, zmin:zmax:ngrids]
-    
-    colorx = ax.contourf(plotdat, ploty, plotz, levels=levels,
-                        alpha=alpha, cmap=cmap, offset=xmin, zdir='x')
-
-    print('plot projection of density onto y-axis')
-    plotdat = np.sum(density, axis=1)  # summing up density along y-axis
-    plotdat = plotdat / np.max(plotdat)
-    plotx, plotz = np.mgrid[xmin:xmax:ngrids, zmin:zmax:ngrids]
-    colory = ax.contourf(plotx, plotdat, plotz, levels=levels,
-                        alpha=alpha, cmap=cmap, offset=ymax, zdir='y')
-
-    print('plot projection of density onto z-axis')
-    plotdat = np.sum(density, axis=2)
-    plotdat = plotdat / np.max(plotdat)
-    plotx, ploty = np.mgrid[xmin:xmax:ngrids, ymin:ymax:ngrids]
-    colorz = ax.contourf(plotx, ploty, plotdat, levels=levels,
-                        alpha=alpha, cmap=cmap, offset=zmin, zdir='z')
-
-    cbar = fig.colorbar(colorx, ax=ax, shrink=0.5, pad=0.1)
-    cbar.ax.tick_params(labelsize=20)
-
-    plt.tight_layout()
-    fig.savefig(figpath)
-    # exit()
-
-
-# def plot3d(X, Y, Z, save_path):
-
-#     # Create figure, add subplot with 3d projection
-#     fig = plt.figure(figsize=(5,5))
-#     ax = fig.add_subplot(111, projection='3d')
-#     ax.set_xlabel("X")
-#     ax.set_ylabel("Y")
-#     ax.set_zlabel("Z")
-
-#     # Plot the data cloud
-#     ax.scatter(X, Y, Z, s=.8, alpha=.5, color='k')
-
-#     hist, binx, biny = np.histogram2d(X, Y)
-#     x = np.linspace(X.min(), X.max(), hist.shape[0])
-#     y = np.linspace(Y.min(), Y.max(), hist.shape[1])
-#     x, y = np.meshgrid(x, y)
-#     ax.contour(x, y, hist, zdir='z', offset=-3.)
-
-#     hist, binx, biny = np.histogram2d(X, Z)
-#     x = np.linspace(X.min(), X.max(), hist.shape[0])
-#     z = np.linspace(Z.min(), Z.max(), hist.shape[1])
-#     x, z = np.meshgrid(x, z)
-#     ax.contour(x, hist, z, zdir='y', offset=3)
-
-#     hist, binx, biny = np.histogram2d(Y, Z)
-#     y = np.linspace(Y.min(), Y.max(), hist.shape[0])
-#     z = np.linspace(Z.min(), Z.max(), hist.shape[1])
-#     z, y = np.meshgrid(z, y)
-#     ax.contour(hist, y, z, zdir='x', offset=-3)
-
-#     # ax.set_xlim([-3, 3])
-#     # ax.set_ylim([-3, 3])
-#     # ax.set_zlim([-3, 3])
-#     ax.set_xlim(X.min(), X.max())
-#     ax.set_ylim(Y.min(), Y.max())
-#     ax.set_zlim(Z.min(), Z.max())
-
-#     # Show the plot
-#     fig.savefig(save_path, bbox_inches="tight")
-    
-def generate_smiles(sampler, trg_prop, trg_scaffold,
-                    batch_size, n):
-    samples = []
-    dconds = np.repeat([trg_prop], batch_size, axis=0)
-    while n > 0:
-        print(f'n samples left: {n}')
-        smiles, *_ = sampler.sample_smiles(
-            dconds[:min(n, batch_size)],
-            scaffold=trg_scaffold)
-        samples.extend(smiles)
-        n -= len(smiles)
-    samples = pd.DataFrame(samples, columns=['smiles'])
+    samples = pd.read_csv(save_path, index_col=[0])
     return samples
 
+    
+def sample_smiles(sampler, n, scaffold, trg_prop,
+                  batch_size, LOG):
+    gen = []
+    dconds = np.repeat([trg_prop], batch_size, axis=0)
+    while n > 0:
+        LOG.info(f'# Samples left: {n}')
+        current_gen, *_ = sampler.sample_smiles(dconds[:min(n, batch_size)],
+                                                scaffold=scaffold)
+        gen.extend(current_gen)
+        n -= len(gen)
+    return gen
 
-def generate_scaffold(smiles):
-    if smiles is not None and isinstance(smiles, str) and len(smiles) > 0:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        return MurckoScaffoldSmiles(mol=mol)
-    else:
-        return None
+
+# def plot_highlighted_smiles(scaffold_sample, save_folder, property_list,
+#                             train, n_jobs, n=25):
+#     # test_scaffolds
+#     sid = 76
+#     trg_prop = ['3.0', '60.0', '0.85']
+
+#     substructure = scaffold_sample.loc[sid, 'scaffold']
+#     gen = pd.read_csv(os.path.join(save_folder, f's{sid}_p{"-".join(trg_prop)}_prop.csv'),
+#                       index_col=[0])
+#     # get smiles with correct substructure
+#     gen['substructure'] = gen['smiles'].apply(murcko_scaffold)
+#     mols = mapper(get_mol, gen['smiles'], n_jobs)
+#     gen['canonical'] = mapper(get_canonical, mols, n_jobs)
+#     gen = gen.drop_duplicates(subset=['canonical'])
+#     gen = gen[gen.substructure == substructure]
+#     # get smiles with low error
+#     for i, p in enumerate(property_list):
+#         gen[f'{p}-normalized_AE'] = gen[p].apply(lambda x: abs(x - float(trg_prop[i]))) / (train[p].max() - train[p].min())
+    
+#     gen = gen.sort_values(by=[f'{p}-normalized_AE' for p in property_list],
+#                           ignore_index=True)
+#     # gen = gen.round({ 'logP': 2, 'tPSA': 1, 'QED': 2 })
+#     smiles_list = gen['smiles'].iloc[:n].tolist()
+#     gen[property_list].iloc[:n].to_numpy()
+
+#     descriptions = []
+#     for i in range(n):
+#         p = gen.loc[i, property_list].tolist()
+#         p = f'logP: {p[0]:.2f}, tPSA: {p[1]:.1f}, QED: {p[2]:.2f}'
+#         descriptions.append(p)
+#     print(smiles_list)
+
+#     plot_smiles(substructure, os.path.join(save_folder, f's{sid}.png'))
+#     plot_highlighted_smiles_group(smiles_list, substructure,
+#                                   img_size=(400, 260),
+#                                   save_path=os.path.join(save_folder, 
+#                                             f's{sid}_p{"-".join(trg_prop)}_gen.png'),
+#                                   n_per_mol=5,
+#                                   descriptions=descriptions)
+#     exit()
 
 
 @torch.no_grad()
 def psca_sampling(
         args,
         toklen_data,
-        df_train,
-        df_test,
-        df_test_scaffolds,
+        train,
+        test_scaffolds,
         scaler,
         SRC,
         TRG,
         device,
         logger
     ):
+    # define save path
 
-    task_path = os.path.join(args.infer_path, args.benchmark, 'psca_sampling')
-    os.makedirs(task_path, exist_ok=True)
-    LOG = logger(name='psca_sampling', log_path=os.path.join(task_path, 'record.log'))
-
-    # n_batch = int(np.ceil(n_samples / batch_size))
-    train_set = set(df_train['smiles'])
-    
-    # prop_tolerance = { 'logP': 0.2, 'tPSA': 4, 'QED' : 0.02 } # 2%
-    prop_tolerance = { 'logP': 0.4, 'tPSA': 8, 'QED' : 0.03, 'SAS': 0.25 } # 4%
-    
-    # interested_properties = ['logP', 'tPSA', 'QED',
-    #                          'SAS',   'NP', 'MW' ,
-    #                         'HAC',  'HBA', 'HBD']
-
-    # error_fn = get_error_fn(['MSE', 'MAE'])
-    property_fn = get_property_fn(args.property_list)
-
-
-    if args.sample_from == 'molgpt':
-        trg_prop_settings = {
-            'logP': [ 1.0, 3.0],
-            'tPSA': [  40,  80],
-            'SAS' : [ 2.0, 3.5],
-        }
-    else:
-        trg_prop_settings = {
-            'logP': [ 1.0,   2.0,  3.0],
-            'tPSA': [30.0,  60.0, 90.0],
-            'QED' : [ 0.6, 0.725, 0.85],
-        }
-
-
-    prop_set = (trg_prop_settings[p] for p in args.property_list)
-    prop_comb = list(itertools.product(*prop_set))
-    trg_prop_list = [list(c) for c in prop_comb]
-    # trg_prop_list = get_trg_prop(args.benchmark, args.property_list)
-
-    LOG.info('get scaffold')
-
-    if args.sample_from == 'train':
-        scaffold_sample = get_sample(df_train, df_train, task_path,
-                                     'train', n=args.n_scaffolds)
-    elif args.sample_from == 'test_scaffolds':
-        scaffold_sample = get_sample(df_test_scaffolds, df_train, task_path,
-                                     'test_scaffolds', n=args.n_scaffolds)
-    elif args.sample_from == 'molgpt':
-        molgpt_scaffold = [ 'O=C(Cc1ccccc1)NCc1ccccc1',
-                            'c1cnc2[nH]ccc2c1',
-                            'c1ccc(-c2ccnnc2)cc1',
-                            'c1ccc(-n2cnc3ccccc32)cc1',
-                            'O=C(c1cc[nH]c1)N1CCN(c2ccccc2)CC1'
-                          ]
-        scaffold_sample = pd.DataFrame({ 'scaffold': molgpt_scaffold })
-        scaffold_sample.to_csv(os.path.join(task_path, 'molgpt_scaffold.csv'))
-
-    save_folder = os.path.join(task_path, f'{args.model_name}-{args.epoch}',
-                               args.sample_from)
+    save_folder = os.path.join(args.save_folder, args.scaffold_source)
     os.makedirs(save_folder, exist_ok=True)
 
-    # plot_highlighted_smiles(scaffold_sample, save_folder, args.property_list,
-    #                         df_train, args.n_jobs)
-    
-    LOG.info('get sampler')
+    LOG = logger(name='psca_sampling', log_path=os.path.join(save_folder, 'record.log'))
+    cond_val_path = os.path.join(save_folder, f'condition_{"-".join(args.property_list)}.csv')
+    prop_dist_path = os.path.join(save_folder, 'prop_distribution.png')
+    avg_scaf_metric_path = os.path.join(save_folder, 'avg_scaf_metric.csv')
+    avg_prop_metric_path = os.path.join(save_folder, 'avg_prop_metric.csv')
 
-    args.model_path = os.path.join(args.train_path, args.benchmark,
-                                   args.model_name, f'model_{args.epoch}.pt')
-    # sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
-    sampler = None
+    # property conditions
+
+    trg_prop_comb = get_trg_prop_combination(args.property_list, args.scaffold_source)
+    pd.DataFrame(trg_prop_comb, columns=args.property_list).to_csv(cond_val_path)
+    property_fn = get_property_fn(args.property_list)
+
+    # get scaffold
+
+    scaffold_path = os.path.join(args.scaffold_folder,
+                                 f'{args.scaffold_source}_sample.csv')
+
+    if args.scaffold_source == 'train':
+        scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,
+                                     train, dataset=train)
+
+    elif args.scaffold_source == 'test_scaffolds':
+        scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,
+                                     train, dataset=test_scaffolds)
+
+    elif args.scaffold_source == 'molgpt':
+        scaffold_sample = pd.read_csv(scaffold_path, index_col=[0])
+
+    # get sampler
+
+    args.model_path = os.path.join(args.model_folder, args.model_name)
+    sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
+
+    # generate SMILES
     
     LOG.info('start generation')
 
     for sid in range(len(scaffold_sample)):
-        LOG.info(f'sid: {sid}')
+        scaffold = scaffold_sample.loc[sid, 'scaffold']
+        metric_path = os.path.join(save_folder, f'metric_s{sid}.csv')            
 
-        trg_scaffold = scaffold_sample.loc[sid, 'scaffold']
+        # generate SMILES
+
+        for pid, trg_prop in enumerate(trg_prop_comb):
+            suffix = '-'.join(map(str, trg_prop))
+            # gen_path = os.path.join(save_folder, f's{sid}_p{suffix}_gen.csv')
+            gen_path = os.path.join(save_folder, f'gen_s{sid}_p{pid}.csv')
+
+            if os.path.exists(gen_path):
+                continue
+            
+            LOG.info(f'Generate SMILES: sid = {sid}\tscaffold = {scaffold}\tpid = {pid}')
+            
+            gen = sample_smiles(sampler, args.n_samples, scaffold,
+                                trg_prop, args.batch_size, LOG)
+            gen = pd.DataFrame(gen, columns=['smiles'])
+            gen.to_csv(gen_path)
+
+        # define metrics
 
         metric = OrderedDict()
-        metric_path = os.path.join(save_folder, f's{sid}_metric.csv')        
-        
+
         for p in args.property_list:
             metric[p] = []
         for met in ('scaffold', 'valid', 'unique', 'novel', 'intDiv', 'sim', 'SSF', 'sim80'):
@@ -444,258 +186,167 @@ def psca_sampling(
         metric['valid_in_tolerance'] = []
         metric['unique_in_tolerance'] = []
 
-        for pid, trg_prop in enumerate(trg_prop_list):
-            LOG.info('sample smiles from property set: %s', trg_prop)
+        # compute properties and metrics
+
+        for pid, trg_prop in enumerate(trg_prop_comb):
+            LOG.info(f'Compute properties and metrics: sid = {sid}\tscaffold = {scaffold}\tpid = {pid}')
+
+            gen_path = os.path.join(save_folder, f'gen_s{sid}_p{pid}.csv')
+            prop_path = os.path.join(save_folder, f'prop_s{sid}_p{pid}.csv')
             
-            suffix = '-'.join(map(str, trg_prop))
-            gen_path = os.path.join(save_folder, f's{sid}_p{suffix}_gen.csv')
-            property_path = os.path.join(save_folder, f's{sid}_p{suffix}_prop.csv')
+            gen = pd.read_csv(gen_path, index_col=[0])
+            gen = gen.dropna(subset='smiles').reset_index(drop=True)
+            gen['mol'] = mapper(get_mol, gen['smiles'], args.n_jobs)
 
-            for i, p in enumerate(args.property_list):
-                metric[p].append(trg_prop[i])
-            metric['scaffold'].append(trg_scaffold)
-            
-            if not os.path.exists(gen_path):
-                samples = generate_smiles(sampler, trg_prop, trg_scaffold,
-                                          args.batch_size, args.n_samples)
-                samples.to_csv(gen_path)
-            
-            continue
-
-            samples = pd.read_csv(gen_path, index_col=[0])
-            # samples = samples.dropna(subset=['smiles'])
-            mols = mapper(get_mol, samples['smiles'], args.n_jobs)
-            mols = [m for m in mols if m is not None and isinstance(m, float) is False]
-            scaffolds = mapper(murcko_scaffold, mols, args.n_jobs)
-            valid_smi = mol_to_smi(mols, args.n_jobs)
-
-            # the definition of validity is different in molgpt from us
-            # molgpt: the fraction of SMILES that "satisfy chemical valencies
-            # and contain scaffolds that have a Tanimoto similarity of at least
-            # 0.8 to the desired scaffold.
-
-            if args.sample_from == 'molgpt':
-                similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=trg_scaffold)
-                similarity = mapper(similarity_fn, scaffolds, args.n_jobs)
-                _valid_smi, _mols, _scaffolds = [], [], []
-                for i, sim in enumerate(similarity):                
-                    if sim is not None and sim >= 0.8:
-                        _valid_smi.append(valid_smi[i])
-                        _mols.append(mols[i])
-                        _scaffolds.append(scaffolds[i])
-
-                valid_smi = _valid_smi
-                mols = _mols
-                scaffolds = _scaffolds
-
-            unique_smi = set(valid_smi)
+            valid = gen.dropna(subset='mol').reset_index(drop=True).copy()
+            valid['smiles'] =  mapper(get_canonical, valid['mol'], args.n_jobs)
+            valid['scaffold'] = mapper(murcko_scaffold, valid['smiles'], args.n_jobs)
 
             # compute properties
 
-            if not os.path.exists(property_path):
-                props = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
-                props.insert(0, 'smiles', valid_smi)
-                props['scaffold'] = scaffolds
-                props.to_csv(property_path)
+            # if not os.path.exists(prop_path):
+            prop = mols_to_props(valid['mol'], property_fn, n_jobs=args.n_jobs)
+            prop.insert(0, 'scaffold', valid['scaffold'])
+            prop.insert(0, 'smiles', valid['smiles'])
+            prop.to_csv(prop_path)
 
-            props = pd.read_csv(property_path, index_col=[0])
+            # compute metrics
 
-            # compute those in tolerance
+            valid = pd.read_csv(prop_path, index_col=[0])
+            similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=scaffold)
+            valid['scaffold_sim'] = mapper(similarity_fn, valid['smiles'], args.n_jobs)
 
-            good_gen = props.copy()
-            good_gen = good_gen[good_gen.scaffold == trg_scaffold]
-            for k, p in enumerate(args.property_list):
-                good_gen = good_gen[(good_gen[p] - trg_prop[k]).abs() <= prop_tolerance[p]]
-            metric['valid_in_tolerance'].append(len(good_gen))
-            metric['unique_in_tolerance'].append(len(good_gen.drop_duplicates('smiles')))
+            # Molgpt defined validity as the fraction of SMILES that
+            # "satisfy chemical valencies and contain scaffolds that
+            # have a Tanimoto similarity of at least 0.8 to the desired scaffold."
 
-            # get metrics
+            if args.scaffold_source == 'molgpt':
+                valid = valid.dropna(subset='scaffold_sim').reset_index(drop=True)
+                valid = valid[valid.scaffold_sim >= 0.8]
 
-            similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=trg_scaffold)
-            scaffold_similarity = mapper(similarity_fn, valid_smi, args.n_jobs)
-            scaffold_similarity = [s for s in scaffold_similarity if s is not None]
+            unique = valid.drop_duplicates(subset='smiles', ignore_index=True).copy()
 
-            metric['valid'].append(len(valid_smi) / len(samples))
+            # compute metrics
 
-            if len(valid_smi) > 0:
-                unique = len(unique_smi) / len(valid_smi)
-                novel = len(unique_smi - train_set) / len(unique_smi)
-                intDiv = metrics.internal_diversity(valid_smi, args.n_jobs)
-                
-                if len(scaffold_similarity) > 0:
-                    sim = sum(scaffold_similarity) / len(scaffold_similarity)
-                    ssf = len([1 for s in scaffold_similarity
-                        if s == 1]) / len(scaffold_similarity)
-                    sim80 = len([1 for s in scaffold_similarity
-                            if s >= 0.80]) / len(scaffold_similarity)
-                else:
-                    sim = ssf = sim80 = np.nan
+            for i, p in enumerate(args.property_list):
+                metric[p].append(trg_prop[i])
+            metric['scaffold'].append(scaffold)
+
+            if len(valid) > 0:
+                _valid = len(valid) / args.n_samples
+                _unique = len(unique) / len(valid)
+                _novel = len(set(unique['smiles']) - set(train['smiles'])) / len(unique)
+                _intDiv = metrics.internal_diversity(valid['smiles'], args.n_jobs)
+                _sim = valid['scaffold_sim'].mean()
+                _SSF = len(valid[valid.scaffold_sim == 1]) / len(valid)
+                _sim80 = len(valid[valid.scaffold_sim >= 0.8]) / len(valid)
             else:
-                unique = novel = intDiv = sim = ssf = sim80 = np.nan
+                _valid = _unique = _novel = _intDiv = sim = _SSF = _sim80 = np.nan
 
-            metric['unique'].append(unique)
-            metric['novel'].append(novel)
-            metric['intDiv'].append(intDiv)
-            metric['sim'].append(sim)
-            metric['SSF'].append(ssf)
-            metric['sim80'].append(sim80)
+            metric['valid'].append(_valid)
+            metric['unique'].append(_unique)
+            metric['novel'].append(_novel)
+            metric['intDiv'].append(_intDiv)
+            metric['sim'].append(_sim)
+            metric['SSF'].append(_SSF)
+            metric['sim80'].append(_sim80)
 
-            LOG.info('evaluate: compute errors')
-
-            for k, p in enumerate(args.property_list):
-                if len(valid_smi) > 0:
-                    delp = props[p] - trg_prop[k]
+            for i, p in enumerate(args.property_list):
+                if len(valid) > 0:
+                    delp = valid[p] - trg_prop[i]
                     mse = delp.mean()
                     mae = delp.abs().mean()
                     sd = delp.std()
                 else:
                     mse = mae = sd = np.nan
-
                 metric[f'{p}-MSE'].append(mse)
                 metric[f'{p}-MAE'].append(mae)
                 metric[f'{p}-SD'].append(sd)
+
+            good_mol = valid.copy()
+
+            good_mol = good_mol[good_mol.scaffold == scaffold] # meet scaffold condition
+            for i, p in enumerate(args.property_list): # meet property condition
+                good_mol = good_mol[(good_mol[p] - trg_prop[i]).abs() <= prop_tolerance[p]]
             
-            print(metric)
-            
-            _metrics = pd.DataFrame(metric)
-            _metrics.to_csv(metric_path)
+            metric['valid_in_tolerance'].append(len(good_mol) / args.n_samples)
+            metric['unique_in_tolerance'].append(len(good_mol.drop_duplicates('smiles')) / args.n_samples)
+                        
+            current_metric = pd.DataFrame(metric)
+            current_metric.to_csv(metric_path)
+            LOG.info(current_metric)
 
+    # compute average metric
 
+    all_metric = []
 
+    for sid in range(len(scaffold_sample)):
+        metric = pd.read_csv(os.path.join(save_folder,
+                             f'metric_s{sid}.csv'), index_col=[0])
+        metric['scaffold'] = len(metric) * [scaffold_sample.loc[sid, 'scaffold']]                
+        all_metric.append(metric)
 
+    all_metric = pd.concat(all_metric, axis=0)
 
-    avg_prop_metric_path = os.path.join(save_folder, 'avg_prop_metric.csv')
+    scaf_avg_metric = all_metric.groupby('scaffold').mean()
+    scaf_avg_metric = scaf_avg_metric.reindex(scaffold_sample['scaffold'])
+    scaf_avg_metric = scaf_avg_metric.reset_index()
+    scaf_avg_metric.to_csv(avg_scaf_metric_path)
 
-    # if not os.path.exists(avg_prop_metric_path):
-    all_met = []
-    for sid in range(args.n_scaffolds):
-        all_met.append(pd.read_csv(os.path.join(save_folder,
-                        f's{sid}_metric.csv'), index_col=[0]))
-    all_met = pd.concat(all_met, axis=0)
-    all_met = all_met.select_dtypes(include=['float', 'int'])
+    all_metric = all_metric.select_dtypes(include=['float', 'int'])
+    prop_avg_metric = all_metric.groupby(args.property_list).mean()
+    prop_avg_metric = prop_avg_metric.reset_index(drop=True)
+    prop_avg_metric.to_csv(avg_prop_metric_path)
 
-    avg_met = all_met.groupby(args.property_list).mean()
-    avg_met = avg_met.reset_index()
-    avg_met.to_csv(avg_prop_metric_path, index=False)
-
-    exit()
-    
     # plot property distribution
 
-    print('plot property distribution')
+    xlimit = {
+        'logP': [-2,  6],
+        'tPSA': [0, 120],
+        'QED' : [0.2, 1],
+        'SAS' : [1,  10],
+    }
     
-    # consider the results of 3 models
-
-    folder_list = [
-        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv31-beta0.01-warmup15000-17/',
-        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv32-beta0.01-warmup15000-19/',
-        '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetfv3-beta0.01-warmup15000-17/'
-    ]
+    LOG.info('Gather molecular properties')
     
-    all_cumm_prop = None
-    
-    for i in range(3):
-        save_folder = os.path.join(folder_list[i], args.sample_from)
-        print('processing:', save_folder)
-
-        for pid, trg_prop in enumerate(trg_prop_list):
-            print('pid:', pid)
-            
-            for sid in range(args.n_scaffolds):
-                suffix = '-'.join(map(str, trg_prop))
-                _current_prop = pd.read_csv(os.path.join(save_folder, 
-                                            f's{sid}_p{suffix}_prop.csv'))
-                if sid == 0:
-                    current_prop = _current_prop.copy()
-                else:
-                    current_prop = pd.concat([current_prop, _current_prop], axis=0)
-            
-            current_prop = current_prop.reset_index(drop=True)
-            _trg_prop = pd.DataFrame(np.tile(np.array(trg_prop),
-                                            (len(current_prop),1)),
+    gen_prop = []
+    for sid in range(args.n_scaffolds):
+        for pid, prop in enumerate(trg_prop_comb):
+            current_prop = pd.read_csv(os.path.join(save_folder, f'prop_s{sid}_p{pid}.csv'),
+                                       index_col=[0])
+            trg_prop = pd.DataFrame(np.tile(np.array(prop), (len(current_prop),1)),
                                     columns=[f'trg_{p}' for p in args.property_list])
-            current_prop = pd.concat([_trg_prop, current_prop], axis=1)
-            current_prop['kind'] = [pid]*len(current_prop)
-
-            if pid == 0:
-                cumm_prop = current_prop.copy()
-            else:
-                cumm_prop = pd.concat([cumm_prop, current_prop], axis=0)
-        
-        if i == 0:
-            all_cumm_prop = cumm_prop.copy()
-        else:
-            all_cumm_prop = pd.concat([all_cumm_prop, cumm_prop], axis=0)
-
-    print('gathered all properties')
-
-    cumm_prop = all_cumm_prop.reset_index(drop=True)
-
-    # cumm_prop = cumm_prop.reset_index(drop=True)
-
-    print(cumm_prop)
-
-    train_prop_path = os.path.join(task_path, 'train_prop.csv')
-    if not os.path.exists(train_prop_path):
-        sampled_train = df_train['smiles'].sample(n=10000, ignore_index=True)
-        mols = mapper(get_mol, sampled_train, n_jobs=args.n_jobs)
-        train_prop = mols_to_props(mols, property_fn)
-        train_prop = pd.concat([df_train['smiles'], train_prop], axis=1)
-        train_prop.to_csv(train_prop_path)
-    train_prop = pd.read_csv(train_prop_path, index_col=[0])
-
-    # plot2d(cumm_prop, args.property_list, os.path.join(save_folder, '2d.png'))
-
-
-    # for pid, trg_prop in enumerate(trg_prop_list):
-    #     save_path = os.path.join(save_folder, '-'.join(map(str, trg_prop))+'.png')
-        
-    #     val = cumm_prop[(cumm_prop[f'trg_{args.property_list[0]}'] == trg_prop[0])
-    #                   & (cumm_prop[f'trg_{args.property_list[1]}'] == trg_prop[1])
-    #                   & (cumm_prop[f'trg_{args.property_list[2]}'] == trg_prop[2])]
-
-    #     val = val[args.property_list].astype(float)
-    #     plot3d(args.property_list, val, save_path,
-    #            trg_prop[0], trg_prop[1], trg_prop[2])
-    
+            current_prop = pd.concat([trg_prop, current_prop], axis=1)
+            gen_prop.append(current_prop)
+    gen_prop = pd.concat(gen_prop, axis=0)
 
     fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(16.5, 4.5))
 
-    xlimit = [(-2, 6), (0, 120), (0.2, 1.0)]
-
     for i, p in enumerate(args.property_list):
-        # rowi = i // 3
-        # coli = i % 3
-        # ax = axes[rowi, coli]
+        LOG.info(f'Plot property distributions: {p}')
 
         ax = axes[i]
-        ax.set_xlim(xlimit[i][0], xlimit[i][1])
+        if args.scaffold_source == 'molgpt':
+            trg_prop = molgpt_selected_target_prop[p]
+        else:
+            trg_prop = selected_target_prop[p]
 
-        prop_values = trg_prop_settings[p]
+        for tp in trg_prop:
+            sns.kdeplot(data=gen_prop[gen_prop[f'trg_{p}'] == tp].loc[:, p],
+                        ax=ax, shade=True, linewidth=2.5, legend=False)
+        sns.kdeplot(data=train.loc[:, p], ax=ax, shade=False,
+                    linewidth=2.5, color='red', legend=False)
+        
+        ax.set_xlabel(xlabel=p, fontsize=17)
+        if i == 0:
+            ax.set_ylabel(ylabel='Density', fontsize=17)
+        else:
+            ax.set_ylabel(None)
+        ax.set_xlim(xlimit[p][0], xlimit[p][1])
+        ax.tick_params(axis="both", which="major", labelsize=13)
+        ax.legend(['train']+trg_prop, fontsize=16)
+       
+        for tp in trg_prop:
+            ax.axvline(x=tp, linestyle='--', color='gray')
 
-        print(prop_values)
-
-        sns.kdeplot(data=train_prop.loc[:, p], ax=ax,
-                    shade=False, linewidth=2.5,
-                    color='red', legend=False)
-
-        for v in prop_values:
-            sns.kdeplot(data=cumm_prop[cumm_prop[f'trg_{p}'] == v].loc[:, p], ax=ax,
-                        shade=True, linewidth=2.5, legend=False)
-            ax.set_xlabel(xlabel=p, fontsize=17)
-            if i == 0:
-                ax.set_ylabel(ylabel='Density', fontsize=17)
-            else:
-                ax.set_ylabel(None)
-            ax.tick_params(axis="both", which="major", labelsize=13)
-        ax.legend(['train']+prop_values, fontsize=16)
-        # ax.legend(fontsize=16)
-        for v in prop_values:
-            ax.axvline(x=v, linestyle='--', color='gray')
-        # ax.set_xlim(left=xlimit[p][0], right=xlimit[p][1])
-
-    # fig.savefig(os.path.join(save_folder, f'prop_dist.png'), bbox_inches="tight")
-    fig.savefig(f'/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/psca_sampling/scacvaetf3_prop_{args.sample_from}.png', bbox_inches="tight")
-
-
-
+    fig.savefig(prop_dist_path, bbox_inches="tight")

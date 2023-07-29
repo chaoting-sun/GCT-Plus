@@ -28,8 +28,8 @@ def add_args(parser):
 
     parent_parser.add_argument('-model_type', type=str, required=True)
     parent_parser.add_argument('-model_name', type=str, required=True)
-    parent_parser.add_argument('-epoch', type=int, required=True)
-    
+    parent_parser.add_argument('-model_folder', type=str, required=True)
+        
     parent_parser.add_argument('-encode_type', type=str, default='encode')
     parent_parser.add_argument('-decode_type', type=str, default='decode')
     parent_parser.add_argument('-decode_algo', type=str, default='greedy')
@@ -64,8 +64,9 @@ def add_args(parser):
     sca_parser.add_argument('-n_scaffolds', type=int, default=100)
     sca_parser.add_argument('-n_samples', type=int, default=10000)
     sca_parser.add_argument('-batch_size', type=int, default=512)
-    sca_parser.add_argument('-sample_from', type=str, default='train')
-    sca_parser.add_argument('-molgpt', action='store_true')
+    sca_parser.add_argument('-scaffold_folder', type=str, required=True)
+    sca_parser.add_argument('-scaffold_source', type=str, default='train')
+    sca_parser.add_argument('-use_molgpt', action='store_true')
     sca_parser.add_argument('-substructure', action='store_true')
     sca_parser.set_defaults(func=sca_sampling)
 
@@ -73,6 +74,8 @@ def add_args(parser):
     psca_parser = subparsers.add_parser('psca-sampling', parents=[parent_parser])
     psca_parser.add_argument('-n_scaffolds', type=int, default=100)
     psca_parser.add_argument('-batch_size', type=int, default=512)
+    psca_parser.add_argument('-scaffold_folder', type=str, required=True)
+    psca_parser.add_argument('-scaffold_source', type=str, default='train')
     psca_parser.add_argument('-sample_from', type=str, default='train')
     psca_parser.add_argument('-n_samples', type=int, default=1000)
     psca_parser.set_defaults(func=psca_sampling)
@@ -138,24 +141,16 @@ if __name__ == "__main__":
 
     # get dataset: train / test / scaffold test
 
-    train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
-    test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'))
-    test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
-
-    # df_train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'))
-    # train = df_train['smiles'].tolist()
-    # df_test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'))
-    # test = df_test['smiles'].tolist()
-    # df_test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'))
-    # test_scaffolds = df_test_scaffolds['smiles'].tolist()
-
+    train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'), index_col=[0])
+    test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'), index_col=[0])
+    test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'), index_col=[0])
 
     if args.func == uc_sampling:
         args.func(args, train, test, test_scaffolds, toklen_data,
                   scaler, SRC, TRG, device, logger)
 
     elif args.func == p_sampling:
-        args.func(args, train, test, toklen_data, scaler,
+        args.func(args, train, toklen_data, scaler,
                   SRC, TRG, device, logger)
 
     elif args.func == sca_sampling:
@@ -163,9 +158,12 @@ if __name__ == "__main__":
                   scaler, SRC, TRG, device, logger)
 
     elif args.func == psca_sampling:
-        args.func(args, toklen_data, train, test,
-                  test_scaffolds, scaler, SRC, TRG,
-                  device, logger)
+        args.func(args, toklen_data, train, test_scaffolds,
+                  scaler, SRC, TRG, device, logger)
+        
+    elif args.func == mol_interpolation:
+        args.func(args, toklen_data, train, test_scaffolds,
+                  scaler, SRC, TRG, device, logger)
 
     elif args.func == model_selection:
         args.func(args, train, test, toklen_data,

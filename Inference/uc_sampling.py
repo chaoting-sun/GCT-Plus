@@ -13,16 +13,14 @@ from Utils import mapper, get_mol, get_canonical, \
     get_property_fn, mols_to_props
 
 
-def sample_smiles(sampler, n_samples, batch_size, LOG):
-    n = n_samples
-    
-    samples = []
+def sample_smiles(sampler, n, batch_size, LOG):
+    gen = []
     while n > 0:
         LOG.info(f'# Samples left: {n}')
-        current_samples, *_ = sampler.sample_smiles(min(n, batch_size))
-        samples.extend(current_samples)
-        n -= len(current_samples)
-    return samples
+        current_gen, *_ = sampler.sample_smiles(min(n, batch_size))
+        gen.extend(current_gen)
+        n -= len(current_gen)
+    return gen
 
 
 def compute_metrics(gen, train, test, test_scaffolds, n_jobs):
@@ -125,8 +123,7 @@ def uc_sampling(
     
     # get sampler / property function
     
-    args.model_path = os.path.join(args.train_path, args.benchmark,
-                                   args.model_name, f'model_{args.epoch}.pt')
+    args.model_path = os.path.join(args.model_folder, args.model_name)
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
     property_fn = get_property_fn(args.descriptor)
 
@@ -135,7 +132,7 @@ def uc_sampling(
     if not os.path.exists(sample_path):
         LOG.info('Sample SMILES')
         gen = sample_smiles(sampler, args.n_samples,
-                                args.batch_size, LOG)
+                            args.batch_size, LOG)
         gen = pd.DataFrame(gen, columns=['SMILES'])
         gen.to_csv(sample_path)
     
