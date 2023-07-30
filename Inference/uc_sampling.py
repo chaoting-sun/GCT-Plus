@@ -66,6 +66,7 @@ def plot_molecular_prop(gen_prop, test_prop, save_path):
 
 def plot_structural_feat(gen_prop, test_prop, save_path):
     feat_list = ['HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']
+    
     fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
 
     for i, prop in enumerate(feat_list):

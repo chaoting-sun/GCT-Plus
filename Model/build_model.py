@@ -1,11 +1,7 @@
 import torch
 from collections import OrderedDict
-from Inference.decode_algo_test import sampling_tools
-from Model import (
-    CTF,
-    Vaetf,
-    Cvaetf,
-)
+from Inference.sampling_tool import sampling_tool_dict
+from Model import CTF, Vaetf, Cvaetf
 
 
 model_dict = {
@@ -14,20 +10,6 @@ model_dict = {
     'scavaetf'   : Cvaetf,
     'scacvaetfv3': Cvaetf,
     'ctf'        : CTF,
-}
-
-
-transfer_model_dict = {
-    'scacvaetfv2': 'scacvaetfv2',
-    'attenctf'   : 'ctf',
-    'attencvaetf': 'cvaetf',
-}
-
-
-transfer_train_params =  {
-    'attenctf'   : ['rotator'],
-    'attencvaetf': ['atten_mu', 'atten_logvar', 'atten_z'],
-    'sepcvaetf'  : ['mu_rotator', 'logvar_rotator'],
 }
 
 
@@ -43,10 +25,7 @@ def transfer_params(trained_model, new_model):
 
 
 def freeze_params(model, freeze_names=None, train_names=None):
-    """
-    freeze parameters of a model.
-    freeze_names, train_names are lists
-    """
+    """freeze parameters of a model"""
     for name, param in model.named_parameters():
         name_split = name.split('.')
         if freeze_names and name_split[0] in freeze_names:
@@ -101,25 +80,14 @@ def get_model(args, src_vocab_len, trg_vocab_len, rank):
     if hasattr(args, 'model_path'):
         model = load_state(model, args.model_path, rank)
         return model
-    
-    # original_model_path is in args
-    if args.original_model_path is not None:
-        o_model_type = transfer_model_dict[args.model_type]
-        o_model = model_dict[o_model_type](**hyper_params)
-        o_model = load_state(o_model, args.original_model_path, rank)
-
-        model = transfer_params(o_model, model)
-        model = freeze_params(model, train_names=transfer_train_params[args.model_type])
-        return model
     return model
 
 
-def get_sampler(
-    args, SRC, TRG, toklen_data, scaler, device):
+def get_sampler(args, SRC, TRG, toklen_data, scaler, device):
     src_vocab_len = len(SRC.vocab)
     trg_vocab_len = len(TRG.vocab)
-    model = get_model(args, src_vocab_len,
-                      trg_vocab_len, device)
+
+    model = get_model(args, src_vocab_len, trg_vocab_len, device)
     model = model.to(device)
     model.eval()
 
@@ -140,4 +108,4 @@ def get_sampler(
         'TRG'         : TRG,
     }
     
-    return sampling_tools[args.model_type](model, kwargs)
+    return sampling_tool_dict[args.model_type](model, kwargs)

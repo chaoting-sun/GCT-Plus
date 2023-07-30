@@ -13,7 +13,6 @@ from Inference import uc_sampling, p_sampling, sca_sampling, \
     mol_interpolation
 
 # from Inference.test_encoder import test_encoder
-# from Inference.continuity_check import continuity_check
 
 
 def add_args(parser):
@@ -37,8 +36,6 @@ def add_args(parser):
 
     parent_parser.add_argument('-benchmark', type=str, default='moses')
     parent_parser.add_argument('-data_folder', type=str)
-    parent_parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset')
-    parent_parser.add_argument('-infer_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset')
     parent_parser.add_argument('-save_folder', type=str, default='.')
 
     parent_parser.add_argument('-n_jobs', type=int, default=16)
@@ -56,7 +53,6 @@ def add_args(parser):
     # property conditioned sampling
     pc_parser = subparsers.add_parser('p-sampling', parents=[parent_parser])
     pc_parser.add_argument('-n_samples', type=int, default=10000)
-    pc_parser.add_argument('-use_molgct', action='store_true')
     pc_parser.set_defaults(func=p_sampling)
 
     # scaffold conditioned sampling
@@ -165,11 +161,15 @@ if __name__ == "__main__":
         args.func(args, toklen_data, train, test_scaffolds,
                   scaler, SRC, TRG, device, logger)
 
-    elif args.func == model_selection:
-        args.func(args, train, test, toklen_data,
-                  scaler, SRC, TRG, device)
+    # Not finished
 
     elif args.func == visualize_attention:
         args.func(args, toklen_data, train, test,
                   test_scaffolds, scaler, SRC, TRG,
                   device, logger)
+
+    # Not finished
+
+    elif args.func == model_selection: # only for vaetf
+        args.func(args, train, test, toklen_data,
+                  scaler, SRC, TRG, device)

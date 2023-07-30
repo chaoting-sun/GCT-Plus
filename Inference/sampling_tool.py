@@ -1,10 +1,9 @@
 import torch
 import numpy as np
-from time import time
 import torch.nn.functional as F
+
 from Model.modules import get_trg_mask, get_src_mask
 from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
-# from Inference.inputWrapping import InputWrapping
 from Utils.mapper import mapper
 
 torch.set_printoptions(threshold=10_000)
@@ -83,18 +82,6 @@ class Sampling:
         self.n_jobs       = kwargs['n_jobs']
     
     def init_y(self, n, add_sos=True, sca_ids=None, add_sep=False):
-        """create n starting sequences for prediction
-        
-        Args:
-            n (int): number of starting sequences
-            add_sos (bool): if start token is added
-            sca_ids (List[int]): a list of ids
-                representing the scaffold
-        
-        Returns:
-            ys (torch.tensor): n starting sequences
-                representated by ids
-        """
         start_ids = []
         if add_sos:
             start_ids.append(self.sos_id)
@@ -106,15 +93,6 @@ class Sampling:
         return ys
 
     def id_to_smi(self, ids):
-        """Convert ids into smiles based on TRG.
-        
-        Args:
-            ids (List[int]): a list of integers representing a SMILES
-            TRG (torchtext.data.Field): field for target
-
-        Returns:
-            smi (str): a string representing a molecule                 
-        """
         smi = ''
         for i in ids:
             if i == self.TRG.vocab.stoi['<eos>']:
@@ -124,15 +102,6 @@ class Sampling:
         return smi
     
     def smi_to_id(self, smi, add_sos=False, add_sep=False, add_eos=False):
-        """Convert smiles into ids based on TRG.
-        
-        Args:
-            smi (str): a string representing a molecule
-            TRG (torchtext.data.Field): field for target
-
-        Returns:
-            ids (List[int]): a list of integers representing a SMILES
-        """
         token = self.TRG.tokenize(smi)
         ids = []
         if add_sos:
@@ -145,14 +114,6 @@ class Sampling:
         return ids
 
     def sample_toklen(self, n):
-        """sample n token lenths from training data
-        
-        Args:
-            n (int): number of token lengths
-        
-        Returns:
-            toklens (List[int]): a list of token lengths
-        """
         n_bin = int(self.toklen_data.max()
                   - self.toklen_data.min())
         toklens = tokenlen_gen_from_data_distribution(data=self.toklen_data, size=n, nBins=n_bin)
@@ -684,19 +645,13 @@ class ScaVaeSampling(Sampling):
 
         # encoder
 
-        print('encoder start')
-
         kws = self.encoder_input(concat_smiles)
         kws['src_mask'] = get_src_mask(kws['src'], self.pad_id)
         kws['econds'] = None
 
         _, mu, _, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
 
-        print('encoder end')
-
         # decoder
-
-        print('decoder start')
 
         decoder_tokens = ['<sos>'] \
                        + self.TRG.tokenize(scaffold+'<sep>'+smiles) \
@@ -818,7 +773,7 @@ class ScaVaeSampling(Sampling):
 
 
 
-sampling_tools = {
+sampling_tool_dict = {
     'vaetf'      : VaetfSampling,
     'cvaetf'     : CvaetfSampling,
     'scavaetf'   : ScaVaeSampling,

@@ -364,18 +364,6 @@ def model_selection(
         fig.savefig(fig_num_path, bbox_inches="tight")
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def model_selection(
         args,
         SRC,
@@ -385,6 +373,7 @@ def model_selection(
         test,
         device
     ):
+    
     interested_properties = ['logP', 'tPSA', 'QED', 'MW', 'SAS']
     property_fn = get_property_fn(interested_properties)
 
