@@ -7,7 +7,7 @@ from Configuration.config_default import benchmark_settings
 from Configuration.config import hard_constraints_opts
 
 from Utils import allocate_gpu, smiles_field, \
-    condition_fields, set_seed, get_logger, get_scaler
+    set_seed, get_logger, get_scaler
 from Inference import uc_sampling, p_sampling, sca_sampling, \
     psca_sampling, visualize_attention, model_selection,     \
     mol_interpolation
@@ -63,26 +63,28 @@ def add_args(parser):
     sca_parser = subparsers.add_parser('sca-sampling', parents=[parent_parser])
     sca_parser.add_argument('-n_scaffolds', type=int, default=100)
     sca_parser.add_argument('-n_samples', type=int, default=10000)
-    sca_parser.add_argument('-batch_size', type=int, default=512)
     sca_parser.add_argument('-scaffold_folder', type=str, required=True)
     sca_parser.add_argument('-scaffold_source', type=str, default='train')
     sca_parser.add_argument('-use_molgpt', action='store_true')
+    sca_parser.add_argument('-batch_size', type=int, default=512)
     sca_parser.add_argument('-substructure', action='store_true')
     sca_parser.set_defaults(func=sca_sampling)
 
     # property and scaffold sampling
     psca_parser = subparsers.add_parser('psca-sampling', parents=[parent_parser])
     psca_parser.add_argument('-n_scaffolds', type=int, default=100)
-    psca_parser.add_argument('-batch_size', type=int, default=512)
+    psca_parser.add_argument('-n_samples', type=int, default=1000)
     psca_parser.add_argument('-scaffold_folder', type=str, required=True)
     psca_parser.add_argument('-scaffold_source', type=str, default='train')
-    psca_parser.add_argument('-sample_from', type=str, default='train')
-    psca_parser.add_argument('-n_samples', type=int, default=1000)
+    psca_parser.add_argument('-batch_size', type=int, default=512)
     psca_parser.set_defaults(func=psca_sampling)
 
     # molecular interpolation
     mi_parser = subparsers.add_parser('mol-interpolation', parents=[parent_parser])
     mi_parser.add_argument('-n_pairs', type=int, default=100)
+    mi_parser.add_argument('-n_interpolations', type=int, default=8)
+    mi_parser.add_argument('-pair_folder', type=str, required=True)
+    mi_parser.add_argument('-pair_source', type=str, default='test_scaffolds')
     mi_parser.set_defaults(func=mol_interpolation)
     
     # model selection        
@@ -126,7 +128,7 @@ if __name__ == "__main__":
     
     # get fields    
     
-    if args.model_type in ('ctf', 'vaetf', 'cvaetf', 'scacvaetfv1'):
+    if args.model_type in ('ctf', 'vaetf', 'cvaetf'):
         SRC, TRG = smiles_field(util_path)
     elif args.model_type in ('scavaetf', 'scacvaetfv3'):
         SRC, TRG = smiles_field(util_path, add_sep=True)
@@ -135,8 +137,6 @@ if __name__ == "__main__":
     if len(args.property_list) > 0:
         scaler = joblib.load(os.path.join(util_path, f'scaler_{"-".join(args.property_list)}.pkl'))
     
-    COND = condition_fields(args.property_list)
-    
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
 
     # get dataset: train / test / scaffold test
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'), index_col=[0])
     test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'), index_col=[0])
     test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'), index_col=[0])
-
+    
     if args.func == uc_sampling:
         args.func(args, train, test, test_scaffolds, toklen_data,
                   scaler, SRC, TRG, device, logger)

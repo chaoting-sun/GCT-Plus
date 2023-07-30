@@ -6,31 +6,6 @@ from sklearn.manifold import TSNE
 import umap
 
 
-"""perform interpolation
-
-1. lerp: linear interpolation
-2. slerp: spherical linear interpolation
-"""
-
-
-def lerp(v1, v2, alpha):
-    return v1 * (1-alpha) + v2 * alpha
-
-
-def slerp(v1, v2, alpha):
-    is_torch = isinstance(v1, torch.Tensor) and isinstance(v2, torch.Tensor)
-    norm = torch.norm if is_torch else np.linalg.norm
-    acos = torch.acos if is_torch else np.arccos
-    dot = torch.dot if is_torch else np.dot
-    sin = torch.sin if is_torch else np.sin
-
-    z1_normalized = v1 / norm(v1)
-    z2_normalized = v2 / norm(v2)
-    omega = acos(dot(z1_normalized, z2_normalized))
-    
-    return (sin((1 - alpha) * omega) * v1 + sin(alpha * omega) * v2) / sin(omega)
-
-
 """perform dimension reduction
 
 1. PCA: principal component analysis
@@ -108,19 +83,6 @@ def perform_umap(latent_vectors, n_components=2, n_neighbors=15,
                            min_dist=min_dist, metric=metric)
     latent_transformed = umap_model.fit_transform(latent_vectors)
     return latent_transformed
-
-
-"""function wrapper
-
-1. interpolation
-2. dimension reduction
-"""
-
-
-interpolation = {
-    'lerp': lerp,
-    'slerp': slerp
-}
 
 
 dimension_reduction = {

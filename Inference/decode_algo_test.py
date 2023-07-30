@@ -441,68 +441,6 @@ class CvaetfSampling(Sampling):
         return smiles, toklen, toklen_gen
 
 
-class ScaCvaetfV1Sampling(Sampling):
-    def __init__(self, model, kwargs):
-        super().__init__(model, kwargs)
-
-    def encode_smiles(self, smiles_list, scaffold_list, econds,
-                      transform=True):
-        concat_smiles = [s1+'<sep>'+s2 for s1, s2 in
-                         zip(smiles_list, scaffold_list)]
-        kwargs = self.encoder_input(concat_smiles, transform, econds)
-        kwargs['src_mask'] = get_src_mask(kwargs['src'], self.pad_id, kwargs['econds'])
-        z, mu, log_var = self.model.encode(**kwargs)
-        return z, mu, log_var
-
-    def sample_smiles(self, dconds, scaffold, zs=None, toklen=None, transform=True):
-        n = len(dconds)
-                
-        if transform:
-            dconds = self.transform(dconds)
-
-        sca_ids = [self.TRG.vocab.stoi[e] for e
-                   in self.TRG.tokenize(scaffold)]
-
-        ys = self.init_y(n, add_sos=True, sca_ids=sca_ids)
-
-        if zs is not None:
-            if toklen is None:
-                toklen = [zs.size(1)-len(sca_ids)] * zs.size(0)
-        else:
-            if toklen is None:
-                toklen = self.sample_toklen(n)
-
-        max_toklen = max(toklen)
-        lat_toklen = len(sca_ids) + max_toklen # +1 -> +<sep>
-
-        if zs is None:
-            zs = self.sample_z(lat_toklen, n)
-
-        # mask
-        
-        toklen_stop_ids = torch.LongTensor(toklen).view(n, 1, 1)
-        toklen_stop_ids = torch.add(toklen_stop_ids, len(sca_ids))
-        src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
-
-        # move to gpu
-        
-        ys = ys.to(self.device)
-        zs = zs.to(self.device)
-        dconds = dconds.to(self.device)
-        src_mask = src_mask.to(self.device)
-
-        # sample smiles
-
-        outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
-        outs = outs.cpu().numpy()
-        
-        smiles = [id_to_smi(ids[1+len(sca_ids):], self.TRG)
-                  for ids in outs]
-        toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
-
-        return smiles, toklen, toklen_gen
-    
-    
 class ScaCvaetfV3Sampling(Sampling):
     def __init__(self, model, kwargs):
         super().__init__(model, kwargs)
@@ -885,6 +823,5 @@ sampling_tools = {
     'cvaetf'     : CvaetfSampling,
     'scavaetf'   : ScaVaeSampling,
     'ctf'        : CvaetfSampling,
-    'scacvaetfv1': ScaCvaetfV1Sampling,
     'scacvaetfv3': ScaCvaetfV3Sampling
 }

@@ -215,7 +215,7 @@ def sca_sampling(
     # compute metrics
 
     scaffold_sim = OrderedDict()
-    
+
     for sid in range(len(scaffold_sample)):
         scaffold = scaffold_sample.loc[sid, 'scaffold']
         gen_path = os.path.join(save_folder, f'gen{sid}.csv')
@@ -223,21 +223,21 @@ def sca_sampling(
         LOG.info(f'id = {sid}\tscaffold = {scaffold}')
 
         gen = pd.read_csv(gen_path, index_col=[0])
-        gen = gen.dropna(subset=['SMILES'])
-        gen['mol'] = mapper(get_mol, gen['SMILES'], args.n_jobs)
+        gen = gen.dropna(subset=['smiles'])
+        gen['mol'] = mapper(get_mol, gen['smiles'], args.n_jobs)
         
         valid = gen.dropna(subset='mol').copy()
-        valid['canonical'] = mapper(get_canonical, valid['mol'], args.n_jobs)
-        valid['scaffold'] = mapper(murcko_scaffold, valid['canonical'], args.n_jobs)
+        valid['smiles'] = mapper(get_canonical, valid['mol'], args.n_jobs)
+        valid['scaffold'] = mapper(murcko_scaffold, valid['smiles'], args.n_jobs)
         similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=scaffold)
-        valid['scaffold_sim'] = mapper(similarity_fn, valid['SMILES'], args.n_jobs)
+        valid['scaffold_sim'] = mapper(similarity_fn, valid['smiles'], args.n_jobs)
         unique = valid.drop_duplicates(subset='SMILES').copy()
 
         metric['scaffold'].append(scaffold)
         metric['valid'].append(len(valid) / args.n_samples)
         metric['unique'].append(len(unique) / len(valid))
-        metric['novel'].append(len(set(unique['SMILES']) - set(train['SMILES'])) / len(unique))
-        metric['intDiv'].append(metrics.internal_diversity(unique['SMILES'], args.n_jobs))
+        metric['novel'].append(len(set(unique['smiles']) - set(train['smiles'])) / len(unique))
+        metric['intDiv'].append(metrics.internal_diversity(unique['smiles'], args.n_jobs))
         metric['SSF'].append(len(valid[valid.scaffold_sim == 1]) / len(valid))
         metric['sim80'].append(len(valid[valid.scaffold_sim >= 0.8]) / len(valid))
         metric['valid_in_tolerance'].append(len(valid[valid.scaffold == scaffold]) / len(gen))

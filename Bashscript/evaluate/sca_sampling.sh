@@ -4,7 +4,7 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
 export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
 
-GPU_IDX=1
+GPU_IDX=3
 EPOCH=16
 MODEL=scavaetf3-warmup15000
 

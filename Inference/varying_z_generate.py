@@ -14,7 +14,7 @@ def rand_z(toklen, latent_dim, n=1):
 
 def snnOf2MolGroups(molList1, molList2):
     return SNNMetric()(gen=molList1, ref=molList2)
-  
+
 
 def digits2smiles(vocab, digit_type='src'):
     def translate(digits):
