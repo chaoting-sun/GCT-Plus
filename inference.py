@@ -82,22 +82,22 @@ def add_args(parser):
     mi_parser.add_argument('-n_pairs', type=int, default=100)
     mi_parser.set_defaults(func=mol_interpolation)
     
-    # model selection        
-    ms_parser = subparsers.add_parser('model-selection', parents=[parent_parser])
-    ms_parser.add_argument('-n_samples', type=int, default=10000)
-    ms_parser.add_argument('-batch_size', type=int, default=512)
-    ms_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
-    # ms_parser.set_defaults(func=)    
+    # # model selection        
+    # ms_parser = subparsers.add_parser('model-selection', parents=[parent_parser])
+    # ms_parser.add_argument('-n_samples', type=int, default=10000)
+    # ms_parser.add_argument('-batch_size', type=int, default=512)
+    # ms_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
+    # # ms_parser.set_defaults(func=)
 
-    # encoder test
-    et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
-    et_parser.add_argument('-encoder_test', action='store_true')
-    # et_parser.add_argument('-model_type', type=str, required=True)
+    # # encoder test
+    # et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
+    # et_parser.add_argument('-encoder_test', action='store_true')
+    # # et_parser.add_argument('-model_type', type=str, required=True)
     
-    # decoder test
-    dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
-    dt_parser.add_argument('-decoder_test', action='store_true')
-    # dt_parser.add_argument('-model_type', type=str, required=True)
+    # # decoder test
+    # dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
+    # dt_parser.add_argument('-decoder_test', action='store_true')
+    # # dt_parser.add_argument('-model_type', type=str, required=True)
 
 
 
@@ -170,6 +170,10 @@ if __name__ == "__main__":
     elif args.func == model_selection:
         args.func(args, train, test, toklen_data,
                   scaler, SRC, TRG, device)
+
+    elif args.func == mol_interpolation:
+        args.func(args, toklen_data, train, test_scaffolds,
+                  scaler, SRC, TRG, COND, device)
 
     elif args.func == visualize_attention:
         args.func(args, toklen_data, train, test,

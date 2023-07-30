@@ -14,10 +14,10 @@ from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 # from pathos.multiprocessing import ProcessingPool as Pool
 
 from Model.build_model import get_sampler
-from Utils import mapper, get_mol, set_seed, mol_to_smi,        \
-    is_substructure, tanimoto_similarity, murcko_scaffold,      \
-    mols_to_props, get_property_fn, murcko_scaffold_similarity, \
-    plot_smiles, plot_smiles_group, plot_highlighted_smiles_group
+from Utils import mapper, get_mol, mol_to_smi, \
+    is_substructure, tanimoto_similarity, murcko_scaffold, \
+    murcko_scaffold_similarity, plot_smiles, \
+    plot_smiles_group, plot_highlighted_smiles_group
 
 
 def get_sample(df_dataset, train, data_folder, data_name, n):

@@ -44,16 +44,15 @@ BENCHMARK=moses
 ######################## cvaetf ######################## 
 
 MODEL_TYPE=cvaetf
-MODEL_NAME=${MODEL_TYPE}6
+MODEL_NAME=${MODEL_TYPE}1
 EPOCH=14
 GPU_IDX=2
 
 CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
     inference.py                                          \
         -use_cond2lat                                     \
-    decoder-test                                          \
+    mol-interpolation                                          \
         -property_list logP tPSA QED                      \
-        -decoder_test                                     \
         -data_folder /fileserver-gamma/chaoting/ML/dataset/${BENCHMARK}/ \
         -model_type ${MODEL_TYPE}                         \
         -model_name ${MODEL_NAME}                         \

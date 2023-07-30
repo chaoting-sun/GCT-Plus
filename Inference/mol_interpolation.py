@@ -426,6 +426,8 @@ class SmilesInterpolation:
                 if trg_conds is None and len(self.property_list) > 0:
                     trg_conds = cond0*(1-alpha) + cond1*alpha
 
+                print('trg_conds:', trg_conds)
+
                 # decode the interpolated latent space into smiles
 
                 n_counts = 0
@@ -442,13 +444,19 @@ class SmilesInterpolation:
                     ## linear interpolation
                     toklen =  int(toklen0*(1-alpha) + toklen1*alpha)
 
+                    print('toklen:', toklen)
+
                     ip_mu = interpolate_encoder_output(
                         mu0, mu1, toklen, alpha,
                         self.interpolate_fn)
                     ip_logvar = interpolate_encoder_output(
                         logvar0, logvar1, toklen, alpha,
                         self.interpolate_fn)
-                    
+
+                    print('ip_mu:', ip_mu[0])
+                    print('ip_logvar:', ip_logvar[0])
+                    exit()
+
                     if self.model_type == 'ctf':
                         ip_std = torch.empty_like(ip_logvar).normal_(mean=0, std=std_current)
                     else:
@@ -621,7 +629,7 @@ def generate_smiles_by_interpolation(args, generator, df_dataset, SRC, TRG,
 
     # file path
 
-    main_folder = os.path.join(args.infer_path, args.benchmark, f'test_decoder')
+    main_folder = os.path.join(args.infer_path, args.benchmark, 'mol-interpolation')
     os.makedirs(main_folder, exist_ok=True)
 
     data_path = os.path.join(main_folder, f"{data_src}_pair{'-scaffold' if args.use_scaffold else ''}.csv")
