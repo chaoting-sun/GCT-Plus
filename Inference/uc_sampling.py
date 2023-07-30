@@ -39,7 +39,7 @@ def compute_metrics(gen, train, test, test_scaffolds, n_jobs):
     return metrics
 
 
-def plot_molecular_prop(gen_prop, test_prop, save_path):
+def plot_descriptor_dist(gen_prop, test_prop, save_path):
     prop_list = ['logP', 'tPSA', 'QED', 'MW', 'SAS', 'NP']
     
     fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
@@ -64,7 +64,7 @@ def plot_molecular_prop(gen_prop, test_prop, save_path):
     fig.savefig(save_path, bbox_inches="tight") 
 
 
-def plot_structural_feat(gen_prop, test_prop, save_path):
+def plot_descriptor_num(gen_prop, test_prop, save_path):
     feat_list = ['HAC', 'HBA', 'HBD', 'RBN', 'AIRN', 'ARRN']
     
     fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(16, 8.5))
@@ -119,8 +119,8 @@ def uc_sampling(
     prop_path = os.path.join(args.save_folder, 'prop.csv')
     metric_path = os.path.join(args.save_folder, 'metric.csv')
     test_sample_path = os.path.join(args.save_folder, 'test_samples.csv')
-    molecular_prop_path = os.path.join(args.save_folder, 'molecular_prop.png')
-    structural_feat_path = os.path.join(args.save_folder, 'structural_feat.png')
+    descriptor_dist_path = os.path.join(args.save_folder, 'descriptor_dist.png')
+    descriptor_num_path = os.path.join(args.save_folder, 'descriptor_num.png')
     
     # get sampler / property function
     
@@ -189,5 +189,5 @@ def uc_sampling(
     test_prop = pd.read_csv(test_sample_path)
     gen_prop = pd.read_csv(prop_path)
 
-    plot_molecular_prop(gen_prop, test_prop, molecular_prop_path)
-    plot_structural_feat(gen_prop, test_prop, structural_feat_path)
+    plot_descriptor_dist(gen_prop, test_prop, descriptor_dist_path)
+    plot_descriptor_num(gen_prop, test_prop, descriptor_num_path)

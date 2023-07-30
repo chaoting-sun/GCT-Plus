@@ -7,14 +7,12 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 GPU_IDX=2
 BENCHMARK=moses
 
-# 沒跑過
 
-# MODEL_NAME=${MODEL_TYPE}-beta0.01-warmup15000
-# MODEL_NAME=${MODEL_TYPE}-beta0.01-warmup15000
-MODEL=scacvaetfv33-beta0.01-warmup15000_rand0.5
-# MODEL_NAME=${MODEL_TYPE}-beta0.01-warmup15000
+##### our trained model
 
-# MODEL=scacvaetfv33-beta0.01-warmup15000
+
+MODEL=pscavaetf1
+# MODEL=pscavaetf1_r0.5
 EPOCH=20
 
 
@@ -34,12 +32,12 @@ CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
         -scaffold_source test_scaffolds                                 \
     >>psca_sampling-${MODEL}-${GPU_IDX}.out 2>&1 &
 
-    # -train_path /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/${BENCHMARK}/${MODEL_NAME} \
+
+##### our trained model (molgpt)
+
 
 # GPU_IDX=0
-# MODEL=scacvaetfv33-beta0.01-warmup15000_molgpt
-# # MODEL=scacvaetfv33-beta0.01-warmup15000
-# EPOCH=20
+# MODEL=pscavaetf1_molgpt
 
 
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \

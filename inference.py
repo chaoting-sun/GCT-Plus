@@ -53,6 +53,7 @@ def add_args(parser):
     # property conditioned sampling
     pc_parser = subparsers.add_parser('p-sampling', parents=[parent_parser])
     pc_parser.add_argument('-n_samples', type=int, default=10000)
+    pc_parser.add_argument('-batch_size', type=int, default=512)
     pc_parser.set_defaults(func=p_sampling)
 
     # scaffold conditioned sampling
@@ -124,10 +125,10 @@ if __name__ == "__main__":
     
     # get fields    
     
-    if args.model_type in ('ctf', 'vaetf', 'cvaetf'):
-        SRC, TRG = smiles_field(util_path)
-    elif args.model_type in ('scavaetf', 'scacvaetfv3'):
+    if args.use_scaffold:
         SRC, TRG = smiles_field(util_path, add_sep=True)
+    else:
+        SRC, TRG = smiles_field(util_path)
 
     scaler = None
     if len(args.property_list) > 0:

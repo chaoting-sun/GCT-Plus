@@ -139,7 +139,7 @@ def scatter_plot_3d(np_arr, labels, save_path):
 #         gen[f'{p}-normalized_AE'] = gen[p].apply(lambda x: abs(x - float(trg_prop[i]))) / (train[p].max() - train[p].min())
 #     gen = gen.sort_values(by=[f'{p}-normalized_AE' for p in property_list],
 #                           ignore_index=True)
-#     smiles_list = gen['SMILES'].iloc[:n].tolist()
+#     smiles_list = gen['smiles'].iloc[:n].tolist()
 #     gen[property_list].iloc[:n].to_numpy()
 
 #     descriptions = []
@@ -191,17 +191,30 @@ def p_sampling(
                               'HAC',  'HBA', 'HBD']
     property_fn = get_property_fn(interested_properties)
 
+    for i, trg_prop in enumerate(trg_prop_comb):
+        gen_path = os.path.join(args.save_folder, f'gen{i}.csv')
+        prop_path = os.path.join(args.save_folder, f'prop{i}.csv')
+
+        df = pd.read_csv(gen_path, index_col=[0])
+        df = df.rename(columns={'SMILES': 'smiles'})
+        df.to_csv(gen_path)
+        
+        df = pd.read_csv(prop_path, index_col=[0])
+        df = df.rename(columns={'SMILES': 'smiles'})
+        df.to_csv(prop_path)
+
     # generate SMILES
 
+    LOG.info('Sample molecules')
+
     for i, trg_prop in enumerate(trg_prop_comb):
-        LOG.info('Sample molecules: %s', trg_prop)
+        LOG.info('Property: %s', trg_prop)
         gen_path = os.path.join(args.save_folder, f'gen{i}.csv')
 
         if os.path.exists(gen_path):
             continue
-
-        gen = sample_smiles(sampler, trg_prop, args.n_samples, LOG)
-        gen = pd.DataFrame(gen, columns=['SMILES'])
+        gen = sample_smiles(sampler, args.n_samples, trg_prop, args.batch_size, LOG)
+        gen = pd.DataFrame(gen, columns=['smiles'])
         gen.to_csv(gen_path)
 
     # define metrics

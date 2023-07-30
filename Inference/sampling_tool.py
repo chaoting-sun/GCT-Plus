@@ -402,7 +402,7 @@ class CvaetfSampling(Sampling):
         return smiles, toklen, toklen_gen
 
 
-class ScaCvaetfV3Sampling(Sampling):
+class PscavaetfSampling(Sampling):
     def __init__(self, model, kwargs):
         super().__init__(model, kwargs)
 
@@ -510,78 +510,6 @@ class ScaCvaetfV3Sampling(Sampling):
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
 
         return smiles, toklen, toklen_gen
-    
-
-    # def _sample_multiple_smiles(self, dconds, sca_ids, transform=True):
-    #     n = len(dconds)
-                
-    #     if transform:
-    #         dconds = self.transform(dconds)
-
-    #     print('scaffolds:', scaffolds)
-
-    #     sca_ids = [self.smi_to_id(sca) for sca in scaffolds]        
-    #     sca_lens = mapper(len, sca_ids, self.n_jobs)
-
-    #     print('sca_lens:', sca_lens)
-
-    #     max_sca_len = max(sca_lens)
-    #     sca_del = [max_sca_len-l for l in sca_lens]
-        
-    #     print('sca_del:', sca_del)
-        
-    #     ys = torch.ones((n, 1+max_sca_len+1), dtype=torch.long) * self.pad_id
-    #     for i in range(n):
-    #         ys[i, sca_del[i]] = self.sos_id
-    #         ys[i, sca_del[i]+1:-1] = torch.tensor(sca_ids[i])
-    #         ys[i, -1] = self.sep_id
-
-    #     print('ys:', ys)
-
-    #     if zs is not None:
-    #         if toklen is None:
-    #             toklen = [zs.size(1)-max_sca_len-1] * zs.size(0) # -<sep>
-    #     else:
-    #         if toklen is None:
-    #             toklen = self.sample_toklen(n)
-        
-    #     print('toklen:', toklen)
-        
-    #     # mask
-
-    #     src_toklen = [sca_lens[i]+1+toklen[i] for i in range(n)]
-    #     lat_toklen = max(src_toklen)
-
-    #     print('src_toklen:', src_toklen)
-
-    #     if zs is None:
-    #         zs = self.sample_z(lat_toklen, n)
-
-    #     toklen_stop_ids = torch.LongTensor(src_toklen).view(n, 1, 1)
-    #     src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
-
-    #     print('src mask:', src_mask)
-        
-    #     # move to gpu
-        
-    #     ys = ys.to(self.device)
-    #     zs = zs.to(self.device)
-    #     dconds = dconds.to(self.device)
-    #     src_mask = src_mask.to(self.device)
-        
-    #     # sample smiles
-
-    #     outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
-    #     outs = outs.cpu().numpy()
-                
-    #     print('outs:', outs)
-
-    #     smiles = [id_to_smi(ids[1+max_sca_len+1:], self.TRG)
-    #               for ids in outs]
-
-    #     toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
-
-    #     return smiles, toklen, toklen_gen
     
     
     def sample_smiles(self, dconds, scaffold, zs=None, toklen=None, transform=True):
@@ -774,9 +702,9 @@ class ScaVaeSampling(Sampling):
 
 
 sampling_tool_dict = {
-    'vaetf'      : VaetfSampling,
-    'cvaetf'     : CvaetfSampling,
-    'scavaetf'   : ScaVaeSampling,
-    'ctf'        : CvaetfSampling,
-    'scacvaetfv3': ScaCvaetfV3Sampling
+    'vaetf'    : VaetfSampling,
+    'pvaetf'   : CvaetfSampling,
+    'scavaetf' : ScaVaeSampling,
+    'ctf'      : CvaetfSampling,
+    'pscavaetf': PscavaetfSampling
 }

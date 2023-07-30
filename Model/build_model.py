@@ -6,11 +6,20 @@ from Model import CTF, Vaetf, Cvaetf
 
 model_dict = {
     'vaetf'      : Vaetf,
-    'cvaetf'     : Cvaetf,
+    'pvaetf'     : Cvaetf,
     'scavaetf'   : Cvaetf,
-    'scacvaetfv3': Cvaetf,
-    'ctf'        : CTF,
+    'pscavaetf'  : Cvaetf,
+    'ptf'        : CTF,
 }
+
+
+# model_dict = {
+#     'vaetf'      : Vaetf,
+#     'cvaetf'     : Cvaetf,
+#     'scavaetf'   : Cvaetf,
+#     'scacvaetfv3': Cvaetf,
+#     'ctf'        : CTF,
+# }
 
 
 def transfer_params(trained_model, new_model):
