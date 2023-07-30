@@ -29,78 +29,6 @@ def slerp(v1, v2, alpha):
     return (sin((1 - alpha) * omega) * v1 + sin(alpha * omega) * v2) / sin(omega)
 
 
-def get_distance(v1, v2):
-    return torch.sqrt(torch.sum((v2 - v1)**2)).item()
-
-
-def create_dataset(smiles_list, property_list):
-    property_fn = get_property_fn(property_list)
-    mols = list(map(get_mol, smiles_list))
-    murcko_sca = list(map(murcko_scaffold, mols))
-    smi = pd.DataFrame({ 'src': smiles_list,
-                         'src_scaffold': murcko_sca })
-    props = pd.DataFrame({ f'src_{p}': list(map(fn, mols))
-                           for p, fn in property_fn.items() })
-    return pd.concat([smi, props], axis=1)
-
-
-def sample_encoder_outputs(sampler, dataloader, transform=True, n_samples=2000):
-    for i, batch in enumerate(dataloader):
-        print(f'batch: {i}')
-        if i == n_samples:
-            break
-
-        _, mu, _ = sampler.encode(batch, transform)
-        
-        if i == 0:
-            dim = mu.size(-1)
-            out_list = [[] for _ in range(dim)]
-        
-        for d in range(dim):
-            out_list[d].append(mu[:,0,d].view(-1).cpu().numpy())
-
-    sampled_list = []
-    for d in range(dim):
-        concatenated_out = np.concatenate(out_list[d], axis=0)
-        if concatenated_out.shape[0] < n_samples:
-            sampled_list.append(concatenated_out)
-        else:
-            sampled_out = np.random.choice(concatenated_out, n_samples,
-                                           replace=False)
-            sampled_list.append(sampled_out)
-    return np.stack(sampled_list, axis=0).T
-
-
-"""overall workflow
-
-1. sample two specific molecules and their properties from a dataset
-2. project the two molecules into latent spaces by the encoder
-3. interpolate the latent spaces (and their corresponding properties)
-4. decode each of the interpolated latent points into molecules
-"""
-
-
-"""parameters
-
-1. number of interpolations
-2. property constraints
-"""
-
-
-"""output folder x 1000
-
-1. src1.png
-2. src2.png
-3. src.csv - src1 smiles/properties; src2 smiles/properties
-4. prediction.csv - smiles/properties
-5. prediction.png
-"""
-
-"""
-同 src1, src2 下找各種 z 降低 metric
-"""
-
-
 def sample_molecular_pairs(dataset, n, property_list, same_scaffold=True,
                            prop_threshold=None, sim_threshold=0.5):
     valid_pair_set = set()
@@ -202,7 +130,7 @@ class SmilesInterpolation:
         return app
 
     def interpolate_z_pair(self, z1, z2, alpha, interpolate_fn=slerp):
-        toklen = int(lerp(z1.size(0), z1.size(1), alpha))
+        toklen = int(lerp(z1.size(0), z1.size(0), alpha))
 
         z1_approx = self.approximate_z(z1, toklen)
         z2_approx = self.approximate_z(z2, toklen)
@@ -290,6 +218,7 @@ class SmilesInterpolation:
                         std_ip = torch.empty_like(logvar_ip).normal_(mean=0, std=curr_std)
                     else:
                         std_ip = torch.exp(0.5*logvar_ip)
+                    
                     eps = torch.randn_like(mu_ip).normal_(mean=0, std=curr_std)
                     new_z = eps.mul(std_ip).add(mu_ip)
 

@@ -29,8 +29,8 @@ export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 # BENCHMARK=moses
 
 # MODEL_TYPE=cvaetf
-# MODEL=${MODEL_TYPE}2
-# EPOCH=15
+# MODEL=${MODEL_TYPE}1
+# EPOCH=14
 # GPU_IDX=0
 
 # CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
