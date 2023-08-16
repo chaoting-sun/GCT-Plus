@@ -1,7 +1,9 @@
 import os
 import torch
+import random
 import argparse
 import pandas as pd
+from torch.utils.data import BatchSampler
 
 # modules for distributed data-parallel training (DDP)
 import torch.distributed as dist
@@ -10,20 +12,11 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from Train.trainer import train_model
-from Configuration.config import model_opts, \
-    klAnnealing_opts, optimTasks_opts
 
 from Configuration.config import train_opts
 from Model.build_model import get_model
-from Utils import (
-    set_seed,
-    get_logger,
-    allocate_gpu,
-    smiles_field,
-    DataloaderPreparation
-)
-from Utils.field import train_field
-from torch.utils.data.distributed import DistributedSampler
+from Utils import set_seed, get_logger, allocate_gpu, smiles_field
+from Utils.field import get_train_field
 
 
 def save_prepared_data(raw_data, property_list, save_path):
@@ -38,63 +31,15 @@ def save_prepared_data(raw_data, property_list, save_path):
     prepared_data.to_csv(save_path, index=False)
 
 
-# def prepare_input_data(property_list, benchmark, raw_folder,
-#                        prepared_folder, util_folder, debug=False):
-#     if benchmark == 'moses':
-#         data_type_list = ('train', 'test')
-#     elif benchmark == 'chembl_02':
-#         data_type_list = ('train', 'validation')
-#     elif benchmark == 'guacamol':
-#         exit('不知道')
-
-#     for data_type in data_type_list:
-#         raw_data = pd.read_csv(os.path.join(raw_folder, f'{data_type}.csv'),
-#                                index_col=[0])
-#         if debug:
-#             raw_data = raw_data[:1000]
-
-#         raw_smiles = raw_data.loc[:, ['smiles']]
-#         raw_prop = raw_data.loc[:, property_list]
-
-#         if data_type == 'train':
-#             scaler = get_scaler(property_list, util_folder,
-#                                 raw_prop, rebuild=True)
-
-#         raw_prop.loc[:, property_list] = scaler.transform(raw_prop)
-#         raw_data = pd.concat([raw_smiles, raw_prop], axis=1)
-
-#         save_prepared_data(raw_data, property_list,
-#                            os.path.join(prepared_folder, f'{data_type}.csv'))
-
-
-# def prepare_dataloader(dataset, rank, world_size, batch_size, shuffle,
-#                        collate_fn, pin_memory=False, num_workers=0):
-#     if world_size > 1:
-#         sampler = DistributedSampler(dataset, num_replicas=world_size,
-#                                      rank=rank, shuffle=shuffle, drop_last=False)
-#         shuffle_loader = False  # use sampler -> turn off shuffle in dataloader
-#     else:
-#         sampler = None
-#         shuffle_loader = shuffle
-
-#     dataloader = DataLoader(dataset, batch_size=batch_size,
-#                             pin_memory=pin_memory, num_workers=num_workers,
-#                             drop_last=False, sampler=sampler, shuffle=shuffle_loader,
-#                             collate_fn=collate_fn)
-#     return dataloader
-
-
 def get_data_name(benchmark, model_type, property_list):
     if benchmark == 'moses':
         data_name = ['train', 'test']
-    elif benchmark == 'chembl_02':
-        data_name = ['train', 'validation']
     
     if model_type == 'vaetf':
         data_name = [name+'_v0' for name in data_name]
-    elif model_type =='cvaetf':
+    elif model_type =='pvaetf':
         data_name = [name+'_v0' for name in data_name]
-    elif model_type == 'scacvaetfv3':
+    elif model_type == 'pscavaetf':
         data_name = [name+'_sca' for name in data_name]
 
     # for i in range(len(data_name)):
@@ -115,7 +60,7 @@ def get_fields(model_type, property_list, field_path):
 
 
 from torchtext import data
-from time import time
+
 
 class MyIterator(data.Iterator):
     def __init__(self, dataset, batch_size, sort_key, device, sampler=None, **kwargs):
@@ -146,24 +91,6 @@ class MyIterator(data.Iterator):
                     self.batches.append(sorted(b, key=self.sort_key))
 
 
-# class MyIterator(data.Iterator):
-#     def create_batches(self):
-#         if self.train:
-#             def pool(d, random_shuffler):
-#                 for p in data.batch(d, self.batch_size * 100):
-#                     p_batch = data.batch(sorted(p, key=self.sort_key), self.batch_size, self.batch_size_fn)
-#                     for b in random_shuffler(list(p_batch)):
-#                         yield b
-#             self.batches = pool(self.data(), self.random_shuffler)
-#             # print('self.batches:', len([i for i in self.batches]))
-            
-#         else:
-#             self.batches = []
-#             for b in data.batch(self.data(), self.batch_size,
-#                                           self.batch_size_fn):
-#                 self.batches.append(sorted(b, key=self.sort_key))
-
-
 global max_src_in_batch, max_tgt_in_batch
 
 def batch_size_fn(new, count, sofar):
@@ -181,9 +108,6 @@ def batch_size_fn(new, count, sofar):
     return max(src_elements, tgt_elements)
 
 
-import random
-from torch.utils.data import BatchSampler
-from torch.utils.data import DataLoader
 
 class PoolingBatchSampler(BatchSampler):
     def __init__(self, sampler, batch_size, drop_last, shuffle=True, pool_factor=100):
@@ -210,30 +134,22 @@ def main(rank, world_size):
             rank=rank,
             world_size=world_size
         )
-    seed_no = 1
-    # set_seed(0) # 0
-    # set_seed(100) # 100
-    # set_seed(200) # 200
-    # set_seed(1000) # 1000
-    set_seed(seed_no)
 
     parser = argparse.ArgumentParser()
     train_opts(parser)
     args = parser.parse_args()
 
-    prepared_folder = os.path.join(args.data_folder, args.benchmark, 'prepared')
-    util_folder = os.path.join(args.data_folder, args.benchmark, 'utils')
+    set_seed(args.seed)
 
     os.makedirs(args.model_folder, exist_ok=True)
-    os.makedirs(prepared_folder, exist_ok=True)
-    os.makedirs(util_folder, exist_ok=True)
+    os.makedirs(args.prepared_folder, exist_ok=True)
+    os.makedirs(args.util_folder, exist_ok=True)
 
     logger = get_logger()
 
-    LOG = logger(name='train', log_path=os.path.join(
-        args.model_folder, "records.log"))
+    LOG = logger(name='train', log_path=os.path.join(args.model_folder, "records.log"))
 
-    LOG.info(f'seed: {seed_no}')
+    LOG.info(f'seed: {args.seed}')
 
     if rank == 0:
         LOG.info(args)
@@ -242,9 +158,7 @@ def main(rank, world_size):
 
     # field
 
-    data_fields, SRC, TRG = train_field[args.model_type](args.property_list,
-                                                         args.use_scaffold,
-                                                         util_folder)
+    data_fields, SRC, TRG = get_train_field(args.property_list, args.util_folder)
     args.SRC = SRC
     args.TRG = TRG
 
@@ -256,13 +170,8 @@ def main(rank, world_size):
 
     LOG.info('Get dataloader...')
 
-    if args.model_type == 'scacvaetfv3':
-        train_name = 'train_sca'
-        valid_name = 'test_sca'
-        
-    else:
-        train_name = 'train'
-        valid_name = 'test'
+    train_name = 'train'
+    valid_name = 'test'
 
     if args.debug:
         train_name = valid_name
@@ -270,7 +179,7 @@ def main(rank, world_size):
     LOG.info(f'train/valid name: {train_name}, {valid_name}')
 
     train, valid = data.TabularDataset.splits(
-        path=prepared_folder, train=f'{train_name}.csv',
+        path=args.prepared_folder, train=f'{train_name}.csv',
         validation=f'{valid_name}.csv', format='csv',
         skip_header=True, fields=data_fields)
 
@@ -287,58 +196,10 @@ def main(rank, world_size):
                               sort_key=lambda x: (len(x.src), len(x.trg)),
                               sort_within_batch=True, sampler=train_sampler,
                               shuffle=False)
-    
-    # train_loader = MyIterator(train, args.batch_size, device=f'cuda:{rank}',
-    #                           sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                           sort_within_batch=True)
 
     valid_loader = MyIterator(valid, args.batch_size, device=f'cuda:{rank}',
                               sort_key=lambda x: (len(x.src), len(x.trg)),
                               sort_within_batch=True, shuffle=False)
-
-    # train_loader = MyIterator(train, args.batch_size, device=f'cuda:{rank}',
-    #                           sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                           sampler=train_sampler, sort_within_batch=False)
-
-    # valid_loader = MyIterator(valid, args.batch_size, device=f'cuda:{rank}',
-    #                           sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                           sampler=None, sort_within_batch=False)
-
-
-    # train_loader, valid_loader = MyIterator.splits(
-    #     (train, valid), batch_sizes=(args.batch_size, args.batch_size),
-    #     device=device, sort_key=lambda x: (len(x.src), len(x.trg)),
-    #     repeat=True, sort=False, shuffle=True, sort_within_batch=False,
-    #     )
-
-    #  = data.TabularDataset(os.path.join(prepared_folder, 'train_debug.csv'),
-    #                             format='csv', fields=data_fields, skip_header=True)
-
-    # train_sampler = None
-    # if world_size > 1:
-    #     train_sampler = torch.utils.data.distributed.DistributedSampler(train,
-    #                                                                     num_replicas=world_size,
-    #                                                                     rank=rank,
-    #                                                                     shuffle=True)
-    # train_iter = MyIterator(train, batch_size=args.batch_size, device=f'cuda:{rank}',
-    #                         repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                         batch_size_fn=batch_size_fn, train=True)
-
-    # train_iter = MyIterator(train, batch_size=args.batch_size, device=f'cuda:{rank}',
-    #                         repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                         batch_size_fn=batch_size_fn, train=True, sampler=train_sampler)
-
-    # train_sampler = torch.utils.data.distributed.DistributedSampler(train,
-    #                                                                 num_replicas=world_size,
-    #                                                                 rank=rank,
-    #                                                                 shuffle=True)
-    
-    # train_iter = MyIterator(train, batch_size=args.batch_size, device=f'cuda:{rank}',
-    #                         repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                         batch_size_fn=batch_size_fn, train=True, shuffle=False,
-    #                         sampler=train_sampler)
-
-    # data_loader = DataLoader(SmilesDataset, collate_fn=lambda ins: vaetf_collate_fn(ins, SRC, TRG, device), batch_sampler=batch_sampler)
 
     if rank == 0:
         LOG.info(f'# train: {len(train)}, # validation: {len(valid)}')    
@@ -363,12 +224,7 @@ def main(rank, world_size):
 
     if world_size > 1:
         model = DDP(model, device_ids=[rank], output_device=rank)
-
-    # for name, params in model.named_parameters():
-        # print(name, params.size(), params.requires_grad)
-        # params.requires_grad = True
-    # exit()
-
+    
     LOG.info('Get optimizer...')
 
     optimizer = torch.optim.Adam(

@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 
 from Model.build_model import get_sampler
 from Utils.properties import get_property_fn, mols_to_props
-from Utils.smiles import get_mol, murcko_scaffold, \
-    tanimoto_similarity, plot_smiles_group
+from Utils.smiles import tanimoto_similarity, \
+    plot_smiles_group, get_mol
 
 
 def lerp(v1, v2, alpha):
@@ -55,7 +55,7 @@ def sample_molecular_pairs(dataset, n, property_list, same_scaffold=True,
 
             if tanimoto_similarity(pair['smiles'].iloc[0], pair['smiles'].iloc[1]) > sim_threshold:
                 continue
-
+            
             # property constraint
 
             if len(property_list) > 0 and prop_threshold is not None:
@@ -66,7 +66,7 @@ def sample_molecular_pairs(dataset, n, property_list, same_scaffold=True,
             if is_valid:
                 valid_pair_set.add(tuple(sorted((pair.index[0], pair.index[1]))))
                 break
-
+    
     final_pairs = []
     for pair_no in list(valid_pair_set):
         row_pair = []
@@ -113,6 +113,7 @@ class SmilesInterpolation:
         self.sampler = sampler
 
         self.n_jobs = args.n_jobs
+        self.n_pairs = args.n_pairs
         self.model_type = args.model_type
         self.save_folder = args.save_folder
         self.use_scaffold = args.use_scaffold
@@ -139,10 +140,10 @@ class SmilesInterpolation:
             new_app[0, i, :] = interpolate_fn(z1_approx[i, :], z2_approx[i, :], alpha)
         return new_app
     
-    def compute_smoothness_prev(sim_prev, threshold=0.50):
+    def compute_smoothness_prev(self, sim_prev, threshold=0.50):
         return sum([1 for s in sim_prev if s >= threshold]) / len(sim_prev)
     
-    def compute_smoothness_start(sim_start_forward, sim_start_reverse):
+    def compute_smoothness_start(self, sim_start_forward, sim_start_reverse):
         del_begin = np.array([sim_start_forward[i] - sim_start_forward[i-1]
                               for i in range(1, len(sim_start_forward))])
         del_end = np.array([sim_start_reverse[i] - sim_start_reverse[i-1]
@@ -155,7 +156,7 @@ class SmilesInterpolation:
         smoothness_path = os.path.join(self.save_folder, 'smoothness.csv')
         sim_start_path = os.path.join(self.save_folder, 'sim-start.png')
         sim_prev_path = os.path.join(self.save_folder, 'sim-prev.png')
-        best_pred_path = os.path.join(self.save_folder, f'prediction.png')
+        best_pred_path = os.path.join(self.save_folder, 'prediction.png')
 
         for p, row in pairs.iterrows():
             self.LOG.info(f'# Pair = {p}')
@@ -268,7 +269,7 @@ class SmilesInterpolation:
 
         smoothness_record = { 'start': [], 'prev': [] }
 
-        for p in range(len(self.pairs)):
+        for p in range(self.n_pairs):
             sim_prev = []
             sim_start_forward = []
             sim_start_reverse = []
@@ -283,7 +284,7 @@ class SmilesInterpolation:
                 sim_start_forward.append(tanimoto_similarity(first_smi, curr_smi))
                 sim_start_reverse.append(tanimoto_similarity(last_smi, curr_smi))
                 if i > 0:
-                    prev_smi = df.loc[i-1, 'smiles']
+                    prev_smi = pred.loc[i-1, 'smiles']
                     sim_prev.append(tanimoto_similarity(prev_smi, curr_smi))
                 else:
                     sim_prev.append(None)
@@ -293,7 +294,9 @@ class SmilesInterpolation:
             smoothness_record['start'].append(self.compute_smoothness_start(sim_start_forward,
                                                                             sim_start_reverse))
             smoothness_record['prev'].append(self.compute_smoothness_prev(sim_prev[1:]))
-
+        
+        print(smoothness_record)
+        
         smoothness_record = pd.DataFrame(smoothness_record)
         smoothness_record.to_csv(smoothness_path)
 
@@ -312,12 +315,14 @@ class SmilesInterpolation:
 
         # plot line plot of all smoothnesses
 
-        tasim_start_rec = pd.DataFrame(tasim_start_rec)
-        tasim_prev_rec = pd.DataFrame(tasim_prev_rec)
+        # tasim_start_rec = pd.DataFrame(tasim_start_rec)
+        # tasim_prev_rec = pd.DataFrame(tasim_prev_rec)
 
-        line_plot(tasim_start_rec, y_label=r'$SIM_{start}$',
+        line_plot(smoothness_record[['start']],
+                  y_label=r'$SIM_{start}$',
                   save_path=sim_start_path)
-        line_plot(tasim_prev_rec, y_label=r'$SIM_{prev}$',
+        line_plot(smoothness_record[['prev']],
+                  y_label=r'$SIM_{prev}$',
                   save_path=sim_prev_path)
 
 

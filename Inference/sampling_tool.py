@@ -240,12 +240,8 @@ class VaetfSampling(Sampling):
         x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
         # x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
         # x, encoder_attn = self.model.encoder(**kws)
-        print('x:', x.size())
         
         _, mu, _ = self.model.sampler(x)
-        
-        print('mu:', mu.size())
-        print('encoder_attn:', encoder_attn[0].size())
         
         # decoder
         decoder_tokens = ['<sos>'] + self.TRG.tokenize(smiles) + ['<eos>']
@@ -267,10 +263,6 @@ class VaetfSampling(Sampling):
 
         x, decoder_attn_1, decoder_attn_2 = self.model.decoder(**kws)
 
-        print('x:', x.size())
-        print('decoder_attn_1:', decoder_attn_1[0].size())
-        print('decoder_attn_2:', decoder_attn_2[0].size())
-        
         return encoder_attn, decoder_attn_1, decoder_attn_2
 
     def encode_smiles(self, smiles_list):
@@ -287,17 +279,6 @@ class VaetfSampling(Sampling):
         return z, mu, log_var
     
     def sample_smiles(self, n, zs=None, toklen=None):
-        """unconditioned sampling
-
-        Generally, Unconditioned sampling refers to two main purposes:
-        1.  when a value for 'n' is given, the objective is to
-        explore the chemical space in order to discover new and
-        varied molecules that are expected to have similar 
-        distributions to those in the training set
-        2. when 'zs' (and 'toklen') are given, the aim is to
-        obtain the SMILES representation for the latent space
-        """
-
         ys = self.init_y(n, add_sos=True)
 
         if zs is not None:

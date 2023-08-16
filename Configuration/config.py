@@ -16,20 +16,23 @@ def train_opts(parser):
     
     """main options"""
     parser.add_argument('-seed', type=int)
-    parser.add_argument('-benchmark', type=str, default='moses')
+    # parser.add_argument('-benchmark', type=str, default='moses')
     parser.add_argument('-start_epoch', type=int, default=1)
     parser.add_argument('-num_epoch', type=int, default=30)
     parser.add_argument('-batch_size', type=int, default=32)
+
     parser.add_argument('-property_list', nargs='+', default=[])
     parser.add_argument('-model_type', type=str, required=True)
     parser.add_argument('-model_folder', type=str, required=True)
     parser.add_argument('-use_scaffold', action='store_true')
-    parser.add_argument('-similarity', type=float, default=1)
 
     parser.add_argument('-randomize_prob', type=float, default=0)
     parser.add_argument('-train_params', type=str, nargs='+')
-    parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
-    # parser.add_argument('-max_strlen', type=int, default=80)
+
+    parser.add_argument('-prepared_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/prepared')
+    parser.add_argument('-util_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/utils')
+
+    # parser.add_argument('-max_stfrlen', type=int, default=80)
     # parser.add_argument('-load_field', type=bool, default=True)
     # parser.add_argument('-load_scaler', type=bool, default=True)
     

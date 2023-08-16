@@ -13,15 +13,6 @@ model_dict = {
 }
 
 
-# model_dict = {
-#     'vaetf'      : Vaetf,
-#     'cvaetf'     : Cvaetf,
-#     'scavaetf'   : Cvaetf,
-#     'scacvaetfv3': Cvaetf,
-#     'ctf'        : CTF,
-# }
-
-
 def transfer_params(trained_model, new_model):
     new_dict = new_model.state_dict()
     for name, param in trained_model.named_parameters():

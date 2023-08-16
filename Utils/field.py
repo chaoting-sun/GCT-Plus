@@ -1,15 +1,13 @@
-# from functools import total_ordering
 import os
 import re
-import dill as pickle
-
 import torch
+import dill as pickle
 from torchtext import data
-# from torchtext.legacy import data
-from SmilesPE.pretokenizer import atomwise_tokenizer
 
 
 class moltokenize:
+    # change from atomwise_tokenizer in SmilesPE.pretokenizer
+
     def __init__(self, add_sep=False):
         if add_sep:
             self.tokenizer = self._tokenizer_with_sep
@@ -63,50 +61,11 @@ def smiles_fields(smiles_field_path=None, add_sep=False):
 
     return (SRC, TRG)
 
+
 # torch.float32 is equal to torch.float
 def condition_fields(conditions):
     return [data.Field(use_vocab=False, sequential=False,
             batch_first=True, dtype=torch.float32) for _ in conditions]
-
-
-# def get_fields(conditions, smiles_field_path=None):
-#     SRC, TRG = smiles_fields(smiles_field_path)
-#     COND = condition_fields(conditions)
-#     total_fields = [('src_no', None), ('trg_no', None),
-#                     ('src', SRC), ('trg', TRG)]
-#     total_fields.extend([(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-#     total_fields.extend([(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-#     return total_fields
-
-
-def get_cvaetfencoder_fields(conditions, smiles_field_path=None):
-    # the orders in the DataFrame
-    # src,trg,src_no,src_logP,src_tPSA,src_QED,trg_no,trg_logP,trg_tPSA,trg_QED
-    SRC, TRG = smiles_fields(smiles_field_path)
-    COND = condition_fields(conditions)
-    total_fields = [('src', SRC), ('trg_en', SRC), ('trg', TRG)]
-    total_fields.extend([('src_no', None)] +
-                        [(f'src_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-    total_fields.extend([('trg_no', None)] +
-                        [(f'trg_{conditions[i]}', COND[i]) for i in range(len(conditions))])
-    return total_fields, SRC, TRG
-
-
-def get_tf_fields(conditions, smiles_field_path=None):
-    """
-    order: src_no,src,src_logP,src_tPSA,src_QED,trg_no,trg,trg_logP,trg_tPSA,trg_QE
-    """
-    SRC, TRG = smiles_fields(smiles_field_path)
-    COND = condition_fields(conditions)
-    
-    src_fields = [('src_no', None), ('src', SRC)]
-    for i in range(len(conditions)):
-        src_fields.append((f'src_{conditions[i]}', COND[i]))
-    trg_fields = [('trg_no', None), ('trg', TRG)]
-    for i in range(len(conditions)):
-        trg_fields.append((f'trg_{conditions[i]}', COND[i]))
-    total_fields = src_fields + trg_fields
-    return total_fields, SRC, TRG
 
 
 def get_inference_fields(conds, smiles_fields_path):
@@ -154,6 +113,7 @@ def smiles_field(field_path=None, add_sep=False):
         unk_token='<unk>'
     )
     
+
     if field_path is not None:
         suffix = '_sep' if add_sep else ''
         try:
@@ -173,21 +133,15 @@ def property_field(property_list):
     return PROP
 
 
-def get_train_field1(property_list, use_scaffold=False,
-                     field_path=None, add_sep=False):
-    SRC, TRG = smiles_field(field_path, add_sep)
+def get_train_field(property_list, field_path=None):
+    SRC, TRG = smiles_field(field_path, add_sep=False)
     PROP = property_field(property_list)
-    prop_dict = { property_list[i]: PROP[i]
-                  for i in range(len(property_list)) }
 
     src_fields = [('src', SRC)]
     trg_fields = [('trg', TRG)]
-    if use_scaffold:
-        src_fields.append(('src_scaffold', SRC))
-        trg_fields.append(('trg_scaffold', TRG))
-    else:
-        src_fields.append(('src_scaffold', None))
-        trg_fields.append(('trg_scaffold', None))
+    
+    prop_dict = { property_list[i]: PROP[i]
+                  for i in range(len(property_list)) }
     for prop in ('logP', 'tPSA', 'QED', 'SAS'):
         if prop in property_list:
             src_fields.append((f'src_{prop}', prop_dict[prop]))
@@ -195,33 +149,7 @@ def get_train_field1(property_list, use_scaffold=False,
         else:
             src_fields.append((f'src_{prop}', None))
             trg_fields.append((f'trg_{prop}', None))
-    return src_fields + trg_fields, SRC, TRG
-
-
-def get_train_field2(property_list, use_scaffold=True,
-                     field_path=None, add_sep=True):
-    SRC, TRG = smiles_field(field_path, add_sep)
-    PROP = property_field(property_list)
-    prop_dict = { property_list[i]: PROP[i]
-                  for i in range(len(property_list)) }
-
-    src_fields = [('src', SRC)]
-    trg_fields = [('trg', TRG)]
-    for prop in ('logP', 'tPSA', 'QED', 'SAS'):
-        if prop in property_list:
-            src_fields.append((f'src_{prop}', prop_dict[prop]))
-            trg_fields.append((f'trg_{prop}', prop_dict[prop]))
-        else:
-            src_fields.append((f'src_{prop}', None))
-            trg_fields.append((f'trg_{prop}', None))
-    return src_fields + trg_fields, SRC, TRG
-
-
-train_field = {
-    'vaetf'     : get_train_field1,
-    'cvaetf'    : get_train_field1,
-    'scacvaetfv3': get_train_field2
-}
+    return 
 
 
 def get_iter_field(property_list, field_path=None):
@@ -250,41 +178,41 @@ def untokenize(tokens, vocab):
     return smi
 
 
-def id_to_smi(ids, TRG):
-    """Convert ids into smiles based on TRG.
+# def id_to_smi(ids, TRG):
+#     """Convert ids into smiles based on TRG.
     
-    Args:
-        ids (List[int]): a list of integers representing a SMILES
-        TRG (torchtext.data.Field): field for target
+#     Args:
+#         ids (List[int]): a list of integers representing a SMILES
+#         TRG (torchtext.data.Field): field for target
 
-    Returns:
-        smi (str): a string representing a molecule                 
-    """
-    smi = ''
-    for i in ids:
-        if i == TRG.vocab.stoi['<eos>']:
-            break
-        if i != TRG.vocab.stoi['<sos>']:
-            smi += TRG.vocab.itos[i]
-    return smi
+#     Returns:
+#         smi (str): a string representing a molecule                 
+#     """
+#     smi = ''
+#     for i in ids:
+#         if i == TRG.vocab.stoi['<eos>']:
+#             break
+#         if i != TRG.vocab.stoi['<sos>']:
+#             smi += TRG.vocab.itos[i]
+#     return smi
 
 
-def smi_to_id(smi, TRG, add_sos=False, add_eos=False):
-    """Convert smiles into ids based on TRG.
+# def smi_to_id(smi, TRG, add_sos=False, add_eos=False):
+#     """Convert smiles into ids based on TRG.
     
-    Args:
-        smi (str): a string representing a molecule
-        TRG (torchtext.data.Field): field for target
+#     Args:
+#         smi (str): a string representing a molecule
+#         TRG (torchtext.data.Field): field for target
 
-    Returns:
-        ids (List[int]): a list of integers representing a SMILES
-    """
-    token = TRG.tokenize(smi)
-    ids = []
-    if add_sos:
-        ids.append(TRG.vocab.stoi['<sos>'])
-    ids.extend([TRG.vocab.stoi[t] for t in token])
-    if add_eos:
-        ids.append(TRG.vocab.stoi['<eos>'])    
-    return ids
+#     Returns:
+#         ids (List[int]): a list of integers representing a SMILES
+#     """
+#     token = TRG.tokenize(smi)
+#     ids = []
+#     if add_sos:
+#         ids.append(TRG.vocab.stoi['<sos>'])
+#     ids.extend([TRG.vocab.stoi[t] for t in token])
+#     if add_eos:
+#         ids.append(TRG.vocab.stoi['<eos>'])    
+#     return ids
 

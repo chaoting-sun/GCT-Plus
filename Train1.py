@@ -10,9 +10,6 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from Train.trainer1 import train_model
-from Configuration.config import model_opts, \
-    klAnnealing_opts, optimTasks_opts
-
 from Configuration.config import train_opts
 from Model.build_model import get_model
 from Utils import (
@@ -24,89 +21,11 @@ from Utils import (
 )
 
 
-# def save_prepared_data(raw_data, property_list, save_path):
-#     src = raw_data.loc[:, ['smiles']].rename(columns={'smiles': 'src'})
-#     trg = raw_data.loc[:, ['smiles']].rename(columns={'smiles': 'trg'})
-
-#     prop = raw_data.loc[:, property_list]
-#     src_prop = prop.rename(columns={p: f'src_{p}' for p in property_list})
-#     trg_prop = prop.rename(columns={p: f'trg_{p}' for p in property_list})
-
-#     prepared_data = pd.concat([src, src_prop, trg, trg_prop], axis=1)
-#     prepared_data.to_csv(save_path, index=False)
-
-
-# def prepare_input_data(property_list, benchmark, raw_folder,
-#                        prepared_folder, util_folder, debug=False):
-#     if benchmark == 'moses':
-#         data_type_list = ('train', 'test')
-#     elif benchmark == 'chembl_02':
-#         data_type_list = ('train', 'validation')
-#     elif benchmark == 'guacamol':
-#         exit('不知道')
-
-#     for data_type in data_type_list:
-#         raw_data = pd.read_csv(os.path.join(raw_folder, f'{data_type}.csv'),
-#                                index_col=[0])
-#         if debug:
-#             raw_data = raw_data[:1000]
-
-#         raw_smiles = raw_data.loc[:, ['smiles']]
-#         raw_prop = raw_data.loc[:, property_list]
-
-#         if data_type == 'train':
-#             scaler = get_scaler(property_list, util_folder,
-#                                 raw_prop, rebuild=True)
-
-#         raw_prop.loc[:, property_list] = scaler.transform(raw_prop)
-#         raw_data = pd.concat([raw_smiles, raw_prop], axis=1)
-
-#         save_prepared_data(raw_data, property_list,
-#                            os.path.join(prepared_folder, f'{data_type}.csv'))
-
-
-# def prepare_dataloader(dataset, rank, world_size, batch_size, shuffle,
-#                        collate_fn, pin_memory=False, num_workers=0):
-#     if world_size > 1:
-#         sampler = DistributedSampler(dataset, num_replicas=world_size,
-#                                      rank=rank, shuffle=shuffle, drop_last=False)
-#         shuffle_loader = False  # use sampler -> turn off shuffle in dataloader
-#     else:
-#         sampler = None
-#         shuffle_loader = shuffle
-
-#     dataloader = DataLoader(dataset, batch_size=batch_size,
-#                             pin_memory=pin_memory, num_workers=num_workers,
-#                             drop_last=False, sampler=sampler, shuffle=shuffle_loader,
-#                             collate_fn=collate_fn)
-#     return dataloader
-
-
-def get_data_name(benchmark, model_type, property_list):
-    if benchmark == 'moses':
-        data_name = ['train', 'test']
-    elif benchmark == 'chembl_02':
-        data_name = ['train', 'validation']
-    
-    if model_type == 'vaetf':
-        data_name = [name+'_v0' for name in data_name]
-    elif model_type =='cvaetf':
-        data_name = [name+'_v0' for name in data_name]
-    elif model_type == 'scacvaetfv3':
-        data_name = [name+'_scasmi' for name in data_name]
-    elif model_type == 'scavaetf':
-        data_name = [name+'_scasmi' for name in data_name]
-    return data_name
-
-
-def get_fields(model_type, property_list, field_path):
-    if model_type in ('vaetf', 'cvaetf', 'scacvaetfv1', 'scacvaetfv2'):
-        SRC, TRG = smiles_field(field_path, add_sep=False)
-        # SRC, TRG = smiles_field(properties=property_list,
-        #                         field_path=field_path,
-        #                         suffix='molgct')
-    elif model_type in ('scacvaetfv3', 'scavaetf'):
-        SRC, TRG = smiles_field(field_path, add_sep=True)
+def get_fields(model_type, file_path):
+    if model_type == 'vaetf' or model_type == 'pvaetf':
+        SRC, TRG = smiles_field(file_path, add_sep=False)
+    elif model_type == 'scavaetf' or model_type == 'pscavaetf':
+        SRC, TRG = smiles_field(file_path, add_sep=True)
     return SRC, TRG
 
 
@@ -121,14 +40,11 @@ def main(rank, world_size):
     train_opts(parser)
     args = parser.parse_args()
 
-    set_seed(args.seed) # 1000
-
-    prepared_folder = os.path.join(args.data_folder, args.benchmark, 'prepared')
-    util_folder = os.path.join(args.data_folder, args.benchmark, 'utils')
+    set_seed(args.seed)
 
     os.makedirs(args.model_folder, exist_ok=True)
-    os.makedirs(prepared_folder, exist_ok=True)
-    os.makedirs(util_folder, exist_ok=True)
+    os.makedirs(args.prepared_folder, exist_ok=True)
+    os.makedirs(args.util_folder, exist_ok=True)
 
     logger = get_logger()
 
@@ -142,23 +58,25 @@ def main(rank, world_size):
         LOG.info(f'world size: {world_size}')
     LOG.info(f'Get GPU: rank = {rank}')
 
-    SRC, TRG = get_fields(args.model_type, args.property_list, util_folder)
+    SRC, TRG = get_fields(args.model_type, args.util_folder)
 
     LOG.info(f'SRC: {SRC.vocab.stoi}')
     LOG.info(f'TRG: {TRG.vocab.stoi}')
     
-    if args.debug:
-        args.batch_size = 64
-
     LOG.info('Get dataloader...')
 
-    train_name, valid_name = get_data_name(args.benchmark, args.model_type, args.property_list)
-    if args.debug:
-        train_name = valid_name
+    if args.model_type == 'vaetf' or args.model_type == 'pvaetf':
+        train = pd.read_csv(os.path.join(args.prepared_folder, 'train.csv'))
+        valid = pd.read_csv(os.path.join(args.prepared_folder, 'test.csv'))
+    elif args.model_type == 'scavaetf' or args.model_type == 'pscavaetf':
+        train = pd.read_csv(os.path.join(args.prepared_folder, 'train_sca.csv'))
+        valid = pd.read_csv(os.path.join(args.prepared_folder, 'test_sca.csv'))
 
-    train = pd.read_csv(os.path.join(prepared_folder, f'{train_name}.csv'))
-    valid = pd.read_csv(os.path.join(prepared_folder, f'{valid_name}.csv'))
-    
+    if args.debug:
+        args.batch_size = 4
+        train = train[:32]
+        valid = valid[:32]
+
     dp = DataloaderPreparation(rank, SRC, TRG, args.model_type,
                                args.property_list, world_size,
                                args.randomize_prob, args.use_scaffold)
@@ -190,18 +108,13 @@ def main(rank, world_size):
     if world_size > 1:
         model = DDP(model, device_ids=[rank], output_device=rank)
 
-    # for name, params in model.named_parameters():
-        # print(name, params.size(), params.requires_grad)
-        # params.requires_grad = True
-    # exit()
-
     LOG.info('Get optimizer...')
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, betas=(args.lr_beta1, args.lr_beta2), eps=args.lr_eps
     )
-
+    
     # args.lr = args.lr * np.sqrt(world_size)
     # args.lr = args.lr * np.sqrt(int(world_size*(args.batch_size/128)))
     # rescale lr: https://github.com/Lightning-AI/lightning/discussions/3706#discussioncomment-238302
@@ -229,7 +142,7 @@ def cleanup():
     undefined behavior.
     """
     if torch.distributed.is_initialized():
-        dist.barrier()
+        dist.barrier()  
         dist.destroy_process_group()
 
 

@@ -27,7 +27,7 @@
 #     -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/transformer_ep25_aug-s${SIMILARITY}-t${TOLERANCE}/
 
 
-python3 train_results.py \
+python3 Train/train_results.py \
     -begin_epoch 1       \
     -end_epoch 20        \
     -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/cvaetf6/

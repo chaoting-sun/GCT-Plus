@@ -151,6 +151,8 @@ def psca_sampling(
     LOG.info('start generation')
 
     for sid in range(len(scaffold_sample)):
+        continue
+
         scaffold = scaffold_sample.loc[sid, 'scaffold']
         metric_path = os.path.join(save_folder, f'metric_s{sid}.csv')            
 

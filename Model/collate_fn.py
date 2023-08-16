@@ -15,7 +15,7 @@ def vaetf_collate_fn(ins, SRC, TRG, device):
     return outs
 
         
-def cvaetf_collate_fn(ins, SRC, TRG, device):
+def pvaetf_collate_fn(ins, SRC, TRG, device):
     outs = {}
     
     if 'src' in ins[0]:
@@ -101,7 +101,7 @@ def scacvaetfv2_collate_fn(ins, SRC, TRG, device):
     return outs
 
 
-def scacvaetfv3_collate_fn(ins, SRC, TRG, device):
+def scavaetf_collate_fn(ins, SRC, TRG, device):
     outs = {}
     src = trg = None
     
@@ -125,13 +125,11 @@ def scacvaetfv3_collate_fn(ins, SRC, TRG, device):
 
 
 collate_fn = {
-    'ctf'        : cvaetf_collate_fn,
+    'ptf'        : pvaetf_collate_fn,
     'vaetf'      : vaetf_collate_fn,
-    'cvaetf'     : cvaetf_collate_fn,
-    'scacvaetfv1': scacvaetfv1_collate_fn,
-    'scacvaetfv2': scacvaetfv2_collate_fn,
-    'scacvaetfv3': scacvaetfv3_collate_fn,
-    'scavaetf'   : scacvaetfv3_collate_fn 
+    'pvaetf'     : pvaetf_collate_fn,
+    'scavaetf'   : scavaetf_collate_fn,
+    'pscavaetf'  : scavaetf_collate_fn,
 }
 
 

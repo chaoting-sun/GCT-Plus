@@ -3,16 +3,19 @@ import joblib
 import argparse
 import pandas as pd
 
-from Configuration.config_default import benchmark_settings
+from Configuration.config_default import max_strlen
 from Configuration.config import hard_constraints_opts
 
 from Utils import allocate_gpu, smiles_field, \
     set_seed, get_logger, get_scaler
-from Inference import uc_sampling, p_sampling, sca_sampling, \
-    psca_sampling, visualize_attention, model_selection,     \
-    mol_interpolation
 
-# from Inference.test_encoder import test_encoder
+from Inference.uc_sampling import uc_sampling
+from Inference.p_sampling import p_sampling
+from Inference.sca_sampling import sca_sampling
+from Inference.psca_sampling import psca_sampling
+from Inference.mol_interpolation import mol_interpolation
+from Inference.model_selection import model_selection
+from Inference.visualize_attention import visualize_attention
 
 
 def add_args(parser):
@@ -120,8 +123,7 @@ if __name__ == "__main__":
     
     util_path = os.path.join(args.data_folder, 'utils')
     
-    bm = benchmark_settings[args.benchmark]
-    args.max_strlen = bm['max_strlen']
+    args.max_strlen = max_strlen
     
     # get fields    
     
@@ -130,10 +132,11 @@ if __name__ == "__main__":
     else:
         SRC, TRG = smiles_field(util_path)
 
-    scaler = None
     if len(args.property_list) > 0:
         scaler = joblib.load(os.path.join(util_path, f'scaler_{"-".join(args.property_list)}.pkl'))
-    
+    else:
+        scaler = None
+
     toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
 
     # get dataset: train / test / scaffold test

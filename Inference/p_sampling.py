@@ -191,18 +191,6 @@ def p_sampling(
                               'HAC',  'HBA', 'HBD']
     property_fn = get_property_fn(interested_properties)
 
-    for i, trg_prop in enumerate(trg_prop_comb):
-        gen_path = os.path.join(args.save_folder, f'gen{i}.csv')
-        prop_path = os.path.join(args.save_folder, f'prop{i}.csv')
-
-        df = pd.read_csv(gen_path, index_col=[0])
-        df = df.rename(columns={'SMILES': 'smiles'})
-        df.to_csv(gen_path)
-        
-        df = pd.read_csv(prop_path, index_col=[0])
-        df = df.rename(columns={'SMILES': 'smiles'})
-        df.to_csv(prop_path)
-
     # generate SMILES
 
     LOG.info('Sample molecules')
