@@ -1,2 +1,16 @@
-# Molecular-Optimization: Conditional Variational Transformer
-This is a conditional variational autoencoder based Transformer.
+# Multi-Task Molecular Design by CVAE based Tranformer
+
+
+## About the Project
+
+
+## Getting Started
+
+## Implementation
+
+### Training
+
+
+### Inference
+
+

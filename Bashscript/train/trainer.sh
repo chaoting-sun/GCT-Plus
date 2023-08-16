@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 
 
+##### train vae - 1 GPU
+
+
+# MODEL_TYPE=vaetf
+# MODEL_NAME=${MODEL_TYPE}-test
+
+# CUDA_VISIBLE_DEVICES=2 CUDA_LAUNCH_BLOCKING=1 python \
+#     Train1.py                         \
+#         -seed 1                       \
+#         -lr_WarmUpSteps 12000         \
+#         -use_cond2lat                 \
+#         -start_epoch 2                \
+#         -num_epoch 30                 \
+#         -batch_size 128               \
+#         -model_type ${MODEL_TYPE}     \
+#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
+    # >train-${MODEL_NAME}.out 2>&1 &
+
+
 ##### train p-vae - 1 GPU
 
 
@@ -17,7 +36,7 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python \
         -num_epoch 30                \
         -property_list logP tPSA QED \
         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
-    >train-${MODEL_NAME}-${GPU_IDX}.out 2>&1 &
+    >train-${MODEL_NAME}.out 2>&1 &
 
 
 ##### train sca-vae - 2 GPUs
