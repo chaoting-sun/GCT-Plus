@@ -196,7 +196,7 @@ def sca_sampling(
 
         gen = sample_smiles(sampler, args.n_samples, scaffold,
                             args.batch_size, LOG)
-        gen = pd.DataFrame(gen, columns=[''])
+        gen = pd.DataFrame(gen, columns=['smiles'])
         gen.to_csv(gen_path)
 
     # define metrics
@@ -255,7 +255,7 @@ def sca_sampling(
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5, 4.6))
 
     for sid in range(len(scaffold_sample)):
-        murcko_scaffold_sim = scaffold_sim[sid].dropna(drop=True)
+        murcko_scaffold_sim = scaffold_sim[sid].dropna()
         sns.kdeplot(data=murcko_scaffold_sim, ax=ax, shade=True,
                     linewidth=2, legend=False)
         ax.set_xlabel(xlabel='Murcko scaffold similarity', fontsize=16)

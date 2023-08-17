@@ -38,10 +38,11 @@ def add_args(parser):
     parent_parser.add_argument('-top_k', type=int) # top k selection in multinomial
 
     parent_parser.add_argument('-benchmark', type=str, default='moses')
-    parent_parser.add_argument('-data_folder', type=str)
-    parent_parser.add_argument('-save_folder', type=str, default='.')
+    parent_parser.add_argument('-data_folder', type=str, default='./Data/')
+    parent_parser.add_argument('-save_folder', type=str, required=True)
+    parent_parser.add_argument('-scaffold_folder', type=str, default='./Data/scaffold-condition/')
 
-    parent_parser.add_argument('-n_jobs', type=int, default=16)
+    parent_parser.add_argument('-n_jobs', type=int, default=8)
     parent_parser.add_argument('-debug', action='store_true')
 
     # unconditioned sampling
@@ -63,7 +64,6 @@ def add_args(parser):
     sca_parser = subparsers.add_parser('sca-sampling', parents=[parent_parser])
     sca_parser.add_argument('-n_scaffolds', type=int, default=100)
     sca_parser.add_argument('-n_samples', type=int, default=10000)
-    sca_parser.add_argument('-scaffold_folder', type=str, required=True)
     sca_parser.add_argument('-scaffold_source', type=str, default='train')
     sca_parser.add_argument('-use_molgpt', action='store_true')
     sca_parser.add_argument('-batch_size', type=int, default=512)
@@ -74,7 +74,6 @@ def add_args(parser):
     psca_parser = subparsers.add_parser('psca-sampling', parents=[parent_parser])
     psca_parser.add_argument('-n_scaffolds', type=int, default=100)
     psca_parser.add_argument('-n_samples', type=int, default=1000)
-    psca_parser.add_argument('-scaffold_folder', type=str, required=True)
     psca_parser.add_argument('-scaffold_source', type=str, default='train')
     psca_parser.add_argument('-batch_size', type=int, default=512)
     psca_parser.set_defaults(func=psca_sampling)
@@ -122,6 +121,7 @@ if __name__ == "__main__":
     print("device:", device)
     
     util_path = os.path.join(args.data_folder, 'utils')
+    data_path = os.path.join(args.data_folder, 'raw')
     
     args.max_strlen = max_strlen
     
@@ -137,14 +137,14 @@ if __name__ == "__main__":
     else:
         scaler = None
 
-    toklen_data = pd.read_csv(os.path.join(args.data_path, 'raw', 'train', 'toklen_list.csv'))
+    toklen_data = pd.read_csv(os.path.join(data_path, 'toklen_list.csv'))
 
     # get dataset: train / test / scaffold test
 
-    train = pd.read_csv(os.path.join(args.data_path, 'raw', 'train.csv'), index_col=[0])
-    test = pd.read_csv(os.path.join(args.data_path, 'raw', 'test.csv'), index_col=[0])
-    test_scaffolds = pd.read_csv(os.path.join(args.data_path, 'raw', 'test_scaffolds.csv'), index_col=[0])
-    
+    train = pd.read_csv(os.path.join(data_path, 'train.csv'))
+    test = pd.read_csv(os.path.join(data_path, 'test.csv'))
+    test_scaffolds = pd.read_csv(os.path.join(data_path, 'test_scaffolds.csv'))
+
     if args.func == uc_sampling:
         args.func(args, train, test, test_scaffolds, toklen_data,
                   scaler, SRC, TRG, device, logger)

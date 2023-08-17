@@ -3,22 +3,16 @@
 
 ##### Our settings
 
-GPU_IDX=0
-BENCHMARK=moses
-MODEL=pvaetf1
-EPOCH=15
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u   \
-    inference.py                                                   \
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+    inference.py \
         -use_cond2lat \
-    p-sampling                                         \
+    p-sampling \
         -property_list logP tPSA QED \
-        -decode_algo multinomial                                   \
-        -data_folder /fileserver-gamma/chaoting/ML/dataset/moses/ \
-        -model_type pvaetf                                \
-        -model_name model_${EPOCH}.pt               \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-        -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/p-sampling/${MODEL}-${EPOCH} \
-        -n_jobs 8 \
+        -model_type pvaetf \
+        -model_name pvaetf1.pt \
+        -model_folder ./Weights/pvaetf/ \
+        -save_folder ./Data/inference/p-sampling/pvaetf1/ \
+        -decode_algo multinomial \
         -n_samples 10000 \
-    # >>${MODEL}_${GPU_IDX}.out 2>&1 & \
+    # >>p_sampling.out 2>&1 & \

@@ -134,7 +134,7 @@ def uc_sampling(
         LOG.info('Sample SMILES')
         gen = sample_smiles(sampler, args.n_samples,
                             args.batch_size, LOG)
-        gen = pd.DataFrame(gen, columns=['SMILES'])
+        gen = pd.DataFrame(gen, columns=['smiles'])
         gen.to_csv(sample_path)
     
     gen = pd.read_csv(sample_path, index_col=[0])
@@ -144,8 +144,8 @@ def uc_sampling(
     if not os.path.exists(metric_path):
         LOG.info('Compute metrics')
         
-        metrics = compute_metrics(gen['SMILES'], 
-                                  train['smiles'],
+        metrics = compute_metrics(gen['smiles'], 
+                                  train['smiles'].tolist(),
                                   test['smiles'],
                                   test_scaffolds['smiles'],
                                   args.n_jobs)
@@ -161,25 +161,24 @@ def uc_sampling(
     if not os.path.exists(prop_path):
         LOG.info('Compute properties for gen')
         
-        gen = gen.dropna(subset=['SMILES'])
-        mols = mapper(get_mol, gen['SMILES'], args.n_jobs)
+        gen = gen.dropna(subset=['smiles'])
+        mols = mapper(get_mol, gen['smiles'], args.n_jobs)
         mols = [m for m in mols if m is not None]
         smiles = mapper(get_canonical, mols, args.n_jobs)
-        smiles = pd.DataFrame(smiles, columns=['SMILES'])
+        smiles = pd.DataFrame(smiles, columns=['smiles'])
         gen_prop = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
         gen_prop = pd.concat([smiles, gen_prop], axis=1)
         gen_prop.to_csv(prop_path)
 
-    # compute properties of test (30000)
+    # compute properties of test
     
     if not os.path.exists(test_sample_path):
         LOG.info('Compute properties for test')
-        
-        test_samples = random.sample(test['smiles'], 30000)
-        mols = mapper(get_mol, test_samples, args.n_jobs)
-        smiles = pd.DataFrame({ 'SMILES': test_samples })
-        props = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
-        test_prop = pd.concat([smiles, props], axis=1)
+
+        test_samples = test.sample(n=args.n_samples, ignore_index=True)        
+        mols = mapper(get_mol, test_samples['smiles'], args.n_jobs)
+        test_prop = mols_to_props(mols, property_fn, n_jobs=args.n_jobs)
+        test_prop.insert(0, 'smiles', test_samples['smiles'])
         test_prop.to_csv(test_sample_path)
     
     # plot distributions
