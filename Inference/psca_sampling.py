@@ -110,14 +110,13 @@ def psca_sampling(
     ):
     # define save path
 
-    save_folder = os.path.join(args.save_folder, args.scaffold_source)
-    os.makedirs(save_folder, exist_ok=True)
+    os.makedirs(args.save_folder, exist_ok=True)
 
-    LOG = logger(name='psca_sampling', log_path=os.path.join(save_folder, 'record.log'))
-    cond_val_path = os.path.join(save_folder, f'condition_{"-".join(args.property_list)}.csv')
-    prop_dist_path = os.path.join(save_folder, 'prop_distribution.png')
-    avg_scaf_metric_path = os.path.join(save_folder, 'avg_scaf_metric.csv')
-    avg_prop_metric_path = os.path.join(save_folder, 'avg_prop_metric.csv')
+    LOG = logger(name='psca_sampling', log_path=os.path.join(args.save_folder, 'record.log'))
+    cond_val_path = os.path.join(args.save_folder, f'condition_{"-".join(args.property_list)}.csv')
+    prop_dist_path = os.path.join(args.save_folder, 'prop_distribution.png')
+    avg_scaf_metric_path = os.path.join(args.save_folder, 'avg_scaf_metric.csv')
+    avg_prop_metric_path = os.path.join(args.save_folder, 'avg_prop_metric.csv')
 
     # property conditions
 
@@ -151,17 +150,15 @@ def psca_sampling(
     LOG.info('start generation')
 
     for sid in range(len(scaffold_sample)):
-        continue
-
         scaffold = scaffold_sample.loc[sid, 'scaffold']
-        metric_path = os.path.join(save_folder, f'metric_s{sid}.csv')            
+        metric_path = os.path.join(args.save_folder, f'metric_s{sid}.csv')            
 
         # generate SMILES
 
         for pid, trg_prop in enumerate(trg_prop_comb):
             suffix = '-'.join(map(str, trg_prop))
             # gen_path = os.path.join(save_folder, f's{sid}_p{suffix}_gen.csv')
-            gen_path = os.path.join(save_folder, f'gen_s{sid}_p{pid}.csv')
+            gen_path = os.path.join(args.save_folder, f'gen_s{sid}_p{pid}.csv')
 
             if os.path.exists(gen_path):
                 continue
@@ -193,8 +190,8 @@ def psca_sampling(
         for pid, trg_prop in enumerate(trg_prop_comb):
             LOG.info(f'Compute properties and metrics: sid = {sid}\tscaffold = {scaffold}\tpid = {pid}')
 
-            gen_path = os.path.join(save_folder, f'gen_s{sid}_p{pid}.csv')
-            prop_path = os.path.join(save_folder, f'prop_s{sid}_p{pid}.csv')
+            gen_path = os.path.join(args.save_folder, f'gen_s{sid}_p{pid}.csv')
+            prop_path = os.path.join(args.save_folder, f'prop_s{sid}_p{pid}.csv')
             
             gen = pd.read_csv(gen_path, index_col=[0])
             gen = gen.dropna(subset='smiles').reset_index(drop=True)
@@ -283,7 +280,7 @@ def psca_sampling(
     all_metric = []
 
     for sid in range(len(scaffold_sample)):
-        metric = pd.read_csv(os.path.join(save_folder,
+        metric = pd.read_csv(os.path.join(args.save_folder,
                              f'metric_s{sid}.csv'), index_col=[0])
         metric['scaffold'] = len(metric) * [scaffold_sample.loc[sid, 'scaffold']]                
         all_metric.append(metric)
@@ -314,7 +311,7 @@ def psca_sampling(
     gen_prop = []
     for sid in range(args.n_scaffolds):
         for pid, prop in enumerate(trg_prop_comb):
-            current_prop = pd.read_csv(os.path.join(save_folder, f'prop_s{sid}_p{pid}.csv'),
+            current_prop = pd.read_csv(os.path.join(args.save_folder, f'prop_s{sid}_p{pid}.csv'),
                                        index_col=[0])
             trg_prop = pd.DataFrame(np.tile(np.array(prop), (len(current_prop),1)),
                                     columns=[f'trg_{p}' for p in args.property_list])

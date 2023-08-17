@@ -7,7 +7,7 @@
 # MODEL_TYPE=vaetf
 # MODEL_NAME=${MODEL_TYPE}1
 
-# CUDA_VISIBLE_DEVICES=2 CUDA_LAUNCH_BLOCKING=1 python \
+# CUDA_VISIBLE_DEVICES=2 CUDA_LAUNCH_BLOCKING=1 nohup python \
 #     Train1.py                         \
 #         -seed 1                       \
 #         -lr_WarmUpSteps 12000         \

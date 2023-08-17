@@ -52,11 +52,11 @@ def sample_smiles(sampler, n, scaffold, batch_size, LOG):
 #         return None
     
 
-# def plot_highlighted_smiles(scaffold_sample, save_folder, n_jobs=1, gen_id=85, n=36):
+# def plot_highlighted_smiles(scaffold_sample, save_path, n_jobs=1, gen_id=85, n=36):
 #     # row : col = 4 : 5 = 300 : 140
     
 #     substructure = scaffold_sample.loc[gen_id, 'scaffold']
-#     gen = pd.read_csv(os.path.join(save_folder, f's{gen_id}_gen.csv'),
+#     gen = pd.read_csv(os.path.join(save_path, f's{gen_id}_gen.csv'),
 #                       index_col=[0])
 #     gen['substructure'] = gen['smiles'].apply(generate_scaffold)
 #     mols = mapper(get_mol, gen['smiles'], n_jobs)
@@ -66,18 +66,18 @@ def sample_smiles(sampler, n, scaffold, batch_size, LOG):
 #     smiles_list = gen.sample(n=n)['canonical'].tolist()
 #     print(smiles_list)
 
-#     plot_smiles(substructure, os.path.join(save_folder, f's{gen_id}.png'))
-#     print(os.path.join(save_folder, f's{gen_id}.png'))
-#     print(os.path.join(save_folder, f's{gen_id}_gen.png'))
+#     plot_smiles(substructure, os.path.join(save_path, f's{gen_id}.png'))
+#     print(os.path.join(save_path, f's{gen_id}.png'))
+#     print(os.path.join(save_path, f's{gen_id}_gen.png'))
 #     plot_highlighted_smiles_group(smiles_list, substructure, 
 #                                   img_size=(250, 140),
-#                                   save_path=os.path.join(save_folder, f's{gen_id}_gen.png'),
+#                                   save_path=os.path.join(save_path, f's{gen_id}_gen.png'),
 #                                   n_per_mol=6)
 #     exit()
 
 
 # def substructure_sampling(args, sampler):
-#     save_folder = '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/sca_sampling/non-scaffold'
+#     save_path = '/fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/sca_sampling/non-scaffold'
 
 #     # substructure = 'CC1C2CCC(C2)C1CN(CCO)C(=O)c1ccc(Cl)cc1'
 #     # substr_list = [
@@ -87,17 +87,17 @@ def sample_smiles(sampler, n, scaffold, batch_size, LOG):
 #     # ]
     
 #     substr_list = ['CCCCCC', 'CCCCCCCCC', 'CCCC=CCCC=C', 'CC(CC(=C)C)C=C(C)C', 'CCCC(CCC)CC=C']
-#     plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_folder, 'carbonchain.png'), n_per_mol=5)
+#     plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_path, 'carbonchain.png'), n_per_mol=5)
     
 #     # substr_list = ['COc1ccc(-c2cc(C(=O)Nc3cccc(O)c3)no2)cc1',
 #     #                'CSc1ccc(-c2csc3nnc(C#N)n23)cc1',
 #     #                'Cc1occc1C(=O)NCC(=O)N1CCCC(c2ccccc2)CC1',
 #     #                'O=C(NC1CCOC1=O)c1ccccc1Br',
 #     #                'CC(O)c1nc2ccccc2n1CC(=O)N(C)Cc1cccs1']
-#     # plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_folder, 'molecule.png'), n_per_mol=5)
+#     # plot_smiles_group(smiles=substr_list, save_path=os.path.join(save_path, 'molecule.png'), n_per_mol=5)
     
 #     for i, substr in enumerate(substr_list):
-#         save_path = os.path.join(save_folder, substr)
+#         save_path = os.path.join(save_path, substr)
 #         os.makedirs(save_path, exist_ok=True)
         
 #         smiles, *_ = sampler.sample_smiles(n=1000, scaffold=substr)
@@ -152,15 +152,11 @@ def sca_sampling(
 
     LOG = logger(name='sca_sampling', log_path=os.path.join(args.save_folder, 'record.log'))
 
-    if args.use_molgpt:
-        save_folder = os.path.join(args.save_folder, f'{args.scaffold_source}-molgpt')
-    else:
-        save_folder = os.path.join(args.save_folder, f'{args.scaffold_source}')
-    metric_path = os.path.join(save_folder, 'metric.csv')
-    scaffold_sim_path = os.path.join(save_folder, 'scaffold_sim.csv')
-    scaffold_sim_png_path = os.path.join(save_folder, 'scaffold_sim.png')
+    metric_path = os.path.join(args.save_folder, 'metric.csv')
+    scaffold_sim_path = os.path.join(args.save_folder, 'scaffold_sim.csv')
+    scaffold_sim_png_path = os.path.join(args.save_folder, 'scaffold_sim.png')
 
-    os.makedirs(save_folder, exist_ok=True)
+    os.makedirs(args.save_folder, exist_ok=True)
 
     # get sampler
 
@@ -185,14 +181,14 @@ def sca_sampling(
                                      train, dataset=test_scaffolds)
 
     # if False:
-    #     plot_highlighted_smiles(scaffold_sample, save_folder, args.n_jobs)
+    #     plot_highlighted_smiles(scaffold_sample, args.save_folder, args.n_jobs)
 
     # generate SMILES
 
     for sid in range(len(scaffold_sample)):
         scaffold = scaffold_sample.loc[sid, 'scaffold']        
-        gen_path = os.path.join(save_folder, f'gen{sid}.csv')
-        
+        gen_path = os.path.join(args.save_folder, f'gen{sid}.csv')
+
         if os.path.exists(gen_path):
             continue
         
@@ -200,7 +196,7 @@ def sca_sampling(
 
         gen = sample_smiles(sampler, args.n_samples, scaffold,
                             args.batch_size, LOG)
-        gen = pd.DataFrame(gen, columns=['SMILES'])
+        gen = pd.DataFrame(gen, columns=[''])
         gen.to_csv(gen_path)
 
     # define metrics
@@ -218,7 +214,7 @@ def sca_sampling(
 
     for sid in range(len(scaffold_sample)):
         scaffold = scaffold_sample.loc[sid, 'scaffold']
-        gen_path = os.path.join(save_folder, f'gen{sid}.csv')
+        gen_path = os.path.join(args.save_folder, f'gen{sid}.csv')
 
         LOG.info(f'id = {sid}\tscaffold = {scaffold}')
 
@@ -231,7 +227,7 @@ def sca_sampling(
         valid['scaffold'] = mapper(murcko_scaffold, valid['smiles'], args.n_jobs)
         similarity_fn = partial(murcko_scaffold_similarity, smi_or_mol2=scaffold)
         valid['scaffold_sim'] = mapper(similarity_fn, valid['smiles'], args.n_jobs)
-        unique = valid.drop_duplicates(subset='SMILES').copy()
+        unique = valid.drop_duplicates(subset='smiles').copy()
 
         metric['scaffold'].append(scaffold)
         metric['valid'].append(len(valid) / args.n_samples)
@@ -252,7 +248,6 @@ def sca_sampling(
     scaffold_sim = pd.DataFrame.from_dict(scaffold_sim, orient="index")
     scaffold_sim = scaffold_sim.transpose()
     
-    print(scaffold_sim)
     scaffold_sim.to_csv(scaffold_sim_path)
 
     # plot Murcko scaffold similarity
@@ -260,7 +255,7 @@ def sca_sampling(
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5, 4.6))
 
     for sid in range(len(scaffold_sample)):
-        murcko_scaffold_sim = scaffold_sim[sid].dropna('scaffold_sim')
+        murcko_scaffold_sim = scaffold_sim[sid].dropna(drop=True)
         sns.kdeplot(data=murcko_scaffold_sim, ax=ax, shade=True,
                     linewidth=2, legend=False)
         ax.set_xlabel(xlabel='Murcko scaffold similarity', fontsize=16)
