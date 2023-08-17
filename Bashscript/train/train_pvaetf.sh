@@ -16,7 +16,7 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python \
         -batch_size 128               \
         -model_type pvaetf            \
         -property_list logP tPSA QED  \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
+        -model_folder ./Experiment/${MODEL_NAME} \
     # >train-${MODEL_NAME}.out 2>&1 &
 
 

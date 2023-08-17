@@ -16,7 +16,7 @@
 #         -num_epoch 30                 \
 #         -batch_size 128               \
 #         -model_type ${MODEL_TYPE}     \
-#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
+#         -model_folder ./Experiment/${MODEL_NAME} \
     # >train-${MODEL_NAME}.out 2>&1 &
 
 
@@ -35,6 +35,6 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29501 \
         -num_epoch 30                 \
         -batch_size 128               \
         -model_type ${MODEL_TYPE}     \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
+        -model_folder ./Experiment/${MODEL_NAME} \
     # >train-${MODEL_NAME}.out 2>&1 &
 

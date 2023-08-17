@@ -18,7 +18,7 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29990 \
         -num_epoch 50                \
         -batch_size 64               \
         -property_list logP tPSA QED \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME}/ \
+        -model_folder ./Experiment/${MODEL_NAME} \
     # >train-${MODEL_NAME}.out 2>&1 &
 
 
