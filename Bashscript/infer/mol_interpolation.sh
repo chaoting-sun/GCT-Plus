@@ -1,117 +1,111 @@
 #!/usr/bin/env bash
 
-# export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
-# export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
-######################## vaetf ########################
+##### vae
 
-# MODEL_TYPE=vaetf
-# MODEL=${MODEL_TYPE}3
-# EPOCH=37
-# GPU_IDX=0
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-#     inference.py                                          \
-#     mol-interpolation                                          \
-#         -data_folder /fileserver-gamma/chaoting/ML/dataset/moses/ \
-#         -model_type vaetf                         \
-#         -model_name model_${EPOCH}.pt               \
-#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-#         -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/${MODEL}-${EPOCH} \
-#         -pair_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/ \
-#         -pair_source test_scaffolds \
-#         -decode_algo greedy                        \
-    # >>mol-interpolation_Model-${MODEL}_GPU-${GPU_IDX}.out 2>&1 & \
+MODEL_NAME=vaetf1
+PAIR_SOURCE=test_scaffolds # test_scaffolds-same_scaffold
 
-######################## pvaetf ######################## 
 
-# MODEL_TYPE=pvaetf
-# MODEL=${MODEL_TYPE}1
-# EPOCH=15
-# GPU_IDX=3
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+    inference.py \
+    mol-interpolation \
+        -model_type vaetf \
+        -model_name ${MODEL_NAME}.pt \
+        -model_folder ./Weights/vaetf \
+        -save_folder ./Data/inference/mol-interpolation/${MODEL_NAME}/${PAIR_SOURCE} \
+        -pair_folder ./Data/molecular-pair \
+        -pair_source ${PAIR_SOURCE} \
+        -decode_algo greedy \
+   >>mol-interpolation.out 2>&1 & \
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
-#     inference.py                                          \
-#         -use_cond2lat                                     \
-#     mol-interpolation                                          \
-#         -data_folder /fileserver-gamma/chaoting/ML/dataset/moses/ \
-#         -property_list logP tPSA QED                      \
-#         -model_type pvaetf                         \
-#         -model_name model_${EPOCH}.pt               \
-#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-#         -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/${MODEL}-${EPOCH} \
-#         -pair_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/ \
-#         -pair_source test_scaffolds \
-#         -decode_algo greedy                        \
-#     >>mol-interpolation_Model-${MODEL}_GPU-${GPU_IDX}.out 2>&1 & \
 
-######################## scavaetf ########################
+##### pvaetf
 
-# MODEL_TYPE=scavaetf
-# MODEL=${MODEL_TYPE}3
-# EPOCH=16
-# GPU_IDX=1
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 nohup python -u \
-#     inference.py                                          \
+# MODEL_NAME=pvaetf1
+# PAIR_SOURCE=test_scaffolds # test_scaffolds-same_scaffold
+
+
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+#     inference.py \
+#         -use_cond2lat \
+#     mol-interpolation \
+#         -property_list logP tPSA QED \
+#         -model_type pvaetf \
+#         -model_name ${MODEL_NAME}.pt \
+#         -model_folder ./Weights/pvaetf \
+#         -save_folder ./Data/inference/mol-interpolation/${MODEL_NAME}/${PAIR_SOURCE} \
+#         -pair_folder ./Data/molecular-pair \
+#         -pair_source ${PAIR_SOURCE} \
+#         -decode_algo greedy \
+#     >>mol-interpolation.out 2>&1 & \
+
+
+##### scavaetf
+
+
+# MODEL_NAME=scavaetf1
+# PAIR_SOURCE=test_scaffolds # test_scaffolds-same_scaffold
+
+
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+#     inference.py \
+#         -use_cond2lat \
 #         -use_scaffold \
-#     mol-interpolation                                          \
-#         -data_folder /fileserver-gamma/chaoting/ML/dataset/moses/ \
-#         -model_type scavaetf                         \
-#         -model_name model_${EPOCH}.pt               \
-#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-#         -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/${MODEL}-${EPOCH} \
-#         -pair_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/ \
-#         -pair_source test_scaffolds \
-#         -decode_algo greedy                        \
-#     >>mol-interpolation_Model-${MODEL}_GPU-${GPU_IDX}.out 2>&1 & \
-
-######################## pscavaetfv3 ########################
+#     mol-interpolation \
+#         -model_type scavaetf \
+#         -model_name ${MODEL_NAME}.pt \
+#         -model_folder ./Weights/scavaetf \
+#         -save_folder ./Data/inference/mol-interpolation/${MODEL_NAME}/${PAIR_SOURCE} \
+#         -pair_folder ./Data/molecular-pair \
+#         -pair_source ${PAIR_SOURCE} \
+#         -decode_algo greedy \
+#     >>mol-interpolation.out 2>&1 & \
 
 
-MODEL_TYPE=pscavaetf
-MODEL=${MODEL_TYPE}3
-EPOCH=17
-GPU_IDX=1
+##### pscavaetf
 
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-    inference.py                                          \
-        -use_scaffold \
-        -use_cond2lat                                     \
-    mol-interpolation                                          \
-        -data_folder /fileserver-gamma/chaoting/ML/dataset/moses/ \
-        -property_list logP tPSA QED                      \
-        -model_type pscavaetf                         \
-        -model_name model_${EPOCH}.pt               \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-        -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/${MODEL}-${EPOCH} \
-        -pair_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/ \
-        -pair_source test_scaffolds \
-        -decode_algo greedy                        \
-    >>mol-interpolation_Model-${MODEL}_GPU-${GPU_IDX}.out 2>&1 & \
+# MODEL_NAME=pscavaetf1
+# PAIR_SOURCE=test_scaffolds # test_scaffolds-same_scaffold
 
 
-######################## ptf ########################
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+#     inference.py \
+#         -use_cond2lat \
+#         -use_scaffold \
+#     mol-interpolation \
+#         -property_list logP tPSA QED \
+#         -model_type pscavaetf \
+#         -model_name ${MODEL_NAME}.pt \
+#         -model_folder ./Weights/pscavaetf \
+#         -save_folder ./Data/inference/mol-interpolation/${MODEL_NAME}/${PAIR_SOURCE} \
+#         -pair_folder ./Data/molecular-pair \
+#         -pair_source ${PAIR_SOURCE} \
+#         -decode_algo greedy \
+#     >>mol-interpolation.out 2>&1 & \
 
-# BENCHMARK=moses
 
-# MODEL_TYPE=ctf
-# MODEL=${MODEL_TYPE}1
-# EPOCH=30
-# GPU_IDX=1
+##### ptf
 
-# CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u \
-#     inference.py                                          \
-#         -use_cond2lat                                     \
-#     mol-interpolation                                          \
-#         -data_folder /fileserver-gamma/chaoting/ML/dataset/${BENCHMARK}/ \
-#         -property_list logP tPSA QED                      \
-#         -model_type ctf                         \
-#         -model_name model_${EPOCH}.pt               \
-#         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL} \
-#         -save_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/${MODEL}1-${EPOCH} \
-#         -pair_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Inference-Dataset/moses/mol-interpolation/ \
-#         -pair_source test_scaffolds \
-#         -decode_algo greedy                        \
 
+# MODEL_NAME=ptf1
+# PAIR_SOURCE=test_scaffolds # test_scaffolds-same_scaffold
+
+
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+#     inference.py \
+#         -use_cond2lat \
+#         -use_scaffold \
+#     mol-interpolation \
+#         -property_list logP tPSA QED \
+#         -model_type ptf \
+#         -model_name ${MODEL_NAME}.pt \
+#         -model_folder ./Weights/pscavaetf \
+#         -save_folder ./Data/inference/mol-interpolation/${MODEL_NAME}/${PAIR_SOURCE} \
+#         -pair_folder ./Data/molecular-pair \
+#         -pair_source ${PAIR_SOURCE} \
+#         -decode_algo greedy \
+#     >>mol-interpolation.out 2>&1 & \

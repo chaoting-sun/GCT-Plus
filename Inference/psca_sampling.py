@@ -126,8 +126,7 @@ def psca_sampling(
 
     # get scaffold
 
-    scaffold_path = os.path.join(args.scaffold_folder,
-                                 f'{args.scaffold_source}_sample.csv')
+    scaffold_path = os.path.join(args.scaffold_folder, f'{args.scaffold_source}.csv')
 
     if args.scaffold_source == 'train':
         scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,

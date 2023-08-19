@@ -344,15 +344,14 @@ def mol_interpolation(
 
     LOG = logger(name='mol_interpolation', log_path=os.path.join(args.save_folder, 'record.log'))    
     if args.use_scaffold:
-        pair_path = os.path.join(args.pair_folder, f"{args.pair_source}_samples-scaffold.csv")
-    else:
-        pair_path = os.path.join(args.pair_folder, f"{args.pair_source}_samples.csv")
+        pair_path = os.path.join(args.pair_folder, f"{args.pair_source}-same_scaffold.csv")
+    else:   
+        pair_path = os.path.join(args.pair_folder, f"{args.pair_source}.csv")
     
     # get sampler
 
     args.model_path = os.path.join(args.model_folder, args.model_name)
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
-    # sampler = None
     
     # sample molecular pairs
     

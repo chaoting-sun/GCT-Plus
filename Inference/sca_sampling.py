@@ -166,17 +166,12 @@ def sca_sampling(
     # get scaffold
 
     if args.scaffold_source == 'train':
-        scaffold_path = os.path.join(args.scaffold_folder, 'train_sample.csv')
+        scaffold_path = os.path.join(args.scaffold_folder, 'train.csv')
         scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,
                                      train, dataset=train)
         
-    elif args.scaffold_source == 'test_scaffolds' and not args.use_molgpt:
-        scaffold_path = os.path.join(args.scaffold_folder, 'test_scaffolds_sample.csv')
-        scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,
-                                     train, dataset=test_scaffolds)
-
-    elif args.scaffold_source == 'test_scaffolds' and args.use_molgpt:
-        scaffold_path = os.path.join(args.scaffold_folder, 'test_scaffolds_sample-molgpt.csv')
+    elif args.scaffold_source == 'test_scaffolds':
+        scaffold_path = os.path.join(args.scaffold_folder, 'test_scaffolds.csv')
         scaffold_sample = get_sample(args.n_scaffolds, scaffold_path,
                                      train, dataset=test_scaffolds)
 

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
-export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
 # GPU_IDX=2
 # BENCHMARK=moses
