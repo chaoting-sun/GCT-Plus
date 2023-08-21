@@ -4,7 +4,7 @@
 ##### Our settings
 
 
-MODEL_NAME=pvaetf1
+MODEL_NAME=pvaetf4
 
 
 CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \

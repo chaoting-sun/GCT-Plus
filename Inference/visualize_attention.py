@@ -1,11 +1,12 @@
 import os
 import torch
-from Model.build_model import get_sampler
 import numpy as np
 import matplotlib.pyplot as plt
-import pickle as pkl
-from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from rdkit import Chem
+from bertviz import model_view
+from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+from Model.build_model import get_sampler
+from Utils.smiles import murcko_scaffold
 
 
 def get_scaffold(smiles):
@@ -108,26 +109,23 @@ def plot_attention_line(attention_matrix, tokens, save_path, h=8):
     plt.savefig(save_path)
 
 
-def save_attention_map(encoder_attn, decoder_attn_1, decoder_attn_2,
-                       inputs, outputs, task_path):
+def save_attention_map(encoder_attn, decoder_attn, cross_attn,
+                       inputs, outputs, save_folder):
     encoder_attn = tuple(attn.cpu() for attn in encoder_attn)
-    decoder_attn_1 = tuple(attn.cpu() for attn in decoder_attn_1)
-    decoder_attn_2 = tuple(attn.cpu() for attn in decoder_attn_2)
+    decoder_attn = tuple(attn.cpu() for attn in decoder_attn)
+    cross_attn = tuple(attn.cpu() for attn in cross_attn)
 
-    np.save(os.path.join(task_path, 'encoder_attn'), encoder_attn)
-    np.save(os.path.join(task_path, 'decoder_attn'), decoder_attn_1)
-    np.save(os.path.join(task_path, 'cross_attn'), decoder_attn_2)
-    np.save(os.path.join(task_path, 'input'), np.array(inputs))
-    np.save(os.path.join(task_path, 'output'), np.array(outputs))
+    np.save(os.path.join(save_folder, 'encoder_attn'), encoder_attn)
+    np.save(os.path.join(save_folder, 'decoder_attn'), decoder_attn)
+    np.save(os.path.join(save_folder, 'cross_attn'), cross_attn)
+    np.save(os.path.join(save_folder, 'input'), np.array(inputs))
+    np.save(os.path.join(save_folder, 'output'), np.array(outputs))
 
 
 @torch.no_grad()
 def visualize_attention(
         args,
         toklen_data,
-        df_train,
-        df_test,
-        df_test_scaffolds,
         scaler,
         SRC,
         TRG,
@@ -135,68 +133,53 @@ def visualize_attention(
         logger
     ):
 
-    # task_path = os.path.join(args.infer_path, args.benchmark, 'psca_sampling')
-    task_path = '/home/chaoting/ML/cvae-transformer/Experiment/'
-    os.makedirs(task_path, exist_ok=True)
-
-    smiles = 'CCc1cc(C(=O)NCc2cccs2)cs1'
-    # smiles = 'O=C(Cc1ccccc1)NCc1ccccc1'
-    smiles = 'CC(Cc1ccc(c(c1)OC)O)N'
-
-
-    args.model_path = os.path.join(args.train_path, args.benchmark,
-                                   args.model_name, f'model_{args.epoch}.pt')
+    os.makedirs(args.save_folder, exist_ok=True)
+    LOG = logger(name='visualize_attention', log_path=os.path.join(args.save_folder, 'record.log'))
+    
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
 
-
+    LOG.info('Save the weights of attention map')
+    
     if args.model_type == 'vaetf':
-        # smiles = 'N1(C(=O)CCSc2oc(CC)nn2)CCCC1'
-
-        smiles = 'NC(=O)c1ccccc1OCC1CC1(Cl)Cl'
-        smiles = 'Cn1cc(SCc2cc(Br)cs2)cn1'
-        smiles = 'COC(=O)C(NC(=O)OC(C)(C)C)c1cccc(Cl)c1'
-        smiles = 'C(Cc1c(OC)c(OC)ccc1Br)C#N'
-
-        inputs = SRC.tokenize(smiles)
+        inputs = SRC.tokenize(args.smiles)
         outputs = ['<sos>'] + inputs + ['<eos>']
 
-        encoder_attn, decoder_attn_1, decoder_attn_2 = sampler.get_attention_map(smiles)
+        LOG.info(f'Input: ${inputs}')
+        LOG.info(f'Output: ${outputs}')
+
+        encoder_attn, decoder_attn, cross_attn = sampler.get_attention_map(args.smiles)
 
     elif args.model_type == 'scavaetf':
-        # smiles = 'OSCCSc1nc2cc(Cl)ccc2o1'
+        scaffold = get_scaffold(args.smiles)
+        smiles_tokens = SRC.tokenize(args.smiles)
 
-        smiles = 'NC(=O)c1ccccc1OCC1CC1(Cl)Cl'
-        smiles = 'Cn1cc(SCc2cc(Br)cs2)cn1'
-        smiles = 'COC(=O)C(NC(=O)OC(C)(C)C)c1cccc(Cl)c1'
-        smiles = 'C(Cc1c(OC)c(OC)ccc1Br)C#N'
-
-        scaffold = get_scaffold(smiles)
-
-        smiles_tokens = SRC.tokenize(smiles)
-        scaffold = get_scaffold(smiles)
+        scaffold = murcko_scaffold(args.smiles)
         scaffold_tokens = SRC.tokenize(scaffold)
+
         inputs = scaffold_tokens + ['<sep>'] + smiles_tokens
         outputs = ['<sos>'] + inputs + ['<eos>']
+        
+        LOG.info(f'Input: ${inputs}')
+        LOG.info(f'Output: ${outputs}')
 
-        encoder_attn, decoder_attn_1, decoder_attn_2 = sampler.get_attention_map(smiles, scaffold)
+        encoder_attn, decoder_attn, cross_attn = sampler.get_attention_map(args.smiles, scaffold)
 
+    save_attention_map(encoder_attn, decoder_attn, cross_attn,
+                       inputs, outputs, args.save_folder)
 
-    # save_folder = os.path.join(task_path, f'{args.model_name}-{args.epoch}',
-    #                            args.sample_from)
-    # os.makedirs(save_folder, exist_ok=True)
+    # visualize the attention map
 
-    print('self-attention of the inputs (each encoderlayer):', encoder_attn[0].size())
-    print('self-attention of the outputs (each decoderlayer):', decoder_attn_1[0].size())
-    print('attention between the inputs and outputs (each decoderlayer):', decoder_attn_2[0].size())
+    LOG.info('Visualize the attention map')
 
-    if args.model_type == 'vaetf':
-        save_path = os.path.join(task_path, 'vaetf')
-    elif args.model_type == 'scavaetf':
-        save_path = os.path.join(task_path, 'scavaetf')
-
-    os.makedirs(save_path, exist_ok=True)
-
-    save_attention_map(encoder_attn, decoder_attn_1,
-                       decoder_attn_2, inputs, outputs,
-                       save_path)
-
+    html_head_view = model_view(
+        display_mode='light',
+        encoder_attention=encoder_attn,
+        decoder_attention=decoder_attn,
+        cross_attention=cross_attn,
+        encoder_tokens= inputs,
+        decoder_tokens = outputs,
+        html_action='return'
+    )
+    
+    with open(os.path.join(args.save_folder, 'head_view.html'), 'w') as file:
+        file.write(html_head_view.data)

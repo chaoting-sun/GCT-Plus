@@ -2,9 +2,9 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+from Utils.mapper import mapper
 from Model.modules import get_trg_mask, get_src_mask
 from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
-from Utils.mapper import mapper
 
 torch.set_printoptions(threshold=10_000)
 

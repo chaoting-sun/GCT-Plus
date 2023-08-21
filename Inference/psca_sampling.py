@@ -141,7 +141,6 @@ def psca_sampling(
 
     # get sampler
 
-    args.model_path = os.path.join(args.model_folder, args.model_name)
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
 
     # generate SMILES

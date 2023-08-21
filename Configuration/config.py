@@ -29,8 +29,8 @@ def train_opts(parser):
     parser.add_argument('-randomize_prob', type=float, default=0)
     parser.add_argument('-train_params', type=str, nargs='+')
 
-    parser.add_argument('-prepared_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/prepared')
-    parser.add_argument('-util_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/utils')
+    parser.add_argument('-prepared_folder', type=str, default='./Data/prepared')
+    parser.add_argument('-util_folder', type=str, default='./Data/utils')
 
     # parser.add_argument('-max_stfrlen', type=int, default=80)
     # parser.add_argument('-load_field', type=bool, default=True)

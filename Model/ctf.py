@@ -84,7 +84,7 @@ class Decoder(nn.Module):
         return self.norm(x)
     
 
-class CTF(nn.Module):
+class Ctf(nn.Module):
     def __init__(self, src_vocab, trg_vocab, N=6, d_model=256, dff=2048, h=8, latent_dim=64, 
                  dropout=0.1, nconds=3, use_cond2dec=False, use_cond2lat=False, variational=True):
         super(CTF, self).__init__()

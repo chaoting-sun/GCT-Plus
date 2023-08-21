@@ -1,7 +1,8 @@
+import os
 import torch
 from collections import OrderedDict
 from Inference.sampling_tool import sampling_tool_dict
-from Model import CTF, Vaetf, Cvaetf
+from Model import Ctf, Vaetf, Cvaetf
 
 
 model_dict = {
@@ -9,7 +10,7 @@ model_dict = {
     'pvaetf'     : Cvaetf,
     'scavaetf'   : Cvaetf,
     'pscavaetf'  : Cvaetf,
-    'ptf'        : CTF,
+    'ptf'        : Ctf,
 }
 
 
@@ -51,6 +52,7 @@ def extract_params(args, src_vocab_len, trg_vocab_len):
         'use_cond2dec': args.use_cond2dec,
         'use_cond2lat': args.use_cond2lat,
         'nconds'      : len(args.property_list),
+        'get_attn'    : args.get_attn
     }
 
 
@@ -87,6 +89,7 @@ def get_sampler(args, SRC, TRG, toklen_data, scaler, device):
     src_vocab_len = len(SRC.vocab)
     trg_vocab_len = len(TRG.vocab)
 
+    args.model_path = os.path.join(args.model_folder, args.model_name)
     model = get_model(args, src_vocab_len, trg_vocab_len, device)
     model = model.to(device)
     model.eval()

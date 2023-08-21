@@ -124,7 +124,6 @@ def uc_sampling(
     
     # get sampler / property function
     
-    args.model_path = os.path.join(args.model_folder, args.model_name)
     sampler = get_sampler(args, SRC, TRG, toklen_data, scaler, device)
     property_fn = get_property_fn(args.descriptor)
 

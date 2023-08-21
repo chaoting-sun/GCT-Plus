@@ -1,29 +1,40 @@
 #!/usr/bin/env bash
 
-export PYTHONPATH='/home/chaoting/tools/rdkit-tools/similarity/':$PYTHONPATH
-export PYTHONPATH='/home/chaoting/tools/rdkit-tools/SMILES_plot/':$PYTHONPATH
 
-GPU_IDX=3
-BENCHMARK=moses
+##### vaetf
 
 
-MODEL_TYPE=vaetf
-MODEL_NAME=${MODEL_TYPE}1_
-EPOCH=37      
-
-# MODEL_TYPE=scavaetf
-# MODEL_NAME=${MODEL_TYPE}1
-# EPOCH=15
+MODEL_NAME=vaetf1
 
 
-CUDA_VISIBLE_DEVICES=${GPU_IDX} CUDA_LAUNCH_BLOCKING=1 python -u   \
-    inference.py                                                   \
-    visualize-attention                                         \
-        -visualize_attention                                    \
-        -decode_algo greedy                                   \
-        -data_folder /fileserver-gamma/chaoting/ML/dataset/${BENCHMARK}/ \
-        -model_type ${MODEL_TYPE}                         \
-        -model_name ${MODEL_NAME}                         \
-        -epoch ${EPOCH}                                   \
-        -n_jobs 8 \
-    # >>${MODEL_NAME}_${GPU_IDX}.out 2>&1 &
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+    inference.py \
+        -get_attn \
+    visualize-attention \
+        -model_type vaetf \
+        -model_name ${MODEL_NAME}.pt \
+        -model_folder ./Weights/vaetf \
+        -save_folder ./Data/inference/visualize-attention/${MODEL_NAME} \
+        -smiles "CC(Cc1ccc(c(c1)OC)O)N" \
+        -decode_algo greedy \
+    >>visualize-attention_${MODEL_NAME}.out 2>&1 &
+
+
+##### scavaetf
+
+
+# MODEL_NAME=scavaetf1
+
+
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+#     inference.py \
+#         -use_scaffold \
+#         -get_attn \
+#     visualize-attention \
+#         -model_type scavaetf \
+#         -model_name ${MODEL_NAME}.pt \
+#         -model_folder ./Weights/scavaetf \
+#         -save_folder ./Data/inference/visualize-attention/${MODEL_NAME} \
+#         -smiles "CC(Cc1ccc(c(c1)OC)O)N" \
+#         -decode_algo greedy \
+#     >>visualize-attention_${MODEL_NAME}.out 2>&1 &

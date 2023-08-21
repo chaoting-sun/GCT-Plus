@@ -7,7 +7,7 @@ from Configuration.config_default import max_strlen
 from Configuration.config import hard_constraints_opts
 
 from Utils import allocate_gpu, smiles_field, \
-    set_seed, get_logger, get_scaler
+    set_seed, get_logger
 
 from Inference.uc_sampling import uc_sampling
 from Inference.p_sampling import p_sampling
@@ -91,18 +91,18 @@ def add_args(parser):
     ms_parser.add_argument('-n_samples', type=int, default=10000)
     ms_parser.add_argument('-batch_size', type=int, default=512)
     ms_parser.add_argument('-epoch_list', type=int, nargs='+', default=[21,22,23,24,25])
-    # ms_parser.set_defaults(func=)    
+    ms_parser.set_defaults(func=model_selection)
+
+    # visualize attention
+    va_parser = subparsers.add_parser('visualize-attention', parents=[parent_parser])
+    va_parser.add_argument('-n_samples', type=int, default=10000)
+    va_parser.add_argument('-smiles', type=str, required=True)
+    va_parser.set_defaults(func=visualize_attention)
 
     # encoder test
     et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
     et_parser.add_argument('-encoder_test', action='store_true')
     # et_parser.add_argument('-model_type', type=str, required=True)
-    
-    # decoder test
-    dt_parser = subparsers.add_parser('decoder-test', parents=[parent_parser])
-    dt_parser.add_argument('-decoder_test', action='store_true')
-    # dt_parser.add_argument('-model_type', type=str, required=True)
-
 
 
 if __name__ == "__main__":
@@ -167,13 +167,12 @@ if __name__ == "__main__":
 
     # Not finished
 
-    elif args.func == visualize_attention:
-        args.func(args, toklen_data, train, test,
-                  test_scaffolds, scaler, SRC, TRG,
-                  device, logger)
+    elif args.func == model_selection:
+        args.func(args, test, toklen_data, scaler,
+                  SRC, TRG, device, logger)
 
     # Not finished
 
-    elif args.func == model_selection: # only for vaetf
-        args.func(args, train, test, toklen_data,
-                  scaler, SRC, TRG, device)
+    elif args.func == visualize_attention:
+        args.func(args, toklen_data, scaler,
+                  SRC, TRG, device, logger)

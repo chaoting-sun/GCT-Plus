@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 299
         -start_epoch 1               \
         -num_epoch 50                \
         -batch_size 64               \
-        -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
+        -model_folder ./Experiment/${MODEL_NAME} \
     >train-${MODEL_NAME}.out 2>&1 &
 
 
