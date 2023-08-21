@@ -6,9 +6,8 @@
 
 ## Getting Started
 
-## Implementation
 
-### Training
+## Implementation
 
 
 ### Inference

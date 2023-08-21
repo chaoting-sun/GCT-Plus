@@ -223,6 +223,7 @@ def get_prepared_data(raw_data, property_list):
     return prepared_data
 
 
+
 if __name__ == "__main__":
 
     save_folder = '/fileserver-gamma/chaoting/ML/dataset/moses/utils/'
@@ -231,8 +232,6 @@ if __name__ == "__main__":
     train = train[['logP', 'tPSA', 'SAS']]
 
     get_scaler(save_folder, train, rebuild=True)
-
-    exit()
 
 
 
