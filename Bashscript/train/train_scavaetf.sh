@@ -4,10 +4,10 @@
 ##### train sca-vae - 2 GPUs
 
 
-MODEL_NAME=scavaetf1
+MODEL_NAME=scavaetf1-test
 
 
-CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29984 \
+CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29984 \
     Train1.py \
         -seed 1                      \
         -model_type scavaetf         \
@@ -18,6 +18,6 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 299
         -num_epoch 50                \
         -batch_size 64               \
         -model_folder /fileserver-gamma/chaoting/ML/cvae-transformer/Experiment-Dataset/moses/${MODEL_NAME} \
-    >train-${MODEL_NAME}.out 2>&1 &
+    # >train-${MODEL_NAME}.out 2>&1 &
 
 

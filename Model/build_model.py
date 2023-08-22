@@ -55,7 +55,8 @@ def extract_params(args, src_vocab_len, trg_vocab_len):
 
 
 def load_state(model, model_path, rank):
-    map_location = { 'cuda:%d' % 0: 'cuda:%d' % rank }
+    # map_location = { 'cuda:%d' % 0: 'cuda:%d' % rank }
+    map_location = torch.device('cpu')
     try:
         model_state = torch.load(model_path, map_location)['model_state_dict']
     except KeyError:

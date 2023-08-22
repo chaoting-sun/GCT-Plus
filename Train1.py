@@ -97,7 +97,14 @@ def main(rank, world_size):
     if args.start_epoch > 1:
         args.model_path = os.path.join(args.model_folder, f'model_{args.start_epoch-1}.pt')
     model = get_model(args, len(SRC.vocab), len(TRG.vocab), rank)
-    model = model.to(rank)
+    
+    torch.cuda.set_device(rank)
+    model = model.cuda()
+    # model = model.to(rank)
+    
+    if rank == 0:
+        for n, p in model.named_parameters():
+            print(n, p.requires_grad)
     
     total_params = sum(p.numel() for p in model.parameters())
     train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

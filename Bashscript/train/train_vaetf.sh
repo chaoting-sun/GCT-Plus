@@ -24,10 +24,10 @@
 
 
 MODEL_TYPE=vaetf
-MODEL_NAME=${MODEL_TYPE}1
+MODEL_NAME=${MODEL_TYPE}1-test
 
 
-CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29501 \
+CUDA_VISIBLE_DEVICES=1,2 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29501 \
     Train1.py                         \
         -seed 1                       \
         -use_cond2lat                 \
