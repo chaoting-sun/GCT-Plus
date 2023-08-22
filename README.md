@@ -21,17 +21,25 @@ conda activate gct-plus
 
 (3) Download the Models:
 ```bash
-# vaetf1.pt (unconditioned GCT)
-gdown https://drive.google.com/ -O ./Weights/vaetf/vaetf1.pt
+# 1. unconditioned GCT
+gdown https://drive.google.com/uc?id=1k8HxI-h3Z9ZfJM4HZMFfZEw8Rh8bMElf -O ./Weights/vaetf/vaetf1.pt
 
-# pvaetf1.pt (property-based GCT)
-gdown https://drive.google.com/ -O ./Weights/pvaetf/pvaetf1.pt
+# 2. property-based GCT
+gdown https://drive.google.com/uc?id=1D5g3TF3-eFB34SXpylERSa-6L1u_SR5d -O ./Weights/pvaetf/pvaetf1.pt
 
-# scavaetf1.pt (structure-based GCT)
-gdown https://drive.google.com/ -O ./Weights/scavaetf/scavaetf1.pt
+# 3. structure-based GCT
+gdown https://drive.google.com/uc?id=1emVfSViCVWugPda1utYaIBenbRucH_j1 -O ./Weights/scavaetf/scavaetf1.pt
 
-# pscavaetf1.pt (property-structure-based GCT)
-gdown https://drive.google.com/ -O ./Weights/pscavaetf/pscavaetf1.pt
+# 4. property-structure-based GCT
+
+# selected properties: logP, tPSA, QED
+gdown https://drive.google.com/uc?id=10ojI90-Wrc0RTWUgOfAea6VjRk_GIPVH -O ./Weights/pscavaetf/pscavaetf1.pt
+
+# selected properties: logP, tPSA, SAS
+gdown https://drive.google.com/1gA-woAsdYpUsDo_jQAO1n3Nf7WJS6g-D -O ./Weights/pscavaetf/pscavaetf1_molgpt.pt
+
+# 5. property-based Transformer
+gdown https://drive.google.com/uc?id=1ICK-p9p3WA4eOZfw0zPkPCP2LRks9hEg -O ./Weights/pscavaetf/pscavaetf1.pt
 ```
 
 (4) Run Multiple Tasks
