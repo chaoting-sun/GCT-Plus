@@ -8,7 +8,7 @@ MODEL_NAME=scavaetf1
 SCAFFOLD_SOURCE=train # or test_scaffolds
 
 
-CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 python -u \
     inference.py \
         -use_cond2lat \
         -use_scaffold \
@@ -20,7 +20,7 @@ CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
         -scaffold_source ${SCAFFOLD_SOURCE} \
         -decode_algo multinomial \
         -n_samples 10000 \
-    >>sca_sampling.out 2>&1 & 
+    # >>sca_sampling.out 2>&1 &
 
 
 ##### MolGPT settings

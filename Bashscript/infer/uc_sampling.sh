@@ -4,7 +4,7 @@
 MODEL_NAME=vaetf1
 
 
-CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 python -u \
     inference.py \
     uc-sampling \
         -model_type vaetf \
@@ -13,4 +13,4 @@ CUDA_VISIBLE_DEVICES=1 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
         -save_folder ./Data/inference/uc-sampling/${MODEL_NAME} \
         -decode_algo multinomial \
         -n_samples 30000 \
-    >>uc-sampling.out 2>&1 &
+    # >>uc-sampling.out 2>&1 &

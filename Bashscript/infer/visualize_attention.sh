@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
         -save_folder ./Data/inference/visualize-attention/${MODEL_NAME} \
         -smiles "CC(Cc1ccc(c(c1)OC)O)N" \
         -decode_algo greedy \
-    >>visualize-attention_${MODEL_NAME}.out 2>&1 &
+    # >>visualize-attention_${MODEL_NAME}.out 2>&1 &
 
 
 ##### scavaetf
@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
 # MODEL_NAME=scavaetf1
 
 
-# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
 #     inference.py \
 #         -use_scaffold \
 #         -get_attn \

@@ -8,7 +8,7 @@ MODEL_NAME=pscavaetf1
 
 
 CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29990 \
-    Train1.py \
+    train1.py \
         -seed 1                      \
         -model_type pscavaetf        \
         -lr_WarmUpSteps 15000        \
@@ -30,7 +30,7 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29990 \
 
 
 # CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29907 \
-#     Train1.py \
+#     train1.py \
 #         -seed 1                      \
 #         -model_type pscavaetf        \
 #         -KLA_inc_beta 0.01           \
@@ -53,7 +53,7 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29990 \
 
 
 # CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29903 \
-#     Train1.py                        \
+#     train1.py                        \
 #         -seed 1                      \
 #         -model_type pscavaetf        \
 #         -KLA_inc_beta 0.01           \

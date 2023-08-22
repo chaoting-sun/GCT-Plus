@@ -112,7 +112,6 @@ def smiles_field(field_path=None, add_sep=False):
         eos_token='<eos>',
         unk_token='<unk>'
     )
-    
 
     if field_path is not None:
         suffix = '_sep' if add_sep else ''

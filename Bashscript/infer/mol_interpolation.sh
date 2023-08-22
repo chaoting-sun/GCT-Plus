@@ -18,7 +18,7 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
         -pair_folder ./Data/molecular-pair \
         -pair_source ${PAIR_SOURCE} \
         -decode_algo greedy \
-   >>mol-interpolation.out 2>&1 & \
+#    >>mol-interpolation.out 2>&1 & \
 
 
 ##### pvaetf

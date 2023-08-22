@@ -65,10 +65,13 @@ def train_opts(parser):
                         help="The epsilon value to use for the Adam optimizer")
     
 
-def preprocessing_opts(parser):
-    parser.add_argument('-data_folder', type=str, default='/fileserver-gamma/chaoting/ML/dataset/')
-    parser.add_argument('-benchmark', type=str, default='moses')
-    parser.add_argument('-all_property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+def preprocess_opts(parser):
+    parser.add_argument('-save_folder', type=str, default='./Data/')
+    parser.add_argument('-property_list', nargs='+', default=['logP', 'tPSA', 'QED', 'SAS'])
+    parser.add_argument('-scaled_properties', nargs='+', default=['logP', 'tPSA', 'QED'])
+    parser.add_argument('-build_vocab', action='store_true')
+    parser.add_argument('-n_jobs', default=8)
+    parser.add_argument('-debug', action='store_true')
 
 
 property_bounds = {
@@ -103,7 +106,6 @@ def hard_constraints_opts(parser):
     
     parser.add_argument('-data_path', type=str, default='/fileserver-gamma/chaoting/ML/dataset/moses/')
     parser.add_argument('-train_path', type=str, default='/fileserver-gamma/chaoting/ML/cvae-transformer/Experiment/')
-    parser.add_argument('-molgct_path', type=str, default='/fileserver-gamma/chaoting/ML/molGCT/')
 
     parser.add_argument('-nconds', type=int, default=3)
     parser.add_argument('-conditions', nargs='+', default=['logP', 'tPSA', 'QED'])

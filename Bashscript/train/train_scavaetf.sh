@@ -7,8 +7,8 @@
 MODEL_NAME=scavaetf1
 
 
-CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 29984 \
-    Train1.py \
+CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 torchrun --master_port 29984 \
+    train1.py \
         -seed 1                      \
         -model_type scavaetf         \
         -lr_WarmUpSteps 15000        \
@@ -18,6 +18,6 @@ CUDA_VISIBLE_DEVICES=0,1 CUDA_LAUNCH_BLOCKING=1 nohup torchrun --master_port 299
         -num_epoch 50                \
         -batch_size 64               \
         -model_folder ./Experiment/${MODEL_NAME} \
-    >train-${MODEL_NAME}.out 2>&1 &
+    # >train-${MODEL_NAME}.out 2>&1 &
 
 

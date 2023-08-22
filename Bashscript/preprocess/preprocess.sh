@@ -2,10 +2,9 @@
 
 # moses
 
-python3 \
+python \
     preprocess.py \
-        -benchmark moses \
-        -prepared_properties logP tPSA SAS \
-        -n_jobs 8 \
-    > preprocess.out 2>&1 & 
-    # >/dev/null 2>&1 &
+        -save_folder ./data/ \
+        -build_vocab \
+        -scaled_properties logP tPSA QED \
+    # > preprocess.out 2>&1 & 
