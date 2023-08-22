@@ -85,7 +85,7 @@ Bashscript/train/train_scavaetf.sh
 Bashscript/train/train_pscavaetf.sh
 ```
 
-### Model Selection
+(3) Model Selection
 The model for unconditioned generation (vaetf) can be selected the best epochs.
 ```bash
 Bashscript/infer/model_selection.sh
