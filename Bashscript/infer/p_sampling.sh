@@ -7,7 +7,7 @@
 MODEL_NAME=pvaetf1
 
 
-CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 nohup python -u \
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
     inference.py \
         -use_cond2lat \
     p-sampling \

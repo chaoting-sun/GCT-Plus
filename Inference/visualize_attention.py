@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from rdkit import Chem
 from bertviz import model_view
+
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from Model.build_model import get_sampler
 from Utils.smiles import murcko_scaffold
