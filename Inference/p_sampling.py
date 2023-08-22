@@ -6,7 +6,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from moses.metrics import metrics
 from collections import OrderedDict
-from scipy.stats import kde
 
 from Model.build_model import get_sampler
 from Configuration.config_default import selected_target_prop, prop_tolerance

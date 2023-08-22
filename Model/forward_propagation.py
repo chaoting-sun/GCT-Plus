@@ -1,4 +1,3 @@
-import torch
 from Model.modules import get_src_mask, get_trg_mask
 
 
@@ -41,8 +40,8 @@ def cvaetf_forward_propagation(model, batch, pad_id, use_cond2dec):
     
 
 forward_propagation = {
-    'vaetf'      : vaetf_forward_propagation,
-    'cvaetf'     : cvaetf_forward_propagation,
-    'scacvaetfv3': cvaetf_forward_propagation,
+    'vaetf'    : vaetf_forward_propagation,
+    'pvaetf'   : cvaetf_forward_propagation,
+    'pscavaetf': cvaetf_forward_propagation,
 }
 

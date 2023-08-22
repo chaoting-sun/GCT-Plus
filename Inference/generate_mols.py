@@ -6,7 +6,6 @@ import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-from Model.mlpcvae_Transformer.mask import nopeak_mask
 
 
 def get_sampled_element(myCDF):
