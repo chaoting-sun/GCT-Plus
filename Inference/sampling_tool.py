@@ -6,48 +6,7 @@ from Utils.mapper import mapper
 from Model.modules import get_trg_mask, get_src_mask
 from Inference.toklen_sampling import tokenlen_gen_from_data_distribution
 
-torch.set_printoptions(threshold=10_000)
-
-
-def id_to_smi(ids, TRG):
-    """Convert ids into smiles based on TRG.
-    
-    Args:
-        ids (List[int]): a list of integers representing a SMILES
-        TRG (torchtext.data.Field): field for target
-
-    Returns:
-        smi (str): a string representing a molecule                 
-    """
-    smi = ''
-    for i in ids:
-        if i == TRG.vocab.stoi['<eos>']:
-            break
-        if i != TRG.vocab.stoi['<sos>']:
-            smi += TRG.vocab.itos[i]
-    return smi
-
-
-def smi_to_id(smi, TRG, add_sos=False, add_sep=False, add_eos=False):
-    """Convert smiles into ids based on TRG.
-    
-    Args:
-        smi (str): a string representing a molecule
-        TRG (torchtext.data.Field): field for target
-
-    Returns:
-        ids (List[int]): a list of integers representing a SMILES
-    """
-    token = TRG.tokenize(smi)
-    ids = []
-    if add_sos:
-        ids.append(TRG.vocab.stoi['<sos>'])
-    if add_sep:
-        ids.append(TRG.vocab.stoi['<sep>'])
-    ids.extend([TRG.vocab.stoi[t] for t in token])
-    if add_eos:
-        ids.append(TRG.vocab.stoi['<eos>'])    
-    return ids
+# torch.set_printoptions(threshold=10_000)
 
 
 def top_k_logits(prob, k=4):
@@ -238,8 +197,6 @@ class VaetfSampling(Sampling):
         kws['src_mask'] = get_src_mask(kws['src'], self.pad_id)
         kws['econds'] = None
         x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
-        # x, encoder_attn = self.model.encoder(src=kws['src'], src_mask=kws['src_mask'], econds=kws['econds'])
-        # x, encoder_attn = self.model.encoder(**kws)
         
         _, mu, _ = self.model.sampler(x)
         
@@ -310,7 +267,7 @@ class VaetfSampling(Sampling):
 
         outs = self.decode(zs=zs, ys=ys, src_mask=src_mask)
         outs = outs.cpu().numpy()
-        smiles = [id_to_smi(ids, self.TRG) for ids in outs]
+        smiles = [self.id_to_smi(ids) for ids in outs]
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
         
         return smiles, toklen, toklen_gen
@@ -377,7 +334,7 @@ class CvaetfSampling(Sampling):
         outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
         outs = outs.cpu().numpy()
         
-        smiles = [id_to_smi(ids, self.TRG) for ids in outs]
+        smiles = [self.id_to_smi(ids) for ids in outs]
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
         
         return smiles, toklen, toklen_gen
@@ -396,102 +353,101 @@ class PscavaetfSampling(Sampling):
         z, mu, log_var = self.model.encode(**kwargs)
         return z, mu, log_var
 
-    def sample_multiple_smiles1(self, dconds, scaffolds, zs=None, toklen=None, transform=True):
-        sca_ids = np.array(mapper(smi_to_id, scaffolds, self.n_jobs))
-        sca_ids_len = np.array(mapper(len, sca_ids, self.n_jobs))
-        sort_index = np.argsort(sca_ids_len)
-        sca_ids = sca_ids[sort_index]
-        sca_ids_len = sca_ids_len[sort_index]
+    # def sample_multiple_smiles1(self, dconds, scaffolds, zs=None, toklen=None, transform=True):
+    #     sca_ids = np.array(mapper(smi_to_id, scaffolds, self.n_jobs))
+    #     sca_ids_len = np.array(mapper(len, sca_ids, self.n_jobs))
+    #     sort_index = np.argsort(sca_ids_len)
+    #     sca_ids = sca_ids[sort_index]
+    #     sca_ids_len = sca_ids_len[sort_index]
 
-    def sample_multiple_smiles(self, dconds, scaffolds, transform=True):
-        n = len(dconds)
+    # def sample_multiple_smiles(self, dconds, scaffolds, transform=True):
+    #     n = len(dconds)
 
-        sca_ids = np.array([self.smi_to_id(sca) for sca in scaffolds], dtype=object)
-        sca_lens = np.array(mapper(len, sca_ids, self.n_jobs))
+    #     sca_ids = np.array([self.smi_to_id(sca) for sca in scaffolds], dtype=object)
+    #     sca_lens = np.array(mapper(len, sca_ids, self.n_jobs))
 
-        sort_indices = np.argsort(sca_lens)
-        sca_ids = sca_ids[sort_indices]
-        sca_lens = sca_lens[sort_indices]
+    #     sort_indices = np.argsort(sca_lens)
+    #     sca_ids = sca_ids[sort_indices]
+    #     sca_lens = sca_lens[sort_indices]
 
-        smiles, toklen, toklen_gen = [], [], []
-        head_id = tail_id = 0
+    #     smiles, toklen, toklen_gen = [], [], []
+    #     head_id = tail_id = 0
 
-        # print('sca lens:', sca_lens)
+    #     # print('sca lens:', sca_lens)
 
-        while head_id < n and tail_id <= n:
-            if tail_id < n and sca_lens[head_id] == sca_lens[tail_id]:
-                tail_id += 1
-                continue
+    #     while head_id < n and tail_id <= n:
+    #         if tail_id < n and sca_lens[head_id] == sca_lens[tail_id]:
+    #             tail_id += 1
+    #             continue
             
-            print(f'# generated: {head_id} - {tail_id}')
+    #         print(f'# generated: {head_id} - {tail_id}')
 
-            # print('head/tail id:', head_id, tail_id)
-            # print('sca ids:', sca_ids[head_id:tail_id])
+    #         # print('head/tail id:', head_id, tail_id)
+    #         # print('sca ids:', sca_ids[head_id:tail_id])
             
-            cur_smiles, cur_toklen, cur_toklen_gen = self._sample_multiple_smiles(
-                dconds[head_id:tail_id],
-                sca_ids[head_id:tail_id],
-                transform=transform
-            )
+    #         cur_smiles, cur_toklen, cur_toklen_gen = self._sample_multiple_smiles(
+    #             dconds[head_id:tail_id],
+    #             sca_ids[head_id:tail_id],
+    #             transform=transform
+    #         )
 
-            smiles.extend(cur_smiles)
-            toklen.extend(cur_toklen)
-            toklen_gen.extend(cur_toklen_gen)
+    #         smiles.extend(cur_smiles)
+    #         toklen.extend(cur_toklen)
+    #         toklen_gen.extend(cur_toklen_gen)
 
-            # print('cur_smiles:', cur_smiles)
+    #         # print('cur_smiles:', cur_smiles)
 
-            head_id = tail_id
+    #         head_id = tail_id
 
-        # print(smiles)
+    #     # print(smiles)
 
-        return smiles, toklen, toklen_gen
+    #     return smiles, toklen, toklen_gen
 
-    def _sample_multiple_smiles(self, dconds, sca_ids, transform=True):
-        n = len(dconds)
+    # def _sample_multiple_smiles(self, dconds, sca_ids, transform=True):
+    #     n = len(dconds)
                 
-        if transform:
-            dconds = self.transform(dconds)
+    #     if transform:
+    #         dconds = self.transform(dconds)
 
-        sca_lens = mapper(len, sca_ids, self.n_jobs)
+    #     sca_lens = mapper(len, sca_ids, self.n_jobs)
 
-        max_sca_len = max(sca_lens)
-        sca_del = [max_sca_len-l for l in sca_lens]
+    #     max_sca_len = max(sca_lens)
+    #     sca_del = [max_sca_len-l for l in sca_lens]
         
-        ys = torch.ones((n, 1+max_sca_len+1), dtype=torch.long) * self.pad_id
-        for i in range(n):
-            ys[i, sca_del[i]] = self.sos_id
-            ys[i, sca_del[i]+1:-1] = torch.tensor(sca_ids[i])
-            ys[i, -1] = self.sep_id
+    #     ys = torch.ones((n, 1+max_sca_len+1), dtype=torch.long) * self.pad_id
+    #     for i in range(n):
+    #         ys[i, sca_del[i]] = self.sos_id
+    #         ys[i, sca_del[i]+1:-1] = torch.tensor(sca_ids[i])
+    #         ys[i, -1] = self.sep_id
 
-        toklen = self.sample_toklen(n)
+    #     toklen = self.sample_toklen(n)
 
-        src_toklen = [sca_lens[i]+1+toklen[i] for i in range(n)]
-        lat_toklen = max(src_toklen)
+    #     src_toklen = [sca_lens[i]+1+toklen[i] for i in range(n)]
+    #     lat_toklen = max(src_toklen)
 
-        zs = self.sample_z(lat_toklen, n)
+    #     zs = self.sample_z(lat_toklen, n)
 
-        toklen_stop_ids = torch.LongTensor(src_toklen).view(n, 1, 1)
-        src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
+    #     toklen_stop_ids = torch.LongTensor(src_toklen).view(n, 1, 1)
+    #     src_mask = torch.arange(lat_toklen).expand(n,1,lat_toklen) < toklen_stop_ids
         
-        # move to gpu
+    #     # move to gpu
         
-        ys = ys.to(self.device)
-        zs = zs.to(self.device)
-        dconds = dconds.to(self.device)
-        src_mask = src_mask.to(self.device)
+    #     ys = ys.to(self.device)
+    #     zs = zs.to(self.device)
+    #     dconds = dconds.to(self.device)
+    #     src_mask = src_mask.to(self.device)
         
-        # sample smiles
+    #     # sample smiles
 
-        outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
-        outs = outs.cpu().numpy()
+    #     outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
+    #     outs = outs.cpu().numpy()
 
-        smiles = [id_to_smi(ids[1+max_sca_len+1:], self.TRG)
-                  for ids in outs]
+    #     smiles = [self.id_to_smi(ids[1+max_sca_len+1:])
+    #               for ids in outs]
 
-        toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
+    #     toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
 
-        return smiles, toklen, toklen_gen
-    
+    #     return smiles, toklen, toklen_gen
     
     def sample_smiles(self, dconds, scaffold, zs=None, toklen=None, transform=True):
         n = len(dconds)
@@ -535,7 +491,7 @@ class PscavaetfSampling(Sampling):
         outs = self.decode(zs=zs, ys=ys, dconds=dconds, src_mask=src_mask)
         outs = outs.cpu().numpy()
         
-        smiles = [id_to_smi(ids[1+len(sca_ids)+1:], self.TRG)
+        smiles = [self.id_to_smi(ids[1+len(sca_ids)+1:])
                   for ids in outs]
         toklen_gen =[len(self.TRG.tokenize(smi)) for smi in smiles]
 

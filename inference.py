@@ -100,8 +100,8 @@ def add_args(parser):
     va_parser.set_defaults(func=visualize_attention)
 
     # encoder test
-    et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
-    et_parser.add_argument('-encoder_test', action='store_true')
+    # et_parser = subparsers.add_parser('encoder-test', parents=[parent_parser])
+    # et_parser.add_argument('-encoder_test', action='store_true')
     # et_parser.add_argument('-model_type', type=str, required=True)
 
 
@@ -118,6 +118,7 @@ if __name__ == "__main__":
 
     print("Looking for gpu...")
     device = allocate_gpu()
+    
     print("device:", device)
     
     util_path = os.path.join(args.data_folder, 'utils')
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     
     args.max_strlen = max_strlen
     
-    # get fields    
+    # get fields
     
     if args.use_scaffold:
         SRC, TRG = smiles_field(util_path, add_sep=True)

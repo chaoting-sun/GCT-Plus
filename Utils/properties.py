@@ -244,20 +244,6 @@ def compute_molecular_similarity(smiles_list1, smiles_list2,
     return similarity_list
 
 
-# def props_predictor_wrapper(conditions):
-#     def props_predictor(smiles):
-#         mol = MolFromSmiles(smiles)
-#         if mol is not None:
-#             valid = 1
-#             props = [property_fcn[c](mol)
-#                      for c in conditions]
-#         else:
-#             valid = 0
-#             props = [np.nan]*len(conditions)
-#         return valid, props
-#     return props_predictor
-
-
 def get_similarity(similarity_fn, smi_list1, smi_list2, n_jobs):
     with Pool(n_jobs) as pool:
         res = pool.amap(similarity_fn, smi_list1, smi_list2)

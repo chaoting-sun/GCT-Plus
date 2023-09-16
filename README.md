@@ -3,7 +3,7 @@
 
 ## About the Project
 In this project, we used conditional variational autoencoder (CVAE) based Transformer on multiple tasks, including unconditioned, property-based, structure-based, and property-structure-based generation, as well as molecular interpolation. The model architecture was sourced from GCT, trained on a dataset of approximately 1.58 million neutral molecules provided by the MOSES benchmarking platform.
-More updating information can be seen from [GCT-Plus](https://github.com/chaoting-sun/GCT-Plus).
+More updated information can be seen from [GCT-Plus](https://github.com/chaoting-sun/GCT-Plus).
 
 ## Getting Started
 

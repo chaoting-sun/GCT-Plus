@@ -182,7 +182,7 @@ def sca_sampling(
     for sid in range(len(scaffold_sample)):
         scaffold = scaffold_sample.loc[sid, 'scaffold']        
         gen_path = os.path.join(args.save_folder, f'gen{sid}.csv')
-
+        
         if os.path.exists(gen_path):
             continue
         

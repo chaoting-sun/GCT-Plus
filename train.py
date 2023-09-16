@@ -3,6 +3,7 @@ import torch
 import random
 import argparse
 import pandas as pd
+from torchtext import data
 from torch.utils.data import BatchSampler
 
 # modules for distributed data-parallel training (DDP)
@@ -29,37 +30,6 @@ def save_prepared_data(raw_data, property_list, save_path):
 
     prepared_data = pd.concat([src, src_prop, trg, trg_prop], axis=1)
     prepared_data.to_csv(save_path, index=False)
-
-
-def get_data_name(benchmark, model_type, property_list):
-    if benchmark == 'moses':
-        data_name = ['train', 'test']
-    
-    if model_type == 'vaetf':
-        data_name = [name+'_v0' for name in data_name]
-    elif model_type =='pvaetf':
-        data_name = [name+'_v0' for name in data_name]
-    elif model_type == 'pscavaetf':
-        data_name = [name+'_sca' for name in data_name]
-
-    # for i in range(len(data_name)):
-    #     # data_name[i] += f'-s{similarity:.2f}'
-    #     data_name[i] += '_debug' if debug else ''
-    return data_name
-
-
-def get_fields(model_type, property_list, field_path):
-    if model_type in ('vaetf', 'cvaetf', 'scacvaetfv1', 'scacvaetfv2'):
-        SRC, TRG = smiles_field(field_path, add_sep=False)
-        # SRC, TRG = smiles_field(properties=property_list,
-        #                         field_path=field_path,
-        #                         suffix='molgct')
-    elif model_type in ('scacvaetfv3'):
-        SRC, TRG = smiles_field(field_path, add_sep=True)
-    return SRC, TRG
-
-
-from torchtext import data
 
 
 class MyIterator(data.Iterator):

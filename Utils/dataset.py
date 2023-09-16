@@ -265,8 +265,6 @@ class SmilesDataset(Dataset):
         if random.random() <= self.randomize_prob:
             smi = randomize_smiles(smi)
         return smi
-
-        # return field.tokenize(smi)
         
     def __getitem__(self, rid):
         item = {}
@@ -285,57 +283,11 @@ class SmilesDataset(Dataset):
             item['econds'] = [row[f'src_{p}'] for p in self.property_list]
             item['dconds'] = [row[f'trg_{p}'] for p in self.property_list]
         
-        # if self.include_mconds:
-        #     item['mconds'] = [item['dconds'][i] - item['econds'][i]
-        #                     for i in range(len(self.property_list))]
-        
         return item
 
     def __len__(self):
         return len(self.data)
 
-
-# class DataloaderPreparation:
-#     def __init__(self, rank, SRC, TRG, batch_size, model_type,
-#                  property_list, world_size=1, randomize=False,
-#                  use_scaffold=False):
-#         self.SRC = SRC
-#         self.TRG = TRG
-#         self.rank = rank
-#         self.world_size = world_size
-#         self.batch_size = batch_size
-#         self.property_list = property_list
-#         self.use_scaffold = use_scaffold
-#         self.randomize = randomize
-#         self.collate_fn = get_collate_fn(model_type, SRC, TRG, rank)
-    
-#     def _get_sampler(self, dataset, shuffle=False,
-#                      drop_last=False):
-#         return DistributedSampler(dataset, self.world_size, self.rank,
-#                                   shuffle, drop_last)
-
-#     def _get_dataset(self, dataframe, include_mconds=True):
-#         return SmilesDataset(dataframe, self.property_list, self.SRC,
-#                              self.TRG, include_mconds, self.use_scaffold,
-#                              self.randomize)
-
-#     def get_dataloader(self, dataframe, is_train,
-#                        include_mconds=False, shuffle=False,
-#                        sampler=None):
-#         dataset = self._get_dataset(dataframe, include_mconds)
-    
-#         if self.world_size > 1:
-#             sampler = self._get_sampler(dataset,
-#                 shuffle=True if is_train else False)
-#         if self.world_size == 1 and is_train:
-#             # no need to shuffle if sampler is used
-#             shuffle = True
-
-#         return DataLoader(dataset, batch_size=self.batch_size,
-#                           drop_last=False, sampler=sampler,
-#                           shuffle=shuffle, collate_fn=self.collate_fn,
-#                           num_workers=0, pin_memory=False)
-    
 
 class DataloaderPreparation:
     def __init__(self, rank, SRC, TRG, model_type, property_list,

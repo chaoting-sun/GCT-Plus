@@ -303,14 +303,14 @@ def p_sampling(
         sns.kdeplot(data=train.loc[:, p], ax=ax, shade=False,
                     linewidth=2.5, color='red', legend=False)
 
-        ax.set_xlabel(xlabel=p, fontsize=17)
+        ax.set_xlabel(xlabel=p, fontsize=22)
         if i == 0:
-            ax.set_ylabel(ylabel='Density', fontsize=17)
+            ax.set_ylabel(ylabel='Density', fontsize=22)
         else:
             ax.set_ylabel(None)
         ax.set_xlim(left=xlimit[p][0], right=xlimit[p][1])
-        ax.tick_params(axis="both", which="major", labelsize=13)
-        ax.legend(['train']+trg_prop, fontsize=16)
+        ax.tick_params(axis="both", which="major", labelsize=20)
+        ax.legend(trg_prop+['train'], fontsize=20)
         
         for tp in trg_prop:
             ax.axvline(x=tp, linestyle='--', color='gray')        

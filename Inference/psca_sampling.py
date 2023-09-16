@@ -148,6 +148,8 @@ def psca_sampling(
     LOG.info('start generation')
 
     for sid in range(len(scaffold_sample)):
+        continue
+        
         scaffold = scaffold_sample.loc[sid, 'scaffold']
         metric_path = os.path.join(args.save_folder, f'metric_s{sid}.csv')            
 
@@ -334,14 +336,14 @@ def psca_sampling(
         sns.kdeplot(data=train.loc[:, p], ax=ax, shade=False,
                     linewidth=2.5, color='red', legend=False)
         
-        ax.set_xlabel(xlabel=p, fontsize=17)
+        ax.set_xlabel(xlabel=p, fontsize=22)
         if i == 0:
-            ax.set_ylabel(ylabel='Density', fontsize=17)
+            ax.set_ylabel(ylabel='Density', fontsize=22)
         else:
             ax.set_ylabel(None)
         ax.set_xlim(xlimit[p][0], xlimit[p][1])
-        ax.tick_params(axis="both", which="major", labelsize=13)
-        ax.legend(['train']+trg_prop, fontsize=16)
+        ax.tick_params(axis="both", which="major", labelsize=20)
+        ax.legend(trg_prop+['train'], fontsize=20)
        
         for tp in trg_prop:
             ax.axvline(x=tp, linestyle='--', color='gray')

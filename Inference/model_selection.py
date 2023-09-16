@@ -20,15 +20,6 @@ from guacamol.utils.chemistry import (
 )
 
 
-# def sample_from_dataset(dataset, property_fn, n, n_jobs):
-#     test_prop = random.sample(dataset, n)
-#     mols = mapper(get_mol, test_prop, n_jobs)
-#     smiles = pd.DataFrame({ 'SMILES': test_prop })
-#     props = mols_to_props(mols, property_fn, n_jobs=n_jobs)
-#     smiles_props = pd.concat([smiles, props], axis=1)
-#     return smiles_props
-
-
 def sample_smiles(sampler, n, batch_size, LOG):
     gen = []
     while n > 0:

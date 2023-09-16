@@ -18,4 +18,21 @@ CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
         -save_folder ./Data/inference/p-sampling/${MODEL_NAME} \
         -decode_algo multinomial \
         -n_samples 10000 \
-    # >>p_sampling.out 2>&1 & \
+#     # >>p_sampling.out 2>&1 & \
+
+
+##### try
+
+
+# CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python -u \
+#     inference.py \
+#         -use_cond2lat \
+#     p-sampling \
+#         -property_list logP tPSA QED \
+#         -model_type pvaetf \
+#         -model_name pvaetf1.pt \
+#         -model_folder ./Weights/pvaetf \
+#         -save_folder /fileserver-gamma/chaoting/ML/GCT-Plus/Inference/moses/p-sampling/pvaetf1-15/ \
+#         -decode_algo multinomial \
+#         -n_samples 10000 \
+#     # >>p_sampling.out 2>&1 & \

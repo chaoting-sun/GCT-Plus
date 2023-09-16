@@ -3,12 +3,12 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from torchtext import data
-# from torchtext.legacy import data
 
 
 """
 subsequent_mask may use the code in Transformer.
 """
+
 
 def nopeak_mask(size, nconds, use_cond2dec):
     np_mask = np.triu(np.ones((1, size, size)), k=1).astype('uint8')
