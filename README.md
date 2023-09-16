@@ -2,8 +2,10 @@
 
 
 ## About the Project
-In this project, we used conditional variational autoencoder (CVAE) based Transformer on multiple tasks, including unconditioned, property-based, structure-based, and property-structure-based generation, as well as molecular interpolation. The model architecture was sourced from GCT, trained on a dataset of approximately 1.58 million neutral molecules provided by the MOSES benchmarking platform.
-More updated information can be seen from [GCT-Plus](https://github.com/chaoting-sun/GCT-Plus).
+
+In this project, we utilized the [GCT](https://github.com/Hyunseung-Kim/molGCT) model, originally a conditional variational autoencoder (CVAE) with a Transformer architecture, designed for generating molecules based on properties. We extended GCT's functionality to incorporate structure-based generation using the Bemis-Murcko scaffold, and we've named this enhanced version GCT-Plus.
+
+We conducted extensive training of GCT-Plus on a dataset containing approximately 1.58 million neutral molecules, sourced from the MOSES benchmarking platform. We trained GCT-Plus for multiple tasks, including unconditioned generation, property-based generation, structure-based generation, and property-structure-based generation. Furthermore, we employed GCT-Plus for molecular interpolation, enabling the creation of new molecules with structures resembling those of two given starting molecules.
 
 ## Getting Started
 
@@ -36,7 +38,7 @@ gdown https://drive.google.com/uc?id=1emVfSViCVWugPda1utYaIBenbRucH_j1 -O ./Weig
 gdown https://drive.google.com/uc?id=10ojI90-Wrc0RTWUgOfAea6VjRk_GIPVH -O ./Weights/pscavaetf/pscavaetf1.pt
 
 # selected properties: logP, tPSA, SAS
-gdown https://drive.google.com/1gA-woAsdYpUsDo_jQAO1n3Nf7WJS6g-D -O ./Weights/pscavaetf/pscavaetf1_molgpt.pt
+gdown https://drive.google.com/uc?id=1gA-woAsdYpUsDo_jQAO1n3Nf7WJS6g-D -O ./Weights/pscavaetf/pscavaetf1_molgpt.pt
 
 # 5. property-based Transformer
 gdown https://drive.google.com/uc?id=1ICK-p9p3WA4eOZfw0zPkPCP2LRks9hEg -O ./Weights/pscavaetf/pscavaetf1.pt
@@ -91,3 +93,11 @@ The model for unconditioned generation (vaetf) can be selected the best epochs.
 ```bash
 Bashscript/infer/model_selection.sh
 ```
+
+## Reference
+- Model architecture - borrowed from [Hyunseung-Kim/molGCT](https://github.com/Hyunseung-Kim/molGCT)
+- property computation - [rdkit/rdkit](https://github.com/rdkit/rdkit)
+- SMILES tokenizer - modified from [XinhaoLi74/SmilesPE](https://github.com/XinhaoLi74/SmilesPE)
+- Evaluation metrics
+    - Most metrics: [molecularsets/moses](https://github.com/molecularsets/moses)
+    - SSF (same scaffold fraction): [devalab/molgpt](https://github.com/devalab/molgpt)
